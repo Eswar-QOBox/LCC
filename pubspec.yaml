@@ -56,6 +56,9 @@ dependencies:
   # Image Processing
   image: ^4.2.0
   
+  # Face Detection
+  google_mlkit_face_detection: ^0.10.0
+  
   # HTTP Requests
   http: ^1.2.1
   

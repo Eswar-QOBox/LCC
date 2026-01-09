@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image/image.dart' as img;
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../models/document_submission.dart';
 
 // Conditional import - only import dart:io on non-web platforms
@@ -154,6 +155,28 @@ class DocumentService {
         errors.addAll(lightingCheck.errors);
       }
 
+      // Face detection check (only on mobile platforms, skip on web)
+      // Add timeout to prevent hanging
+      if (!kIsWeb) {
+        try {
+          final faceCheck = await _checkFacePresence(bytes, width, height)
+              .timeout(
+                const Duration(seconds: 10),
+                onTimeout: () {
+                  // Return valid result if timeout - don't block validation
+                  return SelfieValidationResult(isValid: true, errors: []);
+                },
+              );
+          if (!faceCheck.isValid) {
+            errors.addAll(faceCheck.errors);
+          }
+        } catch (e) {
+          // If face detection fails, don't block validation
+          // Log error but allow other validations to proceed
+          // In production, you might want to log this to analytics
+        }
+      }
+
       return SelfieValidationResult(
         isValid: errors.isEmpty,
         errors: errors,
@@ -170,21 +193,39 @@ class DocumentService {
   static List<String> _checkImageQuality(img.Image image) {
     final List<String> issues = [];
 
+    // Validate image dimensions
+    if (image.width <= 0 || image.height <= 0) {
+      return issues;
+    }
+
     // Calculate average brightness
     int totalBrightness = 0;
     int pixelCount = 0;
 
     // Sample pixels for performance (check every 10th pixel)
+    // Add bounds checking to prevent crashes
     for (int y = 0; y < image.height; y += 10) {
+      if (y >= image.height) break;
       for (int x = 0; x < image.width; x += 10) {
-        final pixel = image.getPixel(x, y);
-        final r = pixel.r.toInt();
-        final g = pixel.g.toInt();
-        final b = pixel.b.toInt();
-        final brightness = (r + g + b) ~/ 3;
-        totalBrightness += brightness;
-        pixelCount++;
+        if (x >= image.width) break;
+        try {
+          final pixel = image.getPixel(x, y);
+          final r = pixel.r.toInt();
+          final g = pixel.g.toInt();
+          final b = pixel.b.toInt();
+          final brightness = (r + g + b) ~/ 3;
+          totalBrightness += brightness;
+          pixelCount++;
+        } catch (e) {
+          // Skip invalid pixels
+          continue;
+        }
       }
+    }
+
+    // Prevent division by zero
+    if (pixelCount == 0) {
+      return issues;
     }
 
     final avgBrightness = totalBrightness / pixelCount;
@@ -210,18 +251,35 @@ class DocumentService {
 
   /// Calculate color variance to detect filters
   static double _calculateColorVariance(img.Image image) {
+    // Validate image dimensions
+    if (image.width <= 0 || image.height <= 0) {
+      return 0.0;
+    }
+
     final List<int> redValues = [];
     final List<int> greenValues = [];
     final List<int> blueValues = [];
 
-    // Sample pixels
+    // Sample pixels with bounds checking
     for (int y = 0; y < image.height; y += 20) {
+      if (y >= image.height) break;
       for (int x = 0; x < image.width; x += 20) {
-        final pixel = image.getPixel(x, y);
-        redValues.add(pixel.r.toInt());
-        greenValues.add(pixel.g.toInt());
-        blueValues.add(pixel.b.toInt());
+        if (x >= image.width) break;
+        try {
+          final pixel = image.getPixel(x, y);
+          redValues.add(pixel.r.toInt());
+          greenValues.add(pixel.g.toInt());
+          blueValues.add(pixel.b.toInt());
+        } catch (e) {
+          // Skip invalid pixels
+          continue;
+        }
       }
+    }
+
+    // Prevent empty list operations
+    if (redValues.isEmpty || greenValues.isEmpty || blueValues.isEmpty) {
+      return 0.0;
     }
 
     final redMean = redValues.reduce((a, b) => a + b) / redValues.length;
@@ -277,46 +335,69 @@ class DocumentService {
     int targetHeight;
 
     // Calculate target dimensions maintaining minimum size
-    if (originalAspectRatio > targetAspectRatio) {
-      // Image is wider than target - crop width (center crop)
-      targetHeight = math.max(originalHeight, minHeight);
-      targetWidth = (targetHeight * targetAspectRatio).round();
-      
-      // Center crop horizontally
-      final int cropX = ((originalWidth - targetWidth) / 2).round();
-      final int cropY = 0;
-      
-      if (cropX >= 0 && cropX + targetWidth <= originalWidth) {
-        image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
-      } else {
-        // If crop would go out of bounds, just resize
+    try {
+      if (originalAspectRatio > targetAspectRatio) {
+        // Image is wider than target - crop width (center crop)
+        targetHeight = math.max(originalHeight, minHeight);
         targetWidth = (targetHeight * targetAspectRatio).round();
-        image = img.copyResize(image, width: targetWidth, height: targetHeight);
-      }
-    } else {
-      // Image is taller than target - crop height (center crop)
-      targetWidth = math.max(originalWidth, minWidth);
-      targetHeight = (targetWidth / targetAspectRatio).round();
-      
-      // Center crop vertically
-      final int cropX = 0;
-      final int cropY = ((originalHeight - targetHeight) / 2).round();
-      
-      if (cropY >= 0 && cropY + targetHeight <= originalHeight) {
-        image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
+        
+        // Validate dimensions
+        if (targetWidth <= 0 || targetHeight <= 0) {
+          return image;
+        }
+        
+        // Center crop horizontally
+        final int cropX = ((originalWidth - targetWidth) / 2).round();
+        final int cropY = 0;
+        
+        if (cropX >= 0 && cropX + targetWidth <= originalWidth && targetWidth > 0 && targetHeight > 0) {
+          image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
+        } else {
+          // If crop would go out of bounds, just resize
+          targetWidth = (targetHeight * targetAspectRatio).round();
+          if (targetWidth > 0 && targetHeight > 0) {
+            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+          }
+        }
       } else {
-        // If crop would go out of bounds, just resize
+        // Image is taller than target - crop height (center crop)
+        targetWidth = math.max(originalWidth, minWidth);
         targetHeight = (targetWidth / targetAspectRatio).round();
-        image = img.copyResize(image, width: targetWidth, height: targetHeight);
+        
+        // Validate dimensions
+        if (targetWidth <= 0 || targetHeight <= 0) {
+          return image;
+        }
+        
+        // Center crop vertically
+        final int cropX = 0;
+        final int cropY = ((originalHeight - targetHeight) / 2).round();
+        
+        if (cropY >= 0 && cropY + targetHeight <= originalHeight && targetWidth > 0 && targetHeight > 0) {
+          image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
+        } else {
+          // If crop would go out of bounds, just resize
+          targetHeight = (targetWidth / targetAspectRatio).round();
+          if (targetWidth > 0 && targetHeight > 0) {
+            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+          }
+        }
       }
-    }
 
-    // Ensure minimum dimensions
-    if (image.width < minWidth || image.height < minHeight) {
-      final double scale = math.max(minWidth / image.width, minHeight / image.height);
-      targetWidth = (image.width * scale).round();
-      targetHeight = (image.height * scale).round();
-      image = img.copyResize(image, width: targetWidth, height: targetHeight);
+      // Ensure minimum dimensions
+      if (image.width > 0 && image.height > 0) {
+        if (image.width < minWidth || image.height < minHeight) {
+          final double scale = math.max(minWidth / image.width, minHeight / image.height);
+          targetWidth = (image.width * scale).round();
+          targetHeight = (image.height * scale).round();
+          if (targetWidth > 0 && targetHeight > 0) {
+            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+          }
+        }
+      }
+    } catch (e) {
+      // If resize/crop fails, return original image
+      return image;
     }
 
     return image;
@@ -325,6 +406,11 @@ class DocumentService {
   /// Validates background with relaxed rules suitable for live selfie capture
   /// Returns: (isValid, errorMessage, debugInfo)
   static (bool, String?, Map<String, dynamic>) _checkBackground(img.Image image) {
+    // Validate image dimensions
+    if (image.width <= 0 || image.height <= 0) {
+      return (true, null, {'error': 'invalid_dimensions'});
+    }
+
     // Relaxed configuration for live selfies
     const double brightnessThreshold = 100.0; // Allow darker backgrounds
     const double coefficientVariationThreshold = 80.0; // Very lenient - 80% (allows most backgrounds)
@@ -338,44 +424,60 @@ class DocumentService {
 
     // Top edge
     for (int x = 0; x < image.width; x += sampleInterval) {
-      if (x < image.width) {
-        for (int y = 0; y < edgeMargin && y < image.height; y += 10) {
+      if (x >= image.width) break;
+      for (int y = 0; y < edgeMargin && y < image.height; y += 10) {
+        if (y >= image.height) break;
+        try {
           final pixel = image.getPixel(x, y);
           backgroundSamples.add(_getBrightness(pixel));
+        } catch (e) {
+          continue;
         }
       }
     }
 
     // Bottom edge
     for (int x = 0; x < image.width; x += sampleInterval) {
-      if (x < image.width) {
-        for (int y = math.max(0, image.height - edgeMargin);
-            y < image.height;
-            y += 10) {
+      if (x >= image.width) break;
+      for (int y = math.max(0, image.height - edgeMargin);
+          y < image.height;
+          y += 10) {
+        if (y >= image.height) break;
+        try {
           final pixel = image.getPixel(x, y);
           backgroundSamples.add(_getBrightness(pixel));
+        } catch (e) {
+          continue;
         }
       }
     }
 
     // Left edge
     for (int y = 0; y < image.height; y += sampleInterval) {
-      if (y < image.height) {
-        for (int x = 0; x < edgeMargin && x < image.width; x += 10) {
+      if (y >= image.height) break;
+      for (int x = 0; x < edgeMargin && x < image.width; x += 10) {
+        if (x >= image.width) break;
+        try {
           final pixel = image.getPixel(x, y);
           backgroundSamples.add(_getBrightness(pixel));
+        } catch (e) {
+          continue;
         }
       }
     }
 
     // Right edge
     for (int y = 0; y < image.height; y += sampleInterval) {
-      if (y < image.height) {
-        for (int x = math.max(0, image.width - edgeMargin);
-            x < image.width;
-            x += 10) {
+      if (y >= image.height) break;
+      for (int x = math.max(0, image.width - edgeMargin);
+          x < image.width;
+          x += 10) {
+        if (x >= image.width) break;
+        try {
           final pixel = image.getPixel(x, y);
           backgroundSamples.add(_getBrightness(pixel));
+        } catch (e) {
+          continue;
         }
       }
     }
@@ -471,20 +573,32 @@ class DocumentService {
 
   /// Calculate contrast of the image
   static double _calculateContrast(img.Image image) {
+    // Validate image dimensions
+    if (image.width <= 0 || image.height <= 0) {
+      return 0.0;
+    }
+
     final List<int> brightnessValues = [];
 
-    // Sample pixels
+    // Sample pixels with bounds checking
     for (int y = 0; y < image.height; y += 15) {
+      if (y >= image.height) break;
       for (int x = 0; x < image.width; x += 15) {
-        final pixel = image.getPixel(x, y);
-        final r = pixel.r.toInt();
-        final g = pixel.g.toInt();
-        final b = pixel.b.toInt();
-        brightnessValues.add((r + g + b) ~/ 3);
+        if (x >= image.width) break;
+        try {
+          final pixel = image.getPixel(x, y);
+          final r = pixel.r.toInt();
+          final g = pixel.g.toInt();
+          final b = pixel.b.toInt();
+          brightnessValues.add((r + g + b) ~/ 3);
+        } catch (e) {
+          // Skip invalid pixels
+          continue;
+        }
       }
     }
 
-    if (brightnessValues.isEmpty) return 0;
+    if (brightnessValues.isEmpty) return 0.0;
 
     final minBrightness = brightnessValues.reduce(math.min);
     final maxBrightness = brightnessValues.reduce(math.max);
@@ -513,5 +627,199 @@ class DocumentService {
     return false;
   }
 
+  /// Check if a face is present in the image using ML Kit Face Detection
+  /// Returns validation result with errors if no face is detected
+  static Future<SelfieValidationResult> _checkFacePresence(
+    Uint8List imageBytes,
+    int width,
+    int height,
+  ) async {
+    io.File? tempFile;
+    io.Directory? tempDir;
+    
+    try {
+      // Validate inputs
+      if (imageBytes.isEmpty || width <= 0 || height <= 0) {
+        return SelfieValidationResult(
+          isValid: true, // Don't block on invalid inputs
+          errors: [],
+        );
+      }
+
+      // Limit image size to prevent memory issues (max 5MB for face detection)
+      if (imageBytes.length > 5 * 1024 * 1024) {
+        // Image too large for face detection - skip it
+        return SelfieValidationResult(
+          isValid: true, // Don't block on large images
+          errors: [],
+        );
+      }
+
+      // Create temporary file for ML Kit (it requires file path for static images)
+      tempDir = await io.Directory.systemTemp.createTemp('selfie_validation_');
+      tempFile = io.File('${tempDir.path}/temp_image.jpg');
+      await tempFile.writeAsBytes(imageBytes);
+      
+      // Verify file was created
+      if (!await tempFile.exists()) {
+        return SelfieValidationResult(
+          isValid: true, // Don't block on file creation failure
+          errors: [],
+        );
+      }
+      
+      final inputImage = InputImage.fromFilePath(tempFile.path);
+
+      // Configure face detector options - lenient settings for better detection
+      final options = FaceDetectorOptions(
+        enableClassification: false,
+        enableLandmarks: false,
+        enableContours: false,
+        enableTracking: false,
+        minFaceSize: 0.1, // Minimum face size (10% of image) - very lenient
+        performanceMode: FaceDetectorMode.fast,
+      );
+
+      // Create face detector with error handling
+      FaceDetector faceDetector;
+      try {
+        faceDetector = FaceDetector(options: options);
+      } catch (e) {
+        // If detector creation fails, don't block
+        return SelfieValidationResult(
+          isValid: true,
+          errors: [],
+        );
+      }
+
+      // Detect faces with error handling
+      List<Face> faces = [];
+      try {
+        faces = await faceDetector.processImage(inputImage);
+      } catch (e) {
+        // If detection fails, close detector and return
+        try {
+          await faceDetector.close();
+        } catch (_) {}
+        return SelfieValidationResult(
+          isValid: true, // Don't block on detection failure
+          errors: [],
+        );
+      }
+
+      // Close the detector to free resources
+      try {
+        await faceDetector.close();
+      } catch (e) {
+        // Ignore close errors
+      }
+
+      // Check if at least one face was detected
+      if (faces.isEmpty) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: [
+            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.'
+          ],
+        );
+      }
+
+      // Use the first/largest face - validate face data
+      if (faces.isEmpty) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: [
+            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.'
+          ],
+        );
+      }
+
+      final face = faces.first;
+      
+      // Validate face bounding box
+      if (face.boundingBox.width <= 0 || face.boundingBox.height <= 0) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: ['Invalid face detection result. Please try again.'],
+        );
+      }
+
+      final faceWidth = face.boundingBox.width;
+      final faceHeight = face.boundingBox.height;
+      final faceArea = faceWidth * faceHeight;
+      final imageArea = width * height;
+      
+      // Prevent division by zero
+      if (imageArea == 0) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: ['Invalid image dimensions'],
+        );
+      }
+      
+      final facePercentage = (faceArea / imageArea) * 100;
+
+      // Check if face is reasonably sized (at least 3% of image)
+      if (facePercentage < 3) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: [
+            'Face is too small in the image. Please move closer to the camera so your face is clearly visible.'
+          ],
+        );
+      }
+
+      // Check if face is reasonably centered (within 50% of center - lenient)
+      // Prevent division by zero
+      if (width == 0 || height == 0) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: ['Invalid image dimensions'],
+        );
+      }
+      
+      final faceCenterX = face.boundingBox.left + (faceWidth / 2);
+      final faceCenterY = face.boundingBox.top + (faceHeight / 2);
+      final imageCenterX = width / 2;
+      final imageCenterY = height / 2;
+      
+      final offsetX = (faceCenterX - imageCenterX).abs() / width;
+      final offsetY = (faceCenterY - imageCenterY).abs() / height;
+
+      if (offsetX > 0.5 || offsetY > 0.5) {
+        return SelfieValidationResult(
+          isValid: false,
+          errors: [
+            'Face is not centered in the image. Please position your face in the center of the frame.'
+          ],
+        );
+      }
+
+      // Face detected and meets requirements
+      return SelfieValidationResult(
+        isValid: true,
+        errors: [],
+      );
+    } catch (e) {
+      // If face detection fails, don't block validation
+      // Return valid result so other validations can proceed
+      return SelfieValidationResult(
+        isValid: true,
+        errors: [],
+      );
+    } finally {
+      // Clean up temporary files
+      try {
+        if (tempFile != null && await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        if (tempDir != null && await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+  }
 }
 

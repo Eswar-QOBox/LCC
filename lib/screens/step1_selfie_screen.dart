@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,34 +27,112 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   SelfieValidationResult? _validationResult;
 
   Future<void> _captureFromCamera() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 90,
-    );
-    if (image != null) {
-      await _setImage(image);
+    if (!mounted) return;
+    
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+      );
+      if (image != null && mounted) {
+        await _setImage(image);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error capturing image: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _selectFromGallery() async {
-    final image = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 90,
-    );
-    if (image != null) {
-      await _setImage(image);
+    if (!mounted) return;
+    
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (image != null && mounted) {
+        await _setImage(image);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error selecting image: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _setImage(XFile imageFile) async {
+    if (!mounted) return;
+    
     try {
+      // Validate file path
+      if (imageFile.path.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Invalid image file'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
       // Read bytes for validation (works on both web and mobile)
-      final bytes = await imageFile.readAsBytes();
-      setState(() {
-        _imagePath = imageFile.path;
-        _imageBytes = bytes;
-        _validationResult = null;
-      });
+      // Add timeout to prevent hanging on large files
+      final bytes = await imageFile.readAsBytes().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException('Image loading timed out');
+        },
+      );
+
+      if (!mounted) return;
+
+      // Validate bytes
+      if (bytes.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image file is empty'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Limit image size to prevent memory issues (max 20MB)
+      if (bytes.length > 20 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image file is too large (max 20MB)'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _imagePath = imageFile.path;
+          _imageBytes = bytes;
+          _validationResult = null;
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
