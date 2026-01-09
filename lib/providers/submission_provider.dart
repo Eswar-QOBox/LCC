@@ -3,8 +3,10 @@ import '../models/document_submission.dart';
 
 class SubmissionProvider with ChangeNotifier {
   DocumentSubmission _submission = DocumentSubmission();
+  bool _termsAccepted = false;
 
   DocumentSubmission get submission => _submission;
+  bool get termsAccepted => _termsAccepted;
 
   // Selfie
   void setSelfie(String path) {
@@ -116,8 +118,20 @@ class SubmissionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Terms & Conditions
+  void acceptTerms() {
+    _termsAccepted = true;
+    notifyListeners();
+  }
+
+  void setTermsAccepted(bool value) {
+    _termsAccepted = value;
+    notifyListeners();
+  }
+
   void reset() {
     _submission = DocumentSubmission();
+    _termsAccepted = false;
     notifyListeners();
   }
 }

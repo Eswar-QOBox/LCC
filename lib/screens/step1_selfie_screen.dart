@@ -68,8 +68,8 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     });
 
     if (result.isValid) {
-      context.read<SubmissionProvider>().setSelfie(_imagePath!);
       if (mounted) {
+        context.read<SubmissionProvider>().setSelfie(_imagePath!);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Selfie validated successfully!'),
@@ -159,6 +159,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
               title: const Text('Step 1: Selfie / Photo'),
               elevation: 0,
               backgroundColor: Colors.transparent,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go(AppRoutes.home),
+              ),
             ),
             
             // Content

@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Custom color palette
-  static const Color primaryColor = Color(0xFF6366F1); // Indigo
-  static const Color secondaryColor = Color(0xFF8B5CF6); // Purple
-  static const Color accentColor = Color(0xFF06B6D4); // Cyan
+  // Custom color palette - Teal/Cyan theme
+  static const Color primaryColor = Color(0xFF14B8A6); // Teal
+  static const Color secondaryColor = Color(0xFF06B6D4); // Cyan
+  static const Color accentColor = Color(0xFF5EEAD4); // Light Teal
   static const Color successColor = Color(0xFF10B981); // Green
   static const Color errorColor = Color(0xFFEF4444); // Red
   static const Color warningColor = Color(0xFFF59E0B); // Amber
+  static const Color infoColor = Color(0xFF06B6D4); // Cyan for info
 
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
@@ -38,7 +39,7 @@ class AppTheme {
       // Card Theme
       cardTheme: CardThemeData(
         elevation: 4,
-        shadowColor: Colors.black.withOpacity(0.1),
+        shadowColor: Colors.black.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -155,7 +156,7 @@ class AppTheme {
       // Card Theme
       cardTheme: CardThemeData(
         elevation: 4,
-        shadowColor: Colors.black.withOpacity(0.3),
+        shadowColor: Colors.black.withValues(alpha: 0.3),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),

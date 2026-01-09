@@ -1,0 +1,182 @@
+import 'package:flutter/material.dart';
+
+class PremiumButton extends StatefulWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool isPrimary;
+  final bool isLoading;
+  final double? width;
+
+  const PremiumButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.icon,
+    this.isPrimary = true,
+    this.isLoading = false,
+    this.width,
+  });
+
+  @override
+  State<PremiumButton> createState() => _PremiumButtonState();
+}
+
+class _PremiumButtonState extends State<PremiumButton>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 100),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    if (widget.isPrimary) {
+      return GestureDetector(
+        onTapDown: (_) => _controller.forward(),
+        onTapUp: (_) {
+          _controller.reverse();
+          if (widget.onPressed != null && !widget.isLoading) {
+            widget.onPressed!();
+          }
+        },
+        onTapCancel: () => _controller.reverse(),
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: Container(
+            width: widget.width ?? double.infinity,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.primary,
+                  colorScheme.secondary,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: colorScheme.primary.withValues(alpha: 0.4),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                  spreadRadius: 0,
+                ),
+                BoxShadow(
+                  color: colorScheme.secondary.withValues(alpha: 0.2),
+                  blurRadius: 15,
+                  offset: const Offset(0, 5),
+                  spreadRadius: 0,
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.isLoading ? null : widget.onPressed,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (widget.isLoading)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      else if (widget.icon != null) ...[
+                        Icon(widget.icon, color: Colors.white, size: 22),
+                        const SizedBox(width: 12),
+                      ],
+                      Text(
+                        widget.label,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: widget.width ?? double.infinity,
+      height: 56,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.primary,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.icon != null) ...[
+                  Icon(widget.icon, color: colorScheme.primary, size: 22),
+                  const SizedBox(width: 12),
+                ],
+                Text(
+                  widget.label,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
