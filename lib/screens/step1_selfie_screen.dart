@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +21,7 @@ class Step1SelfieScreen extends StatefulWidget {
 class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _imagePath;
+  Uint8List? _imageBytes;
   bool _isValidating = false;
   SelfieValidationResult? _validationResult;
 
@@ -29,7 +31,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       imageQuality: 90,
     );
     if (image != null) {
-      _setImage(image.path);
+      await _setImage(image);
     }
   }
 
@@ -39,78 +41,125 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       imageQuality: 90,
     );
     if (image != null) {
-      _setImage(image.path);
+      await _setImage(image);
     }
   }
 
-  void _setImage(String path) {
-    setState(() {
-      _imagePath = path;
-      _validationResult = null;
-    });
+  Future<void> _setImage(XFile imageFile) async {
+    try {
+      // Read bytes for validation (works on both web and mobile)
+      final bytes = await imageFile.readAsBytes();
+      setState(() {
+        _imagePath = imageFile.path;
+        _imageBytes = bytes;
+        _validationResult = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading image: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _validateImage() async {
-    if (_imagePath == null) return;
+    if (_imagePath == null || _imageBytes == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please capture or select an image first'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
 
     setState(() {
       _isValidating = true;
     });
 
-    // Simulate validation delay
-    await Future.delayed(const Duration(milliseconds: 500));
+    try {
+      // Simulate validation delay
+      await Future.delayed(const Duration(milliseconds: 500));
 
-    final result = await DocumentService.validateSelfie(_imagePath!);
+      final result = await DocumentService.validateSelfie(
+        _imagePath!,
+        imageBytes: _imageBytes,
+      );
 
-    setState(() {
-      _validationResult = result;
-      _isValidating = false;
-    });
+      if (!mounted) return;
 
-    if (result.isValid) {
-      if (mounted) {
-        context.read<SubmissionProvider>().setSelfie(_imagePath!);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Selfie validated successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } else {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Validation Failed'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Please ensure:'),
-                const SizedBox(height: 8),
-                ...result.errors.map((error) => Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Text('• $error'),
-                    )),
-                const SizedBox(height: 16),
-                const Text(
-                  'Requirements:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+      setState(() {
+        _validationResult = result;
+        _isValidating = false;
+      });
+
+      if (result.isValid) {
+        if (mounted) {
+          context.read<SubmissionProvider>().setSelfie(_imagePath!);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Selfie validated successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Validation Failed'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Please ensure:'),
+                    const SizedBox(height: 8),
+                    ...result.errors.map((error) => Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text('• $error'),
+                        )),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Requirements:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const Text('• White background (passport style)'),
+                    const Text('• Face clearly visible'),
+                    const Text('• Good lighting'),
+                    const Text('• No filters / editing'),
+                    const Text('• No shadows'),
+                  ],
                 ),
-                const Text('• White background (passport style)'),
-                const Text('• Face clearly visible'),
-                const Text('• Good lighting'),
-                const Text('• No filters / editing'),
-                const Text('• No shadows'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Retry'),
+                ),
               ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Retry'),
-              ),
-            ],
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isValidating = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error validating image: ${e.toString()}'),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -151,9 +200,6 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: Column(
           children: [
-            // Progress Indicator
-            StepProgressIndicator(currentStep: 1, totalSteps: 6),
-            
             // AppBar
             AppBar(
               title: const Text('Step 1: Selfie / Photo'),
@@ -164,6 +210,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                 onPressed: () => context.go(AppRoutes.home),
               ),
             ),
+            
+            // Progress Indicator (below AppBar)
+            const StepProgressIndicator(currentStep: 1, totalSteps: 6),
             
             // Content
             Expanded(
@@ -267,6 +316,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                             children: [
                               PlatformImage(
                                 imagePath: _imagePath!,
+                                imageBytes: _imageBytes,
                                 fit: BoxFit.cover,
                               ),
                               // Overlay gradient

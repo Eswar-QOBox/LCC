@@ -1,0 +1,167 @@
+================================================================================
+SELFIE VALIDATION - IMPLEMENTATION STATUS & CURRENT ISSUES
+================================================================================
+
+DATE: Current Session
+PROJECT: Customer App - Phase 1 - Documents Module
+FEATURE: Selfie/Photo Validation
+
+================================================================================
+WHAT WE HAVE DONE:
+================================================================================
+
+1. IMPLEMENTED SELFIE VALIDATION FUNCTIONALITY
+   - Created comprehensive validation in lib/services/document_service.dart
+   - Validation includes multiple checks:
+     * Image resolution (minimum 400x400px)
+     * File size (between 50KB and 10MB)
+     * Image format validation (JPEG/PNG)
+     * Aspect ratio validation (portrait/square orientation)
+     * Image quality checks (brightness, contrast)
+     * Background uniformity check
+     * Lighting conditions check
+     * Color variance check (to detect filters/editing)
+
+2. PLATFORM COMPATIBILITY FIXES
+   - Fixed web platform compatibility issues
+   - Created file_helper_stub.dart for web compilation
+   - Implemented conditional imports for dart:io
+   - Ensured imageBytes are passed for web validation
+
+3. UI IMPROVEMENTS
+   - Added progress bar below AppBar (as requested)
+   - Gallery option already available alongside Camera option
+   - Enhanced validation feedback with clear error messages
+   - Premium UI with teal/cyan color scheme
+
+4. BACKGROUND VALIDATION RULES (RECENTLY ADJUSTED)
+   - Changed from absolute variance threshold to coefficient of variation
+   - Threshold: 15% coefficient of variation (more lenient)
+   - Brightness threshold: 150 (allows light grey backgrounds)
+   - Should allow clear backgrounds with subtle variations
+
+================================================================================
+CURRENT ERROR / ISSUE:
+================================================================================
+
+ERROR DESCRIPTION:
+- User reports that validation is still failing with "Background has too much 
+  variation. Please use a plain white background" error
+- User states the background was actually clear/acceptable
+- This suggests the validation rules are still too strict
+
+ERROR LOCATION:
+- File: lib/services/document_service.dart
+- Function: _checkBackground()
+- Line: ~274-277 (background uniformity check)
+
+CURRENT VALIDATION LOGIC:
+1. Samples edge pixels of the image (top, bottom, left, right edges)
+2. Calculates average brightness of edge pixels
+3. Calculates variance and standard deviation
+4. Calculates coefficient of variation (std dev / mean * 100)
+5. Fails if:
+   - Average brightness < 150 (too dark)
+   - Coefficient of variation > 15% (too much variation)
+
+POSSIBLE ISSUES:
+1. Edge pixel sampling might be picking up subject pixels instead of background
+2. The 15% threshold might still be too strict for acceptable backgrounds
+3. The sampling method (every 50px) might miss uniform areas
+4. Light grey backgrounds with subtle shadows might exceed 15% variation
+5. The coefficient of variation calculation might need adjustment
+
+================================================================================
+TECHNICAL DETAILS:
+================================================================================
+
+VALIDATION CONSTANTS:
+- minWidth: 400px
+- minHeight: 400px
+- maxFileSizeMB: 10
+- minFileSizeKB: 50
+- minAspectRatio: 0.6
+- maxAspectRatio: 1.4
+- Background brightness threshold: 150
+- Background variation threshold: 15% coefficient of variation
+
+SAMPLING METHOD:
+- Sample size: Every 50 pixels along edges
+- Checks: Top edge, bottom edge, left edge, right edge
+- Calculates: Average brightness, variance, standard deviation
+
+VALIDATION CHECKS PERFORMED:
+1. File existence and size
+2. Image decoding
+3. Dimensions (width/height)
+4. Aspect ratio
+5. Image quality (brightness, contrast)
+6. Color variance (filter detection)
+7. Background uniformity and brightness
+8. Lighting conditions (face area)
+
+================================================================================
+FILES INVOLVED:
+================================================================================
+
+1. lib/services/document_service.dart
+   - Main validation logic
+   - _checkBackground() function (lines ~233-284)
+   - _calculateVariance() helper function
+
+2. lib/screens/step1_selfie_screen.dart
+   - UI for selfie capture/validation
+   - Calls DocumentService.validateSelfie()
+   - Displays validation results
+
+3. lib/services/file_helper_stub.dart
+   - Web platform compatibility stub
+
+4. lib/models/document_submission.dart
+   - SelfieValidationResult model
+
+================================================================================
+NEXT STEPS / RECOMMENDATIONS:
+================================================================================
+
+1. INCREASE VARIATION THRESHOLD
+   - Consider increasing from 15% to 20-25%
+   - Or make it configurable/testable
+
+2. IMPROVE SAMPLING METHOD
+   - Sample more pixels from corners (pure background areas)
+   - Exclude areas that might contain subject
+   - Use corner regions more heavily
+
+3. ADD DEBUG LOGGING
+   - Log actual coefficient of variation values
+   - Log average brightness values
+   - Help identify what values are causing failures
+
+4. MAKE VALIDATION MORE LENIENT
+   - Consider only flagging very obvious issues
+   - Allow more variation in light backgrounds
+   - Focus on detecting truly problematic backgrounds (dark, patterned, etc.)
+
+5. TEST WITH ACTUAL IMAGES
+   - Test with various background types
+   - Adjust thresholds based on real-world results
+   - Consider A/B testing different thresholds
+
+================================================================================
+CODE SNIPPETS:
+================================================================================
+
+Current Background Check Logic (simplified):
+```
+- Sample edge pixels (every 50px)
+- Calculate average brightness
+- Calculate variance and std deviation
+- Calculate coefficient of variation = (stdDev / mean) * 100
+- Fail if: brightness < 150 OR coefficient > 15%
+```
+
+================================================================================
+END OF DOCUMENT
+================================================================================
+
