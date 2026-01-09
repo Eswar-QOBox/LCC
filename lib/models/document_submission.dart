@@ -77,36 +77,102 @@ class BankStatement {
 }
 
 class PersonalData {
-  String? fullName;
+  // Basic Information
+  String? nameAsPerAadhaar;
   DateTime? dateOfBirth;
-  String? address;
-  String? mobile;
-  String? email;
-  String? employmentStatus;
-  String? incomeDetails;
+  String? panNo;
+  String? mobileNumber;
+  String? personalEmailId;
+  
+  // Residence Information
+  String? countryOfResidence;
+  String? residenceAddress;
+  String? residenceType;
+  String? residenceStability;
+  
+  // Company Information
+  String? companyName;
+  String? companyAddress;
+  
+  // Personal Details
+  String? nationality;
+  String? countryOfBirth;
+  String? occupation;
+  String? educationalQualification;
+  String? workType;
+  String? industry;
+  String? annualIncome;
+  String? totalWorkExperience;
+  String? currentCompanyExperience;
+  String? loanAmountTenure;
+  
+  // Family Information
+  String? maritalStatus; // Married/Unmarried
+  String? spouseName;
+  String? fatherName;
+  String? motherName;
+  
+  // Reference Details
+  String? reference1Name;
+  String? reference1Address;
+  String? reference1Contact;
+  String? reference2Name;
+  String? reference2Address;
+  String? reference2Contact;
 
   PersonalData({
-    this.fullName,
+    this.nameAsPerAadhaar,
     this.dateOfBirth,
-    this.address,
-    this.mobile,
-    this.email,
-    this.employmentStatus,
-    this.incomeDetails,
+    this.panNo,
+    this.mobileNumber,
+    this.personalEmailId,
+    this.countryOfResidence,
+    this.residenceAddress,
+    this.residenceType,
+    this.residenceStability,
+    this.companyName,
+    this.companyAddress,
+    this.nationality,
+    this.countryOfBirth,
+    this.occupation,
+    this.educationalQualification,
+    this.workType,
+    this.industry,
+    this.annualIncome,
+    this.totalWorkExperience,
+    this.currentCompanyExperience,
+    this.loanAmountTenure,
+    this.maritalStatus,
+    this.spouseName,
+    this.fatherName,
+    this.motherName,
+    this.reference1Name,
+    this.reference1Address,
+    this.reference1Contact,
+    this.reference2Name,
+    this.reference2Address,
+    this.reference2Contact,
   });
 
+  // Legacy getters for backward compatibility
+  String? get fullName => nameAsPerAadhaar;
+  String? get address => residenceAddress;
+  String? get mobile => mobileNumber;
+  String? get email => personalEmailId;
+  String? get employmentStatus => occupation;
+
   bool get isComplete {
-    return fullName != null &&
-        fullName!.isNotEmpty &&
+    return nameAsPerAadhaar != null &&
+        nameAsPerAadhaar!.isNotEmpty &&
         dateOfBirth != null &&
-        address != null &&
-        address!.isNotEmpty &&
-        mobile != null &&
-        mobile!.isNotEmpty &&
-        email != null &&
-        email!.isNotEmpty &&
-        employmentStatus != null &&
-        employmentStatus!.isNotEmpty;
+        panNo != null &&
+        panNo!.isNotEmpty &&
+        mobileNumber != null &&
+        mobileNumber!.isNotEmpty &&
+        personalEmailId != null &&
+        personalEmailId!.isNotEmpty &&
+        residenceAddress != null &&
+        residenceAddress!.isNotEmpty;
   }
 }
 

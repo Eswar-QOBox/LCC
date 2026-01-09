@@ -36,9 +36,18 @@ class SubmissionSuccessScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 Text(
-                  'Submission Successful!',
+                  'Submitted Successfully!',
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Your documents have been submitted successfully.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Colors.grey.shade600,
                       ),
                   textAlign: TextAlign.center,
                 ),

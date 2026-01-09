@@ -273,28 +273,56 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                     const SizedBox(height: 32),
                     // Front & Back Side Preview
                     if (_frontPath != null && _backPath != null) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildSidePreview(
-                              context,
-                              'Front',
-                              _frontPath!,
-                              _isPdf,
-                              onTap: _captureFront,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildSidePreview(
-                              context,
-                              'Back',
-                              _backPath!,
-                              _isPdf,
-                              onTap: _captureBack,
-                            ),
-                          ),
-                        ],
+                      // Use LayoutBuilder to handle overflow on small screens
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // On small screens, stack vertically; on larger screens, show side by side
+                          if (constraints.maxWidth < 600) {
+                            return Column(
+                              children: [
+                                _buildSidePreview(
+                                  context,
+                                  'Front',
+                                  _frontPath!,
+                                  _isPdf,
+                                  onTap: _captureFront,
+                                ),
+                                const SizedBox(height: 16),
+                                _buildSidePreview(
+                                  context,
+                                  'Back',
+                                  _backPath!,
+                                  _isPdf,
+                                  onTap: _captureBack,
+                                ),
+                              ],
+                            );
+                          } else {
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: _buildSidePreview(
+                                    context,
+                                    'Front',
+                                    _frontPath!,
+                                    _isPdf,
+                                    onTap: _captureFront,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _buildSidePreview(
+                                    context,
+                                    'Back',
+                                    _backPath!,
+                                    _isPdf,
+                                    onTap: _captureBack,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                        },
                       ),
                     ] else ...[
                       // Front Side
@@ -475,8 +503,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               Positioned(
                 top: 12,
                 left: 12,
+                right: 60, // Reserve space for camera button to prevent overflow
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  constraints: const BoxConstraints(
+                    maxWidth: double.infinity,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(20),
@@ -484,6 +516,32 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   child: Text(
                     label,
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+              // Camera icon button overlay
+              Positioned(
+                bottom: 12,
+                right: 12,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
+                    onPressed: onTap,
+                    padding: const EdgeInsets.all(12),
+                    constraints: const BoxConstraints(),
                   ),
                 ),
               ),
@@ -543,26 +601,58 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: PremiumButton(
-                  label: 'Camera',
-                  icon: Icons.camera_alt,
-                  isPrimary: false,
-                  onPressed: onCamera,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: PremiumButton(
-                  label: 'Gallery',
-                  icon: Icons.photo_library,
-                  isPrimary: false,
-                  onPressed: onGallery,
-                ),
-              ),
-            ],
+          // Use Flexible/Expanded with proper constraints to prevent overflow
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // On very small screens, stack buttons vertically
+              if (constraints.maxWidth < 300) {
+                return Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: PremiumButton(
+                        label: 'Camera',
+                        icon: Icons.camera_alt,
+                        isPrimary: false,
+                        onPressed: onCamera,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: PremiumButton(
+                        label: 'Gallery',
+                        icon: Icons.photo_library,
+                        isPrimary: false,
+                        onPressed: onGallery,
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: PremiumButton(
+                        label: 'Camera',
+                        icon: Icons.camera_alt,
+                        isPrimary: false,
+                        onPressed: onCamera,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: PremiumButton(
+                        label: 'Gallery',
+                        icon: Icons.photo_library,
+                        isPrimary: false,
+                        onPressed: onGallery,
+                      ),
+                    ),
+                  ],
+                );
+              }
+            },
           ),
         ],
       ),

@@ -87,18 +87,19 @@ class SubmissionProvider with ChangeNotifier {
     String? incomeDetails,
   }) {
     _submission.personalData ??= PersonalData();
-    if (fullName != null) _submission.personalData!.fullName = fullName;
+    // Map legacy fields to new fields for backward compatibility
+    if (fullName != null) _submission.personalData!.nameAsPerAadhaar = fullName;
     if (dateOfBirth != null) {
       _submission.personalData!.dateOfBirth = dateOfBirth;
     }
-    if (address != null) _submission.personalData!.address = address;
-    if (mobile != null) _submission.personalData!.mobile = mobile;
-    if (email != null) _submission.personalData!.email = email;
+    if (address != null) _submission.personalData!.residenceAddress = address;
+    if (mobile != null) _submission.personalData!.mobileNumber = mobile;
+    if (email != null) _submission.personalData!.personalEmailId = email;
     if (employmentStatus != null) {
-      _submission.personalData!.employmentStatus = employmentStatus;
+      _submission.personalData!.occupation = employmentStatus;
     }
     if (incomeDetails != null) {
-      _submission.personalData!.incomeDetails = incomeDetails;
+      _submission.personalData!.annualIncome = incomeDetails;
     }
     notifyListeners();
   }
