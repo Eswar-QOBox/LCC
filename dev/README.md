@@ -21,7 +21,7 @@ Each README file in this folder documents a specific development stage with:
 **File:** [STAGE_01_INITIAL_SKELETON.md](./STAGE_01_INITIAL_SKELETON.md)
 
 ### Stage 2: Terms Acceptance & UI Enhancements
-**Commit:** `[To be added]`  
+**Commit:** `11f3210`  
 **Date:** Current  
 **File:** [STAGE_02_TERMS_ACCEPTANCE_UI_ENHANCEMENTS.md](./STAGE_02_TERMS_ACCEPTANCE_UI_ENHANCEMENTS.md)
 

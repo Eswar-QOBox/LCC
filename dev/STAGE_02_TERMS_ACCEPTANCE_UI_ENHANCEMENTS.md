@@ -1,6 +1,6 @@
 # Stage 2: Terms Acceptance & UI Enhancements
 
-**Commit Hash:** `[To be added after commit]`  
+**Commit Hash:** `11f3210`  
 **Date:** Current  
 **Status:** ✅ Complete
 
@@ -212,7 +212,7 @@ This stage implements mandatory Terms & Conditions acceptance, enhances the Term
 ## Commit Details
 
 ```
-Commit: [To be added]
+Commit: 11f3210
 Message: feat: Add terms acceptance requirement and enhance UI with teal/cyan theme
 
 Changes:
