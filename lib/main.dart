@@ -1,0 +1,95 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'providers/submission_provider.dart';
+import 'utils/app_theme.dart';
+import 'utils/app_routes.dart';
+import 'screens/splash_screen.dart';
+import 'screens/branding_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/instructions_screen.dart';
+import 'screens/terms_screen.dart';
+import 'screens/step1_selfie_screen.dart';
+import 'screens/step2_aadhaar_screen.dart';
+import 'screens/step3_pan_screen.dart';
+import 'screens/step4_bank_statement_screen.dart';
+import 'screens/step5_personal_data_screen.dart';
+import 'screens/step6_preview_screen.dart';
+import 'screens/submission_success_screen.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => SubmissionProvider(),
+      child: MaterialApp.router(
+        title: 'LCC - Document Submission',
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.light,
+        routerConfig: _router,
+        debugShowCheckedModeBanner: false,
+      ),
+    );
+  }
+}
+
+final GoRouter _router = GoRouter(
+  initialLocation: AppRoutes.splash,
+  routes: [
+    GoRoute(
+      path: AppRoutes.splash,
+      builder: (context, state) => const SplashScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.branding,
+      builder: (context, state) => const BrandingScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.login,
+      builder: (context, state) => const LoginScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.home,
+      builder: (context, state) => const InstructionsScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.termsAndConditions,
+      builder: (context, state) => const TermsScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step1Selfie,
+      builder: (context, state) => const Step1SelfieScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step2Aadhaar,
+      builder: (context, state) => const Step2AadhaarScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step3Pan,
+      builder: (context, state) => const Step3PanScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step4BankStatement,
+      builder: (context, state) => const Step4BankStatementScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step5PersonalData,
+      builder: (context, state) => const Step5PersonalDataScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step6Preview,
+      builder: (context, state) => const Step6PreviewScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.submissionSuccess,
+      builder: (context, state) => const SubmissionSuccessScreen(),
+    ),
+  ],
+);
