@@ -514,64 +514,68 @@ class Step6PreviewScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: isComplete
-                          ? LinearGradient(
-                              colors: [
-                                AppTheme.successColor,
-                                AppTheme.successColor.withValues(alpha: 0.8),
-                              ],
-                            )
-                          : null,
-                      color: isComplete ? null : Colors.grey.shade300,
-                      shape: BoxShape.circle,
-                      boxShadow: isComplete
-                          ? [
-                              BoxShadow(
-                                color: AppTheme.successColor.withValues(alpha: 0.3),
-                                blurRadius: 8,
-                                spreadRadius: 1,
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        gradient: isComplete
+                            ? LinearGradient(
+                                colors: [
+                                  AppTheme.successColor,
+                                  AppTheme.successColor.withValues(alpha: 0.8),
+                                ],
+                              )
+                            : null,
+                        color: isComplete ? null : Colors.grey.shade300,
+                        shape: BoxShape.circle,
+                        boxShadow: isComplete
+                            ? [
+                                BoxShadow(
+                                  color: AppTheme.successColor.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: isComplete
+                            ? const Icon(Icons.check, color: Colors.white, size: 20)
+                            : Text(
+                                '$stepNumber',
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ]
-                          : null,
-                    ),
-                    child: Center(
-                      child: isComplete
-                          ? const Icon(Icons.check, color: Colors.white, size: 20)
-                          : Text(
-                              '$stepNumber',
-                              style: TextStyle(
-                                color: Colors.grey.shade700,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: colorScheme.primary, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 16),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon, color: colorScheme.primary, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Container(
                 decoration: BoxDecoration(

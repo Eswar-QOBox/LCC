@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../utils/app_routes.dart';
+import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
@@ -40,8 +42,41 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       allowedExtensions: ['pdf'],
     );
 
-    if (result != null && result.files.single.path != null) {
-      final path = result.files.single.path!;
+    if (result != null && result.files.isNotEmpty) {
+      String path;
+      
+      if (kIsWeb) {
+        // On web, use bytes to create a blob URL
+        final bytes = result.files.single.bytes;
+        if (bytes == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to read PDF file'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        // Create blob URL from bytes
+        path = createBlobUrl(bytes, mimeType: 'application/pdf');
+      } else {
+        // On mobile/desktop, use file path
+        if (result.files.single.path == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to get file path'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        path = result.files.single.path!;
+      }
+      
       if (mounted) {
         setState(() {
           _pages = [path];
@@ -54,6 +89,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       }
     }
   }
+
 
   Future<void> _capturePage() async {
     final image = await _imagePicker.pickImage(source: ImageSource.camera);

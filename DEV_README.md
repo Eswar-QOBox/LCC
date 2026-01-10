@@ -226,8 +226,9 @@ lib/
 
 ---
 
-## 🏗️ Architecture Diagram
+## 🏗️ Architecture & Modules
 
+### Architecture Diagrams
 For detailed architecture diagrams, component relationships, and data flow, see **[ARCHITECTURE.md](./ARCHITECTURE.md)**.
 
 The architecture document includes:
@@ -238,6 +239,17 @@ The architecture document includes:
 - Integration points
 - Security architecture
 - Navigation structure
+
+### Modules & Submodules
+For comprehensive documentation of all modules, submodules, and their responsibilities, see **[MODULES_README.md](./MODULES_README.md)**.
+
+The modules document includes:
+- Complete module breakdown
+- Submodule details for each module
+- Module dependencies
+- Usage examples
+- Module responsibilities
+- Maintenance guidelines
 
 ---
 
