@@ -43,9 +43,7 @@ class Directory {
     throw UnsupportedError('Directory operations not available on web');
   }
   
-  static Future<Directory> systemTemp() async {
-    throw UnsupportedError('Directory operations not available on web');
-  }
+  static Directory get systemTemp => Directory('');
 }
 
 /// Stub FileMode enum for web platform

@@ -15,8 +15,10 @@ class DocumentService {
   static const int maxFileSizeMB = 10;
   static const int minFileSizeKB = 50; // Too small might be corrupted
   // More lenient aspect ratio for live selfies - allows portrait, square, and slight landscape
-  static const double minAspectRatio = 0.5; // Very tall portrait (2:1 height:width)
-  static const double maxAspectRatio = 2.0; // Slight landscape (2:1 width:height)
+  static const double minAspectRatio =
+      0.5; // Very tall portrait (2:1 height:width)
+  static const double maxAspectRatio =
+      2.0; // Slight landscape (2:1 width:height)
 
   /// Validates selfie based on requirements
   static Future<SelfieValidationResult> validateSelfie(
@@ -44,7 +46,9 @@ class DocumentService {
           // Return a helpful error message
           return SelfieValidationResult(
             isValid: false,
-            errors: ['Image validation on web requires image data. Please ensure the image was properly selected.'],
+            errors: [
+              'Image validation on web requires image data. Please ensure the image was properly selected.',
+            ],
           );
         } else {
           // On mobile/desktop, read from file path
@@ -94,7 +98,9 @@ class DocumentService {
       } catch (e) {
         return SelfieValidationResult(
           isValid: false,
-          errors: ['Failed to decode image. Please ensure it is a valid image file'],
+          errors: [
+            'Failed to decode image. Please ensure it is a valid image file',
+          ],
         );
       }
 
@@ -177,10 +183,7 @@ class DocumentService {
         }
       }
 
-      return SelfieValidationResult(
-        isValid: errors.isEmpty,
-        errors: errors,
-      );
+      return SelfieValidationResult(isValid: errors.isEmpty, errors: errors);
     } catch (e) {
       return SelfieValidationResult(
         isValid: false,
@@ -319,16 +322,16 @@ class DocumentService {
     if (image.width <= 0 || image.height <= 0) {
       return image; // Return original if invalid
     }
-    
+
     const double targetAspectRatio = 3.0 / 4.0; // Portrait: width:height = 3:4
     final int originalWidth = image.width;
     final int originalHeight = image.height;
-    
+
     // Prevent division by zero
     if (originalHeight == 0) {
       return image;
     }
-    
+
     final double originalAspectRatio = originalWidth / originalHeight;
 
     int targetWidth;
@@ -340,46 +343,72 @@ class DocumentService {
         // Image is wider than target - crop width (center crop)
         targetHeight = math.max(originalHeight, minHeight);
         targetWidth = (targetHeight * targetAspectRatio).round();
-        
+
         // Validate dimensions
         if (targetWidth <= 0 || targetHeight <= 0) {
           return image;
         }
-        
+
         // Center crop horizontally
         final int cropX = ((originalWidth - targetWidth) / 2).round();
         final int cropY = 0;
-        
-        if (cropX >= 0 && cropX + targetWidth <= originalWidth && targetWidth > 0 && targetHeight > 0) {
-          image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
+
+        if (cropX >= 0 &&
+            cropX + targetWidth <= originalWidth &&
+            targetWidth > 0 &&
+            targetHeight > 0) {
+          image = img.copyCrop(
+            image,
+            x: cropX,
+            y: cropY,
+            width: targetWidth,
+            height: targetHeight,
+          );
         } else {
           // If crop would go out of bounds, just resize
           targetWidth = (targetHeight * targetAspectRatio).round();
           if (targetWidth > 0 && targetHeight > 0) {
-            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+            image = img.copyResize(
+              image,
+              width: targetWidth,
+              height: targetHeight,
+            );
           }
         }
       } else {
         // Image is taller than target - crop height (center crop)
         targetWidth = math.max(originalWidth, minWidth);
         targetHeight = (targetWidth / targetAspectRatio).round();
-        
+
         // Validate dimensions
         if (targetWidth <= 0 || targetHeight <= 0) {
           return image;
         }
-        
+
         // Center crop vertically
         final int cropX = 0;
         final int cropY = ((originalHeight - targetHeight) / 2).round();
-        
-        if (cropY >= 0 && cropY + targetHeight <= originalHeight && targetWidth > 0 && targetHeight > 0) {
-          image = img.copyCrop(image, x: cropX, y: cropY, width: targetWidth, height: targetHeight);
+
+        if (cropY >= 0 &&
+            cropY + targetHeight <= originalHeight &&
+            targetWidth > 0 &&
+            targetHeight > 0) {
+          image = img.copyCrop(
+            image,
+            x: cropX,
+            y: cropY,
+            width: targetWidth,
+            height: targetHeight,
+          );
         } else {
           // If crop would go out of bounds, just resize
           targetHeight = (targetWidth / targetAspectRatio).round();
           if (targetWidth > 0 && targetHeight > 0) {
-            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+            image = img.copyResize(
+              image,
+              width: targetWidth,
+              height: targetHeight,
+            );
           }
         }
       }
@@ -387,11 +416,18 @@ class DocumentService {
       // Ensure minimum dimensions
       if (image.width > 0 && image.height > 0) {
         if (image.width < minWidth || image.height < minHeight) {
-          final double scale = math.max(minWidth / image.width, minHeight / image.height);
+          final double scale = math.max(
+            minWidth / image.width,
+            minHeight / image.height,
+          );
           targetWidth = (image.width * scale).round();
           targetHeight = (image.height * scale).round();
           if (targetWidth > 0 && targetHeight > 0) {
-            image = img.copyResize(image, width: targetWidth, height: targetHeight);
+            image = img.copyResize(
+              image,
+              width: targetWidth,
+              height: targetHeight,
+            );
           }
         }
       }
@@ -405,7 +441,9 @@ class DocumentService {
 
   /// Validates background with relaxed rules suitable for live selfie capture
   /// Returns: (isValid, errorMessage, debugInfo)
-  static (bool, String?, Map<String, dynamic>) _checkBackground(img.Image image) {
+  static (bool, String?, Map<String, dynamic>) _checkBackground(
+    img.Image image,
+  ) {
     // Validate image dimensions
     if (image.width <= 0 || image.height <= 0) {
       return (true, null, {'error': 'invalid_dimensions'});
@@ -413,7 +451,8 @@ class DocumentService {
 
     // Relaxed configuration for live selfies
     const double brightnessThreshold = 100.0; // Allow darker backgrounds
-    const double coefficientVariationThreshold = 80.0; // Very lenient - 80% (allows most backgrounds)
+    const double coefficientVariationThreshold =
+        80.0; // Very lenient - 80% (allows most backgrounds)
     const int sampleInterval = 50;
 
     final List<int> backgroundSamples = [];
@@ -439,9 +478,11 @@ class DocumentService {
     // Bottom edge
     for (int x = 0; x < image.width; x += sampleInterval) {
       if (x >= image.width) break;
-      for (int y = math.max(0, image.height - edgeMargin);
-          y < image.height;
-          y += 10) {
+      for (
+        int y = math.max(0, image.height - edgeMargin);
+        y < image.height;
+        y += 10
+      ) {
         if (y >= image.height) break;
         try {
           final pixel = image.getPixel(x, y);
@@ -469,9 +510,11 @@ class DocumentService {
     // Right edge
     for (int y = 0; y < image.height; y += sampleInterval) {
       if (y >= image.height) break;
-      for (int x = math.max(0, image.width - edgeMargin);
-          x < image.width;
-          x += 10) {
+      for (
+        int x = math.max(0, image.width - edgeMargin);
+        x < image.width;
+        x += 10
+      ) {
         if (x >= image.width) break;
         try {
           final pixel = image.getPixel(x, y);
@@ -486,7 +529,7 @@ class DocumentService {
       return (
         false,
         'Unable to analyze background',
-        {'error': 'insufficient_samples'}
+        {'error': 'insufficient_samples'},
       );
     }
 
@@ -495,12 +538,15 @@ class DocumentService {
         backgroundSamples.reduce((a, b) => a + b) / backgroundSamples.length;
     final variance = _calculateVariance(backgroundSamples, avgBrightness);
     final stdDev = math.sqrt(variance);
-    final coefficientOfVariation =
-        avgBrightness > 0 ? (stdDev / avgBrightness) * 100 : 0;
+    final coefficientOfVariation = avgBrightness > 0
+        ? (stdDev / avgBrightness) * 100
+        : 0;
 
     // Debug info (optional - can remove in production)
     debugInfo['avg_brightness'] = avgBrightness.toStringAsFixed(1);
-    debugInfo['coefficient_variation'] = coefficientOfVariation.toStringAsFixed(1);
+    debugInfo['coefficient_variation'] = coefficientOfVariation.toStringAsFixed(
+      1,
+    );
     debugInfo['sample_count'] = backgroundSamples.length;
 
     // Only fail on obviously problematic backgrounds
@@ -510,7 +556,7 @@ class DocumentService {
       return (
         false,
         'Background is too dark. Please ensure better lighting.',
-        debugInfo
+        debugInfo,
       );
     }
 
@@ -519,7 +565,7 @@ class DocumentService {
       return (
         false,
         'Background is too busy. Please use a simpler background.',
-        debugInfo
+        debugInfo,
       );
     }
 
@@ -565,10 +611,7 @@ class DocumentService {
       }
     }
 
-    return SelfieValidationResult(
-      isValid: errors.isEmpty,
-      errors: errors,
-    );
+    return SelfieValidationResult(isValid: errors.isEmpty, errors: errors);
   }
 
   /// Calculate contrast of the image
@@ -615,7 +658,7 @@ class DocumentService {
     // - Glare detection
     // - Resolution validation
     // - OCR readability
-    
+
     return true;
   }
 
@@ -636,7 +679,7 @@ class DocumentService {
   ) async {
     io.File? tempFile;
     io.Directory? tempDir;
-    
+
     try {
       // Validate inputs
       if (imageBytes.isEmpty || width <= 0 || height <= 0) {
@@ -659,7 +702,7 @@ class DocumentService {
       tempDir = await io.Directory.systemTemp.createTemp('selfie_validation_');
       tempFile = io.File('${tempDir.path}/temp_image.jpg');
       await tempFile.writeAsBytes(imageBytes);
-      
+
       // Verify file was created
       if (!await tempFile.exists()) {
         return SelfieValidationResult(
@@ -667,7 +710,7 @@ class DocumentService {
           errors: [],
         );
       }
-      
+
       final inputImage = InputImage.fromFilePath(tempFile.path);
 
       // Configure face detector options - lenient settings for better detection
@@ -686,10 +729,7 @@ class DocumentService {
         faceDetector = FaceDetector(options: options);
       } catch (e) {
         // If detector creation fails, don't block
-        return SelfieValidationResult(
-          isValid: true,
-          errors: [],
-        );
+        return SelfieValidationResult(isValid: true, errors: []);
       }
 
       // Detect faces with error handling
@@ -719,7 +759,7 @@ class DocumentService {
         return SelfieValidationResult(
           isValid: false,
           errors: [
-            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.'
+            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.',
           ],
         );
       }
@@ -729,13 +769,13 @@ class DocumentService {
         return SelfieValidationResult(
           isValid: false,
           errors: [
-            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.'
+            'No face detected in the image. Please ensure your face is clearly visible and centered in the photo.',
           ],
         );
       }
 
       final face = faces.first;
-      
+
       // Validate face bounding box
       if (face.boundingBox.width <= 0 || face.boundingBox.height <= 0) {
         return SelfieValidationResult(
@@ -748,7 +788,7 @@ class DocumentService {
       final faceHeight = face.boundingBox.height;
       final faceArea = faceWidth * faceHeight;
       final imageArea = width * height;
-      
+
       // Prevent division by zero
       if (imageArea == 0) {
         return SelfieValidationResult(
@@ -756,7 +796,7 @@ class DocumentService {
           errors: ['Invalid image dimensions'],
         );
       }
-      
+
       final facePercentage = (faceArea / imageArea) * 100;
 
       // Check if face is reasonably sized (at least 3% of image)
@@ -764,7 +804,7 @@ class DocumentService {
         return SelfieValidationResult(
           isValid: false,
           errors: [
-            'Face is too small in the image. Please move closer to the camera so your face is clearly visible.'
+            'Face is too small in the image. Please move closer to the camera so your face is clearly visible.',
           ],
         );
       }
@@ -777,12 +817,12 @@ class DocumentService {
           errors: ['Invalid image dimensions'],
         );
       }
-      
+
       final faceCenterX = face.boundingBox.left + (faceWidth / 2);
       final faceCenterY = face.boundingBox.top + (faceHeight / 2);
       final imageCenterX = width / 2;
       final imageCenterY = height / 2;
-      
+
       final offsetX = (faceCenterX - imageCenterX).abs() / width;
       final offsetY = (faceCenterY - imageCenterY).abs() / height;
 
@@ -790,23 +830,17 @@ class DocumentService {
         return SelfieValidationResult(
           isValid: false,
           errors: [
-            'Face is not centered in the image. Please position your face in the center of the frame.'
+            'Face is not centered in the image. Please position your face in the center of the frame.',
           ],
         );
       }
 
       // Face detected and meets requirements
-      return SelfieValidationResult(
-        isValid: true,
-        errors: [],
-      );
+      return SelfieValidationResult(isValid: true, errors: []);
     } catch (e) {
       // If face detection fails, don't block validation
       // Return valid result so other validations can proceed
-      return SelfieValidationResult(
-        isValid: true,
-        errors: [],
-      );
+      return SelfieValidationResult(isValid: true, errors: []);
     } finally {
       // Clean up temporary files
       try {
@@ -822,4 +856,3 @@ class DocumentService {
     }
   }
 }
-
