@@ -125,7 +125,6 @@ class Step6PreviewScreen extends StatelessWidget {
         ),
         child: Column(
           children: [
-            StepProgressIndicator(currentStep: 6, totalSteps: 6),
             AppBar(
               title: const Text('Preview & Confirm'),
               elevation: 0,
@@ -136,6 +135,7 @@ class Step6PreviewScreen extends StatelessWidget {
                 onPressed: () => context.go(AppRoutes.step5PersonalData),
               ),
             ),
+            StepProgressIndicator(currentStep: 6, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

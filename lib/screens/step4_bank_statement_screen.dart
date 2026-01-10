@@ -164,7 +164,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         ),
         child: Column(
           children: [
-            StepProgressIndicator(currentStep: 4, totalSteps: 6),
             AppBar(
               title: const Text('Step 4: Bank Statement'),
               elevation: 0,
@@ -174,6 +173,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 onPressed: () => context.go(AppRoutes.step3Pan),
               ),
             ),
+            StepProgressIndicator(currentStep: 4, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

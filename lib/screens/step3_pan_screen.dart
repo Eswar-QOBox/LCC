@@ -150,9 +150,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         ),
         child: Column(
           children: [
-            // Premium Progress Indicator
-            StepProgressIndicator(currentStep: 3, totalSteps: 6),
-            
             // AppBar
             AppBar(
               title: const Text('Step 3: PAN Card'),
@@ -163,6 +160,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                 onPressed: () => context.go(AppRoutes.step2Aadhaar),
               ),
             ),
+            // Premium Progress Indicator (below AppBar)
+            StepProgressIndicator(currentStep: 3, totalSteps: 6),
             
             // Content
             Expanded(

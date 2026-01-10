@@ -186,7 +186,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         ),
         child: Column(
           children: [
-            StepProgressIndicator(currentStep: 2, totalSteps: 6),
             AppBar(
               title: const Text('Step 2: Aadhaar Card'),
               elevation: 0,
@@ -196,6 +195,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 onPressed: () => context.go(AppRoutes.step1Selfie),
               ),
             ),
+            StepProgressIndicator(currentStep: 2, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

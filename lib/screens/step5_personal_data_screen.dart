@@ -359,7 +359,6 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           ),
           child: Column(
             children: [
-              StepProgressIndicator(currentStep: 5, totalSteps: 6),
               AppBar(
                 title: const Text('Step 5: Personal Data'),
                 elevation: 0,
@@ -379,6 +378,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                   },
                 ),
               ),
+              StepProgressIndicator(currentStep: 5, totalSteps: 6),
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
