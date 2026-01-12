@@ -51,11 +51,25 @@ class AuthService {
       );
     } catch (e) {
       if (e is DioException) {
-        // Handle network errors
-        if (e.type == DioExceptionType.connectionTimeout ||
+        // Handle CORS/connection errors (common on web platform)
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout ||
-            e.type == DioExceptionType.sendTimeout ||
-            e.type == DioExceptionType.connectionError) {
+            e.type == DioExceptionType.sendTimeout) {
+          // Check if this is a CORS issue (connection error on web)
+          final errorMessage = e.message?.toLowerCase() ?? '';
+          if (errorMessage.contains('xmlhttprequest') || 
+              errorMessage.contains('cors') ||
+              errorMessage.contains('network')) {
+            throw AuthException(
+              code: 'NETWORK_ERROR',
+              message: 'Connection error. This may be a CORS issue. Please ensure:\n'
+                  '1. Backend server is running on port 5000\n'
+                  '2. CORS is properly configured on the backend\n'
+                  '3. Backend includes CORS headers in POST responses (not just OPTIONS)',
+              statusCode: null,
+            );
+          }
           throw AuthException(
             code: 'NETWORK_ERROR',
             message: 'Network error. Please check your internet connection and try again.',
