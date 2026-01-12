@@ -9,6 +9,8 @@ import '../utils/app_routes.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
+import '../utils/app_theme.dart';
 
 
 class Step5PersonalDataScreen extends StatefulWidget {
@@ -22,6 +24,8 @@ class Step5PersonalDataScreen extends StatefulWidget {
 class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
+  bool _isDraftSaved = false;
+  bool _isSavingDraft = false;
   
   // Validation patterns
   static final RegExp _emailRegex = RegExp(
@@ -208,9 +212,14 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error selecting date: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: const Text('Unable to select date. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
             duration: const Duration(seconds: 2),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _selectDateOfBirth,
+            ),
           ),
         );
       }
@@ -226,12 +235,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             _scrollToFirstError();
           }
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please correct the errors in the form'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-          ),
+        PremiumToast.showWarning(
+          context,
+          'Please correct the errors in the form',
         );
       }
       return;
@@ -292,17 +298,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving data: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _saveAndProceed,
-            ),
-          ),
+        PremiumToast.showError(
+          context,
+          'Error saving data: ${e.toString()}',
+          actionLabel: 'Retry',
+          onAction: _saveAndProceed,
         );
       }
     } finally {
@@ -310,6 +310,150 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         setState(() {
           _isSaving = false;
         });
+      }
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    if (_isSavingDraft || _isDraftSaved) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    final provider = context.read<SubmissionProvider>();
+    
+    // Save current form data to provider (even if incomplete - it's a draft)
+    try {
+      final personalData = PersonalData(
+        nameAsPerAadhaar: _nameAsPerAadhaarController.text.trim().isEmpty 
+            ? null 
+            : _nameAsPerAadhaarController.text.trim(),
+        dateOfBirth: _dateOfBirth,
+        panNo: _panNoController.text.trim().isEmpty 
+            ? null 
+            : _panNoController.text.trim().toUpperCase(),
+        mobileNumber: _mobileNumberController.text.trim().isEmpty 
+            ? null 
+            : _mobileNumberController.text.trim(),
+        personalEmailId: _personalEmailIdController.text.trim().isEmpty 
+            ? null 
+            : _personalEmailIdController.text.trim().toLowerCase(),
+        countryOfResidence: _countryOfResidenceController.text.trim().isEmpty 
+            ? null 
+            : _countryOfResidenceController.text.trim(),
+        residenceAddress: _residenceAddressController.text.trim().isEmpty 
+            ? null 
+            : _residenceAddressController.text.trim(),
+        residenceType: _residenceTypeController.text.trim().isEmpty 
+            ? null 
+            : _residenceTypeController.text.trim(),
+        residenceStability: _residenceStabilityController.text.trim().isEmpty 
+            ? null 
+            : _residenceStabilityController.text.trim(),
+        companyName: _companyNameController.text.trim().isEmpty 
+            ? null 
+            : _companyNameController.text.trim(),
+        companyAddress: _companyAddressController.text.trim().isEmpty 
+            ? null 
+            : _companyAddressController.text.trim(),
+        nationality: _nationalityController.text.trim().isEmpty 
+            ? null 
+            : _nationalityController.text.trim(),
+        countryOfBirth: _countryOfBirthController.text.trim().isEmpty 
+            ? null 
+            : _countryOfBirthController.text.trim(),
+        occupation: _occupationController.text.trim().isEmpty 
+            ? null 
+            : _occupationController.text.trim(),
+        educationalQualification: _educationalQualificationController.text.trim().isEmpty 
+            ? null 
+            : _educationalQualificationController.text.trim(),
+        workType: _workTypeController.text.trim().isEmpty 
+            ? null 
+            : _workTypeController.text.trim(),
+        industry: _industryController.text.trim().isEmpty 
+            ? null 
+            : _industryController.text.trim(),
+        annualIncome: _annualIncomeController.text.trim().isEmpty 
+            ? null 
+            : _annualIncomeController.text.trim(),
+        totalWorkExperience: _totalWorkExperienceController.text.trim().isEmpty 
+            ? null 
+            : _totalWorkExperienceController.text.trim(),
+        currentCompanyExperience: _currentCompanyExperienceController.text.trim().isEmpty 
+            ? null 
+            : _currentCompanyExperienceController.text.trim(),
+        loanAmountTenure: _loanAmountTenureController.text.trim().isEmpty 
+            ? null 
+            : _loanAmountTenureController.text.trim(),
+        maritalStatus: _maritalStatus,
+        spouseName: _spouseNameController.text.trim().isEmpty 
+            ? null 
+            : _spouseNameController.text.trim(),
+        fatherName: _fatherNameController.text.trim().isEmpty 
+            ? null 
+            : _fatherNameController.text.trim(),
+        motherName: _motherNameController.text.trim().isEmpty 
+            ? null 
+            : _motherNameController.text.trim(),
+        reference1Name: _reference1NameController.text.trim().isEmpty 
+            ? null 
+            : _reference1NameController.text.trim(),
+        reference1Address: _reference1AddressController.text.trim().isEmpty 
+            ? null 
+            : _reference1AddressController.text.trim(),
+        reference1Contact: _reference1ContactController.text.trim().isEmpty 
+            ? null 
+            : _reference1ContactController.text.trim(),
+        reference2Name: _reference2NameController.text.trim().isEmpty 
+            ? null 
+            : _reference2NameController.text.trim(),
+        reference2Address: _reference2AddressController.text.trim().isEmpty 
+            ? null 
+            : _reference2AddressController.text.trim(),
+        reference2Contact: _reference2ContactController.text.trim().isEmpty 
+            ? null 
+            : _reference2ContactController.text.trim(),
+      );
+
+      // Save to provider
+      if (mounted) {
+        provider.setPersonalData(personalData);
+      }
+
+      final success = await provider.saveDraft();
+      
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isDraftSaved = true;
+            _isSavingDraft = false;
+          });
+          PremiumToast.showSuccess(
+            context,
+            'Draft saved successfully!',
+            duration: const Duration(seconds: 2),
+          );
+        } else {
+          setState(() {
+            _isSavingDraft = false;
+          });
+          PremiumToast.showError(
+            context,
+            'Failed to save draft. Please try again.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSavingDraft = false;
+        });
+        PremiumToast.showError(
+          context,
+          'Error saving draft: $e',
+        );
       }
     }
   }
@@ -359,27 +503,98 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           ),
           child: Column(
             children: [
-              AppBar(
-                title: const Text('Step 5: Personal Data'),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: _isSaving ? null : () {
-                    if (mounted && context.mounted) {
-                      try {
-                        context.go(AppRoutes.step4BankStatement);
-                      } catch (e) {
-                        if (Navigator.canPop(context)) {
-                          Navigator.pop(context);
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.white,
+                      colorScheme.primary.withValues(alpha: 0.03),
+                    ],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: AppBar(
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              colorScheme.primary,
+                              colorScheme.secondary,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.person,
+                          color: colorScheme.onPrimary,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Text(
+                        'Personal Information',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                  elevation: 0,
+                  backgroundColor: Colors.transparent,
+                  leading: Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorScheme.shadow.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                      onPressed: _isSaving ? null : () {
+                        if (mounted && context.mounted) {
+                          try {
+                            context.go(AppRoutes.step4BankStatement);
+                          } catch (e) {
+                            if (Navigator.canPop(context)) {
+                              Navigator.pop(context);
+                            }
+                          }
                         }
-                      }
-                    }
-                  },
+                      },
+                      color: colorScheme.primary,
+                    ),
+                  ),
                 ),
               ),
-              StepProgressIndicator(currentStep: 5, totalSteps: 6),
-              Expanded(
+            StepProgressIndicator(currentStep: 5, totalSteps: 6),
+            Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Form(
@@ -857,6 +1072,42 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         ),
                       ),
                       const SizedBox(height: 40),
+                      // Save as Draft button
+                      Builder(
+                        builder: (context) {
+                          final colorScheme = Theme.of(context).colorScheme;
+                          return OutlinedButton.icon(
+                            onPressed: (_isSaving || _isDraftSaved) ? null : _saveDraft,
+                            icon: _isDraftSaved
+                                ? const Icon(Icons.check_circle)
+                                : (_isSavingDraft
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.save_outlined)),
+                            label: Text(_isDraftSaved
+                                ? 'Draft Saved'
+                                : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              foregroundColor: _isDraftSaved
+                                  ? AppTheme.successColor
+                                  : null,
+                              side: BorderSide(
+                                color: _isDraftSaved
+                                    ? AppTheme.successColor
+                                    : colorScheme.primary,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 16),
                       PremiumButton(
                         label: _isSaving ? 'Saving...' : 'Next: Preview',
                         icon: _isSaving ? null : Icons.arrow_forward_rounded,
@@ -960,7 +1211,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             child: Icon(icon, color: colorScheme.primary, size: 20),
           ),
           filled: true,
-          fillColor: Colors.white,
+          fillColor: colorScheme.surface,
         ),
       ),
     );
@@ -1106,7 +1357,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                           },
                           selectedColor: colorScheme.primary,
                           labelStyle: TextStyle(
-                            color: _maritalStatus == 'Married' ? Colors.white : colorScheme.onSurface,
+                            color: _maritalStatus == 'Married' ? colorScheme.onPrimary : colorScheme.onSurface,
                           ),
                         ),
                       ),
@@ -1122,7 +1373,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                           },
                           selectedColor: colorScheme.primary,
                           labelStyle: TextStyle(
-                            color: _maritalStatus == 'Unmarried' ? Colors.white : colorScheme.onSurface,
+                            color: _maritalStatus == 'Unmarried' ? colorScheme.onPrimary : colorScheme.onSurface,
                           ),
                         ),
                       ),

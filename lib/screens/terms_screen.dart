@@ -25,12 +25,68 @@ class TermsScreen extends StatelessWidget {
         ),
         child: Column(
           children: [
-            AppBar(
-              title: const Text('Terms & Conditions'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              foregroundColor: colorScheme.onSurface,
-              automaticallyImplyLeading: false,
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.description,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Terms & Conditions',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                foregroundColor: colorScheme.onSurface,
+                automaticallyImplyLeading: false,
+              ),
             ),
             Expanded(
               child: SingleChildScrollView(

@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Custom color palette - Teal/Cyan theme
-  static const Color primaryColor = Color(0xFF14B8A6); // Teal
-  static const Color secondaryColor = Color(0xFF06B6D4); // Cyan
-  static const Color accentColor = Color(0xFF5EEAD4); // Light Teal
+  // Custom color palette - Flutter Blue theme
+  static const Color primaryColor = Color(0xFF0175C2); // Flutter Blue
+  static const Color secondaryColor = Color(0xFF42A5F5); // Material Blue 400
+  static const Color accentColor = Color(0xFF64B5F6); // Material Blue 300
   static const Color successColor = Color(0xFF10B981); // Green
   static const Color errorColor = Color(0xFFEF4444); // Red
   static const Color warningColor = Color(0xFFF59E0B); // Amber
-  static const Color infoColor = Color(0xFF06B6D4); // Cyan for info
+  static const Color infoColor = Color(0xFF42A5F5); // Blue for info
 
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
@@ -39,7 +39,7 @@ class AppTheme {
       // Card Theme
       cardTheme: CardThemeData(
         elevation: 4,
-        shadowColor: Colors.black.withValues(alpha: 0.1),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -81,14 +81,14 @@ class AppTheme {
       // Input Decoration Theme
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: colorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -156,7 +156,7 @@ class AppTheme {
       // Card Theme
       cardTheme: CardThemeData(
         elevation: 4,
-        shadowColor: Colors.black.withValues(alpha: 0.3),
+        shadowColor: colorScheme.shadow.withValues(alpha: 0.3),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -198,14 +198,14 @@ class AppTheme {
       // Input Decoration Theme
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: Colors.grey.shade800,
+        fillColor: colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade700),
+          borderSide: BorderSide(color: colorScheme.outline),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade700),
+          borderSide: BorderSide(color: colorScheme.outline),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

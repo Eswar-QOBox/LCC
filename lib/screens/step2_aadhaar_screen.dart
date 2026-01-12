@@ -9,6 +9,7 @@ import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
@@ -22,8 +23,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _frontPath;
   String? _backPath;
-  String? _pdfPassword;
   bool _isPdf = false;
+  bool _isDraftSaved = false;
+  bool _isSavingDraft = false;
 
   @override
   void initState() {
@@ -32,7 +34,14 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     _frontPath = provider.submission.aadhaar?.frontPath;
     _backPath = provider.submission.aadhaar?.backPath;
     _isPdf = provider.submission.aadhaar?.isPdf ?? false;
-    _pdfPassword = provider.submission.aadhaar?.pdfPassword;
+  }
+
+  void _resetDraftState() {
+    if (_isDraftSaved) {
+      setState(() {
+        _isDraftSaved = false;
+      });
+    }
   }
 
   Future<void> _captureFront() async {
@@ -41,7 +50,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.camera);
       if (image != null && mounted) {
-        setState(() => _frontPath = image.path);
+        setState(() {
+          _frontPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setAadhaarFront(image.path);
       }
     }
@@ -53,7 +65,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (image != null && mounted) {
-        setState(() => _frontPath = image.path);
+        setState(() {
+          _frontPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setAadhaarFront(image.path);
       }
     }
@@ -65,7 +80,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.camera);
       if (image != null && mounted) {
-        setState(() => _backPath = image.path);
+        setState(() {
+          _backPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setAadhaarBack(image.path);
       }
     }
@@ -77,7 +95,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (image != null && mounted) {
-        setState(() => _backPath = image.path);
+        setState(() {
+          _backPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setAadhaarBack(image.path);
       }
     }
@@ -95,74 +116,82 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         setState(() {
           _frontPath = path;
           _isPdf = true;
+          _resetDraftState();
         });
         context.read<SubmissionProvider>().setAadhaarFront(path, isPdf: true);
       } else {
         setState(() {
           _backPath = path;
           _isPdf = true;
+          _resetDraftState();
         });
         context.read<SubmissionProvider>().setAadhaarBack(path);
       }
-
-      // Check if PDF might be password protected
-      if (mounted) {
-        _showPasswordDialogIfNeeded();
-      }
     }
-  }
-
-  void _showPasswordDialogIfNeeded() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('PDF Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Is this PDF password protected?'),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'PDF Password (if required)',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-              onChanged: (value) => _pdfPassword = value,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _pdfPassword = null;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Not Required'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-                context.read<SubmissionProvider>().setAadhaarPassword(_pdfPassword!);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _proceedToNext() {
     if (_frontPath != null && _backPath != null) {
       context.go(AppRoutes.step3Pan);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please upload both front and back sides of Aadhaar card'),
-        ),
+      PremiumToast.showWarning(
+        context,
+        'Please upload both front and back sides of Aadhaar card',
       );
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    if (_isSavingDraft || _isDraftSaved) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    final provider = context.read<SubmissionProvider>();
+    
+    // Save current state to provider
+    if (_frontPath != null) {
+      provider.setAadhaarFront(_frontPath!, isPdf: _isPdf);
+    }
+    if (_backPath != null) {
+      provider.setAadhaarBack(_backPath!);
+    }
+
+    try {
+      final success = await provider.saveDraft();
+      
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isDraftSaved = true;
+            _isSavingDraft = false;
+          });
+          PremiumToast.showSuccess(
+            context,
+            'Draft saved successfully!',
+            duration: const Duration(seconds: 2),
+          );
+        } else {
+          setState(() {
+            _isSavingDraft = false;
+          });
+          PremiumToast.showError(
+            context,
+            'Failed to save draft. Please try again.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSavingDraft = false;
+        });
+        PremiumToast.showError(
+          context,
+          'Error saving draft: $e',
+        );
+      }
     }
   }
 
@@ -186,13 +215,84 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         ),
         child: Column(
           children: [
-            AppBar(
-              title: const Text('Step 2: Aadhaar Card'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go(AppRoutes.step1Selfie),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.credit_card,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Aadhaar Card',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.step1Selfie),
+                    color: colorScheme.primary,
+                  ),
+                ),
               ),
             ),
             StepProgressIndicator(currentStep: 2, totalSteps: 6),
@@ -265,8 +365,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           _buildPremiumRequirement(context, Icons.photo_camera, 'Must include Front & Back'),
                           const SizedBox(height: 12),
                           _buildPremiumRequirement(context, Icons.visibility_off, 'No blur or glare'),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(context, Icons.lock_outline, 'PDF password supported'),
                         ],
                       ),
                     ),
@@ -365,48 +463,38 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           onGallery: _selectBackFromGallery,
                         ),
                     ],
-                    if (_pdfPassword != null) ...[
-                      const SizedBox(height: 24),
-                      PremiumCard(
-                        gradientColors: [
-                          AppTheme.accentColor.withValues(alpha: 0.1),
-                          AppTheme.accentColor.withValues(alpha: 0.05),
-                        ],
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentColor,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.lock, color: Colors.white, size: 24),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'PDF Password Protected',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.accentColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Password: ${'●' * _pdfPassword!.length}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                    const SizedBox(height: 40),
+                    // Save as Draft button
+                    OutlinedButton.icon(
+                      onPressed: _isDraftSaved ? null : _saveDraft,
+                      icon: _isDraftSaved
+                          ? const Icon(Icons.check_circle)
+                          : (_isSavingDraft
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save_outlined)),
+                      label: Text(_isDraftSaved
+                          ? 'Draft Saved'
+                          : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        foregroundColor: _isDraftSaved
+                            ? AppTheme.successColor
+                            : null,
+                        side: BorderSide(
+                          color: _isDraftSaved
+                              ? AppTheme.successColor
+                              : colorScheme.primary,
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 40),
+                    ),
+                    const SizedBox(height: 16),
                     PremiumButton(
                       label: 'Continue to PAN Card',
                       icon: Icons.arrow_forward_rounded,

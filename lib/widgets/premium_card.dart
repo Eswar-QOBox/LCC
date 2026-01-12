@@ -35,7 +35,7 @@ class PremiumCard extends StatelessWidget {
               )
             : null,
         color: gradientColors == null
-            ? (backgroundColor ?? Colors.white)
+            ? (backgroundColor ?? colorScheme.surface)
             : null,
         borderRadius: BorderRadius.circular(borderRadius ?? 24),
         border: border ??
@@ -52,7 +52,7 @@ class PremiumCard extends StatelessWidget {
                 spreadRadius: 0,
               ),
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
+                color: colorScheme.shadow.withValues(alpha: 0.02),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),

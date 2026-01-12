@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +10,7 @@ import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
@@ -22,10 +22,11 @@ class Step4BankStatementScreen extends StatefulWidget {
 }
 
 class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
-  final ImagePicker _imagePicker = ImagePicker();
   List<String> _pages = [];
   String? _pdfPassword;
   bool _isPdf = false;
+  bool _isDraftSaved = false;
+  bool _isSavingDraft = false;
 
   @override
   void initState() {
@@ -51,9 +52,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         if (bytes == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to read PDF file'),
-                backgroundColor: Colors.red,
+              SnackBar(
+                content: const Text('Unable to read PDF file. Please try again.'),
+                backgroundColor: AppTheme.errorColor,
+                action: SnackBarAction(
+                  label: 'Retry',
+                  textColor: Colors.white,
+                  onPressed: _uploadPdf,
+                ),
               ),
             );
           }
@@ -66,9 +72,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         if (result.files.single.path == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Failed to get file path'),
-                backgroundColor: Colors.red,
+              SnackBar(
+                content: const Text('Unable to access file. Please try again.'),
+                backgroundColor: AppTheme.errorColor,
+                action: SnackBarAction(
+                  label: 'Retry',
+                  textColor: Colors.white,
+                  onPressed: _uploadPdf,
+                ),
               ),
             );
           }
@@ -81,6 +92,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         setState(() {
           _pages = [path];
           _isPdf = true;
+          _resetDraftState();
         });
         context
             .read<SubmissionProvider>()
@@ -91,33 +103,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   }
 
 
-  Future<void> _capturePage() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.camera);
-    if (image != null && mounted) {
-      setState(() {
-        _pages.add(image.path);
-        _isPdf = false;
-      });
-      context.read<SubmissionProvider>().addBankStatementPage(image.path);
-    }
-  }
 
-  Future<void> _selectFromGallery() async {
-    final images = await _imagePicker.pickMultiImage();
-    if (images.isNotEmpty && mounted) {
-      setState(() {
-        _pages.addAll(images.map((e) => e.path));
-        _isPdf = false;
-      });
-      for (final image in images) {
-        context.read<SubmissionProvider>().addBankStatementPage(image.path);
-      }
-    }
-  }
 
   void _removePage(int index) {
     setState(() {
       _pages.removeAt(index);
+      _resetDraftState();
     });
     context
         .read<SubmissionProvider>()
@@ -172,11 +163,72 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     if (_pages.isNotEmpty) {
       context.go(AppRoutes.step5PersonalData);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please upload bank statement (last 6 months)'),
-        ),
+      PremiumToast.showWarning(
+        context,
+        'Please upload bank statement (last 6 months)',
       );
+    }
+  }
+
+  void _resetDraftState() {
+    if (_isDraftSaved) {
+      setState(() {
+        _isDraftSaved = false;
+      });
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    if (_isSavingDraft || _isDraftSaved) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    final provider = context.read<SubmissionProvider>();
+    
+    // Save current state to provider
+    if (_pages.isNotEmpty) {
+      provider.setBankStatementPages(_pages, isPdf: _isPdf);
+    }
+    if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
+      provider.setBankStatementPassword(_pdfPassword!);
+    }
+
+    try {
+      final success = await provider.saveDraft();
+      
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isDraftSaved = true;
+            _isSavingDraft = false;
+          });
+          PremiumToast.showSuccess(
+            context,
+            'Draft saved successfully!',
+            duration: const Duration(seconds: 2),
+          );
+        } else {
+          setState(() {
+            _isSavingDraft = false;
+          });
+          PremiumToast.showError(
+            context,
+            'Failed to save draft. Please try again.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSavingDraft = false;
+        });
+        PremiumToast.showError(
+          context,
+          'Error saving draft: $e',
+        );
+      }
     }
   }
 
@@ -200,13 +252,84 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         ),
         child: Column(
           children: [
-            AppBar(
-              title: const Text('Step 4: Bank Statement'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go(AppRoutes.step3Pan),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.account_balance,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Bank Statement',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.step3Pan),
+                    color: colorScheme.primary,
+                  ),
+                ),
               ),
             ),
             StepProgressIndicator(currentStep: 4, totalSteps: 6),
@@ -279,8 +402,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                           _buildPremiumRequirement(context, Icons.calendar_today, 'Must be last 6 months'),
                           const SizedBox(height: 12),
                           _buildPremiumRequirement(context, Icons.lock_outline, 'PDF password supported'),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(context, Icons.collections, 'Multi-page capture supported'),
                         ],
                       ),
                     ),
@@ -321,39 +442,17 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'PDF or capture pages individually',
+                              'Upload PDF file (last 6 months)',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
                             ),
                             const SizedBox(height: 32),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Upload PDF',
-                                    icon: Icons.picture_as_pdf,
-                                    isPrimary: false,
-                                    onPressed: _uploadPdf,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Capture',
-                                    icon: Icons.camera_alt,
-                                    isPrimary: false,
-                                    onPressed: _capturePage,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
                             PremiumButton(
-                              label: 'Select from Gallery',
-                              icon: Icons.photo_library,
-                              isPrimary: false,
-                              onPressed: _selectFromGallery,
+                              label: 'Upload PDF',
+                              icon: Icons.picture_as_pdf,
+                              isPrimary: true,
+                              onPressed: _uploadPdf,
                             ),
                           ],
                         ),
@@ -436,10 +535,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       ),
                       const SizedBox(height: 20),
                       PremiumButton(
-                        label: _isPdf ? 'Change PDF' : 'Add More Pages',
-                        icon: _isPdf ? Icons.picture_as_pdf : Icons.add_photo_alternate,
+                        label: 'Change PDF',
+                        icon: Icons.picture_as_pdf,
                         isPrimary: false,
-                        onPressed: _isPdf ? _uploadPdf : _capturePage,
+                        onPressed: _uploadPdf,
                       ),
                     ],
                     if (_pdfPassword != null) ...[
@@ -484,6 +583,42 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       ),
                     ],
                     const SizedBox(height: 40),
+                    // Save as Draft button
+                    Builder(
+                      builder: (context) {
+                        final colorScheme = Theme.of(context).colorScheme;
+                        return OutlinedButton.icon(
+                          onPressed: _isDraftSaved ? null : _saveDraft,
+                          icon: _isDraftSaved
+                              ? const Icon(Icons.check_circle)
+                              : (_isSavingDraft
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.save_outlined)),
+                          label: Text(_isDraftSaved
+                              ? 'Draft Saved'
+                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            foregroundColor: _isDraftSaved
+                                ? AppTheme.successColor
+                                : null,
+                            side: BorderSide(
+                              color: _isDraftSaved
+                                  ? AppTheme.successColor
+                                  : colorScheme.primary,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     PremiumButton(
                       label: 'Continue to Personal Data',
                       icon: Icons.arrow_forward_rounded,

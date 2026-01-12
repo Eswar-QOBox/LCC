@@ -10,10 +10,19 @@ import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
-class Step6PreviewScreen extends StatelessWidget {
+class Step6PreviewScreen extends StatefulWidget {
   const Step6PreviewScreen({super.key});
+
+  @override
+  State<Step6PreviewScreen> createState() => _Step6PreviewScreenState();
+}
+
+class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
+  bool _isDraftSaved = false;
+  bool _isSavingDraft = false;
 
   void _editStep(BuildContext context, String route) {
     context.go(route);
@@ -24,12 +33,9 @@ class Step6PreviewScreen extends StatelessWidget {
     
     if (!provider.submission.isComplete) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please complete all steps before submitting'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-          ),
+        PremiumToast.showError(
+          context,
+          'Please complete all steps before submitting',
         );
       }
       return;
@@ -51,6 +57,9 @@ class Step6PreviewScreen extends StatelessWidget {
       await Future.delayed(const Duration(seconds: 1));
       await provider.submit();
       
+      // Clear draft after successful submission
+      await provider.clearDraft();
+      
       if (context.mounted) {
         // Close loading dialog
         Navigator.of(context).pop();
@@ -61,12 +70,55 @@ class Step6PreviewScreen extends StatelessWidget {
       if (context.mounted) {
         // Close loading dialog if still open
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
+        PremiumToast.showError(
+          context,
+          'Error submitting: $e',
+        );
+      }
+    }
+  }
+
+  Future<void> _saveDraft(BuildContext context) async {
+    if (_isSavingDraft || _isDraftSaved) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    final provider = context.read<SubmissionProvider>();
+
+    try {
+      final success = await provider.saveDraft();
+      
+      if (context.mounted) {
+        if (success) {
+          setState(() {
+            _isDraftSaved = true;
+            _isSavingDraft = false;
+          });
+          PremiumToast.showSuccess(
+            context,
+            'Draft saved successfully!',
+            duration: const Duration(seconds: 2),
+          );
+        } else {
+          setState(() {
+            _isSavingDraft = false;
+          });
+          PremiumToast.showError(
+            context,
+            'Failed to save draft. Please try again.',
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        setState(() {
+          _isSavingDraft = false;
+        });
+        PremiumToast.showError(
+          context,
+          'Error saving draft: $e',
         );
       }
     }
@@ -125,14 +177,85 @@ class Step6PreviewScreen extends StatelessWidget {
         ),
         child: Column(
           children: [
-            AppBar(
-              title: const Text('Preview & Confirm'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              foregroundColor: colorScheme.onSurface,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go(AppRoutes.step5PersonalData),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Review & Submit',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                foregroundColor: colorScheme.onSurface,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.step5PersonalData),
+                    color: colorScheme.primary,
+                  ),
+                ),
               ),
             ),
             StepProgressIndicator(currentStep: 6, totalSteps: 6),
@@ -468,6 +591,42 @@ class Step6PreviewScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 40),
+                    // Save as Draft button
+                    Builder(
+                      builder: (context) {
+                        final colorScheme = Theme.of(context).colorScheme;
+                        return OutlinedButton.icon(
+                          onPressed: _isDraftSaved ? null : () => _saveDraft(context),
+                          icon: _isDraftSaved
+                              ? const Icon(Icons.check_circle)
+                              : (_isSavingDraft
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.save_outlined)),
+                          label: Text(_isDraftSaved
+                              ? 'Draft Saved'
+                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            foregroundColor: _isDraftSaved
+                                ? AppTheme.successColor
+                                : null,
+                            side: BorderSide(
+                              color: _isDraftSaved
+                                  ? AppTheme.successColor
+                                  : colorScheme.primary,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     PremiumButton(
                       label: submission.isComplete
                           ? 'Confirm & Submit'

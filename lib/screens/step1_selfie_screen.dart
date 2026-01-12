@@ -10,6 +10,7 @@ import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
@@ -41,8 +42,13 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error capturing image: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: const Text('Unable to capture image. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _captureFromCamera,
+            ),
           ),
         );
       }
@@ -64,8 +70,13 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error selecting image: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: const Text('Unable to select image. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _selectFromGallery,
+            ),
           ),
         );
       }
@@ -80,9 +91,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (imageFile.path.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Invalid image file'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: const Text('Invalid image file. Please select a different image.'),
+              backgroundColor: AppTheme.errorColor,
             ),
           );
         }
@@ -117,9 +128,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (bytes.length > 20 * 1024 * 1024) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Image file is too large (max 20MB)'),
-              backgroundColor: Colors.red,
+            SnackBar(
+              content: const Text('Image file is too large. Please select an image smaller than 20MB.'),
+              backgroundColor: AppTheme.errorColor,
             ),
           );
         }
@@ -137,8 +148,15 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading image: ${e.toString()}'),
-            backgroundColor: Colors.red,
+            content: const Text('Unable to load image. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: () {
+                // Retry logic can be added if needed
+              },
+            ),
           ),
         );
       }
@@ -149,9 +167,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     if (_imagePath == null || _imageBytes == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please capture or select an image first'),
-            backgroundColor: Colors.red,
+          SnackBar(
+            content: const Text('Please capture or select an image first'),
+            backgroundColor: AppTheme.errorColor,
           ),
         );
       }
@@ -183,11 +201,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       if (result.isValid) {
         if (mounted) {
           context.read<SubmissionProvider>().setSelfie(_imagePath!);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Selfie validated successfully!'),
-              backgroundColor: Colors.green,
-            ),
+          PremiumToast.showSuccess(
+            context,
+            'Selfie validated successfully!',
           );
         }
       } else {
@@ -235,11 +251,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         setState(() {
           _isValidating = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error validating image: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
+        PremiumToast.showError(
+          context,
+          'Error validating selfie: $e',
         );
       }
     }
@@ -279,14 +293,85 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: Column(
           children: [
-            // AppBar
-            AppBar(
-              title: const Text('Step 1: Selfie / Photo'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go(AppRoutes.home),
+            // Premium AppBar
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                            colors: [
+                              colorScheme.surface,
+                              colorScheme.primary.withValues(alpha: 0.03),
+                            ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.face,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Identity Verification',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.home),
+                    color: colorScheme.primary,
+                  ),
+                ),
               ),
             ),
             
@@ -306,10 +391,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [
-                            Colors.white,
-                            colorScheme.primary.withValues(alpha: 0.03),
-                          ],
+                            colors: [
+                              colorScheme.surface,
+                              colorScheme.primary.withValues(alpha: 0.03),
+                            ],
                         ),
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
@@ -338,9 +423,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                                     ),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.info_outline,
-                                    color: Colors.white,
+                                    color: colorScheme.onPrimary,
                                     size: 24,
                                   ),
                                 ),
@@ -497,9 +582,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                                         color: AppTheme.errorColor,
                                         shape: BoxShape.circle,
                                       ),
-                                      child: const Icon(
+                                      child: Icon(
                                         Icons.error,
-                                        color: Colors.white,
+                                        color: colorScheme.onError,
                                         size: 24,
                                       ),
                                     ),
@@ -582,19 +667,19 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               child: ElevatedButton.icon(
                                 onPressed: _isValidating ? null : _validateImage,
                                 icon: _isValidating
-                                    ? const SizedBox(
+                                    ? SizedBox(
                                         width: 20,
                                         height: 20,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
                                         ),
                                       )
-                                    : const Icon(Icons.verified, color: Colors.white),
+                                    : Icon(Icons.verified, color: colorScheme.onPrimary),
                                 label: Text(
                                   'Validate',
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: colorScheme.onPrimary,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -708,7 +793,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Icon(Icons.arrow_forward, color: Colors.white),
+                            Icon(Icons.arrow_forward, color: colorScheme.onPrimary),
                           ],
                         ),
                       ),
@@ -749,10 +834,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: ElevatedButton.icon(
           onPressed: onPressed,
-          icon: Icon(icon, color: Colors.white),
+          icon: Icon(icon, color: colorScheme.onPrimary),
           label: Text(
             label,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            style: TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.w600),
           ),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 18),

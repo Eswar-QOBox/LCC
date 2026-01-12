@@ -16,6 +16,7 @@ A Flutter application for customer document submission and verification.
 - [UI/UX Deliverables](#uiux-deliverables)
 - [Development Setup](#development-setup)
 - [Project Structure](#project-structure)
+- [UI/UX Standards](#uiux-standards)
 
 ---
 
@@ -273,11 +274,48 @@ lib/
 
 ---
 
+## UI/UX Standards
+
+**⚠️ IMPORTANT:** All developers and AI agents **must** read the [UI/UX Standards](./UI_UX_STANDARDS.md) document before implementing any UI components.
+
+The UI/UX standards define mandatory requirements for:
+- Design system usage
+- Color and typography guidelines
+- Component states and accessibility
+- User feedback and error handling
+- Performance and platform consistency
+
+**Documentation:**
+- [UI/UX Standards](./UI_UX_STANDARDS.md) - Complete standards document (required reading)
+- [UI/UX Compliance Report](./UI_UX_COMPLIANCE_REPORT.md) - High-level compliance status
+- [UI/UX Code Audit](./UI_UX_CODE_AUDIT.md) - Detailed file-by-file violation analysis
+
+---
+
+## Backend Integration
+
+**📘 [Backend API Documentation](./BACKEND_README.md)** - Complete backend implementation guide
+
+The backend README includes:
+- API endpoint specifications
+- Data models and schemas
+- Authentication requirements
+- File upload specifications
+- Database schema (MongoDB)
+- Integration guide with Flutter app
+- Setup and deployment instructions
+
+**See also:** [MongoDB Setup Guide](./MONGODB_COMPASS_VPS_SETUP.md) for database configuration.
+
+---
+
 ## Resources
 
 - [Flutter Documentation](https://docs.flutter.dev/)
 - [Dart Documentation](https://dart.dev/)
 - [Flutter Cookbook](https://docs.flutter.dev/cookbook)
+- [UI/UX Standards](./UI_UX_STANDARDS.md) - **Required reading for UI work**
+- [Backend API Documentation](./BACKEND_README.md) - **Required reading for backend work**
 
 ---
 

@@ -51,7 +51,11 @@ class _PremiumButtonState extends State<PremiumButton>
     final theme = Theme.of(context);
 
     if (widget.isPrimary) {
-      return GestureDetector(
+      return Semantics(
+        label: widget.label,
+        button: true,
+        enabled: widget.onPressed != null && !widget.isLoading,
+        child: GestureDetector(
         onTapDown: (_) => _controller.forward(),
         onTapUp: (_) {
           _controller.reverse();
@@ -101,22 +105,22 @@ class _PremiumButtonState extends State<PremiumButton>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (widget.isLoading)
-                        const SizedBox(
+                        SizedBox(
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
                           ),
                         )
                       else if (widget.icon != null) ...[
-                        Icon(widget.icon, color: Colors.white, size: 22),
+                        Icon(widget.icon, color: colorScheme.onPrimary, size: 22),
                         const SizedBox(width: 12),
                       ],
                       Text(
                         widget.label,
                         style: theme.textTheme.titleMedium?.copyWith(
-                          color: Colors.white,
+                          color: colorScheme.onPrimary,
                           fontWeight: FontWeight.w600,
                           letterSpacing: 0.5,
                         ),
@@ -128,14 +132,19 @@ class _PremiumButtonState extends State<PremiumButton>
             ),
           ),
         ),
+      ),
       );
     }
 
-    return Container(
+    return Semantics(
+      label: widget.label,
+      button: true,
+      enabled: widget.onPressed != null,
+      child: Container(
       width: widget.width ?? double.infinity,
       height: 56,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: colorScheme.primary,
@@ -176,6 +185,7 @@ class _PremiumButtonState extends State<PremiumButton>
           ),
         ),
       ),
+    ),
     );
   }
 }

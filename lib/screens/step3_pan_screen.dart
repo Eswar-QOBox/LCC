@@ -9,6 +9,7 @@ import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
 class Step3PanScreen extends StatefulWidget {
@@ -21,8 +22,9 @@ class Step3PanScreen extends StatefulWidget {
 class _Step3PanScreenState extends State<Step3PanScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _frontPath;
-  String? _pdfPassword;
   bool _isPdf = false;
+  bool _isDraftSaved = false;
+  bool _isSavingDraft = false;
 
   @override
   void initState() {
@@ -30,7 +32,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.pan?.frontPath;
     _isPdf = provider.submission.pan?.isPdf ?? false;
-    _pdfPassword = provider.submission.pan?.pdfPassword;
   }
 
   Future<void> _captureFromCamera() async {
@@ -39,7 +40,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.camera);
       if (image != null && mounted) {
-        setState(() => _frontPath = image.path);
+        setState(() {
+          _frontPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setPanFront(image.path);
       }
     }
@@ -51,7 +55,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     } else {
       final image = await _imagePicker.pickImage(source: ImageSource.gallery);
       if (image != null && mounted) {
-        setState(() => _frontPath = image.path);
+        setState(() {
+          _frontPath = image.path;
+          _resetDraftState();
+        });
         context.read<SubmissionProvider>().setPanFront(image.path);
       }
     }
@@ -68,65 +75,79 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       setState(() {
         _frontPath = path;
         _isPdf = true;
+        _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
-      if (mounted) {
-        _showPasswordDialogIfNeeded();
-      }
     }
-  }
-
-  void _showPasswordDialogIfNeeded() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('PDF Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Is this PDF password protected?'),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: 'PDF Password (if required)',
-                border: OutlineInputBorder(),
-              ),
-              obscureText: true,
-              onChanged: (value) => _pdfPassword = value,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _pdfPassword = null;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Not Required'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-                context.read<SubmissionProvider>().setPanPassword(_pdfPassword!);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
   }
 
   void _proceedToNext() {
     if (_frontPath != null) {
       context.go(AppRoutes.step4BankStatement);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please upload PAN card front side'),
-        ),
+      PremiumToast.showWarning(
+        context,
+        'Please upload PAN card front side',
       );
+    }
+  }
+
+  void _resetDraftState() {
+    if (_isDraftSaved) {
+      setState(() {
+        _isDraftSaved = false;
+      });
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    if (_isSavingDraft || _isDraftSaved) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    final provider = context.read<SubmissionProvider>();
+    
+    // Save current state to provider
+    if (_frontPath != null) {
+      provider.setPanFront(_frontPath!, isPdf: _isPdf);
+    }
+
+    try {
+      final success = await provider.saveDraft();
+      
+      if (mounted) {
+        if (success) {
+          setState(() {
+            _isDraftSaved = true;
+            _isSavingDraft = false;
+          });
+          PremiumToast.showSuccess(
+            context,
+            'Draft saved successfully!',
+            duration: const Duration(seconds: 2),
+          );
+        } else {
+          setState(() {
+            _isSavingDraft = false;
+          });
+          PremiumToast.showError(
+            context,
+            'Failed to save draft. Please try again.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSavingDraft = false;
+        });
+        PremiumToast.showError(
+          context,
+          'Error saving draft: $e',
+        );
+      }
     }
   }
 
@@ -151,13 +172,84 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         child: Column(
           children: [
             // AppBar
-            AppBar(
-              title: const Text('Step 3: PAN Card'),
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.go(AppRoutes.step2Aadhaar),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.badge,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'PAN Card',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.step2Aadhaar),
+                    color: colorScheme.primary,
+                  ),
+                ),
               ),
             ),
             // Premium Progress Indicator (below AppBar)
@@ -241,12 +333,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                             context,
                             icon: Icons.image,
                             text: 'Front side only (PAN has only front)',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(
-                            context,
-                            icon: Icons.lock_outline,
-                            text: 'If PDF → password entry supported',
                           ),
                         ],
                       ),
@@ -441,55 +527,43 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                         ),
                       ),
                     ],
-                    
-                    if (_pdfPassword != null) ...[
-                      const SizedBox(height: 24),
-                      PremiumCard(
-                        gradientColors: [
-                          AppTheme.accentColor.withValues(alpha: 0.1),
-                          AppTheme.accentColor.withValues(alpha: 0.05),
-                        ],
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentColor,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.lock,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'PDF Password Protected',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.accentColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Password: ${'●' * _pdfPassword!.length}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    
                     const SizedBox(height: 40),
-                    
+                    // Save as Draft button
+                    Builder(
+                      builder: (context) {
+                        final colorScheme = Theme.of(context).colorScheme;
+                        return OutlinedButton.icon(
+                          onPressed: _isDraftSaved ? null : _saveDraft,
+                          icon: _isDraftSaved
+                              ? const Icon(Icons.check_circle)
+                              : (_isSavingDraft
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.save_outlined)),
+                          label: Text(_isDraftSaved
+                              ? 'Draft Saved'
+                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            foregroundColor: _isDraftSaved
+                                ? AppTheme.successColor
+                                : null,
+                            side: BorderSide(
+                              color: _isDraftSaved
+                                  ? AppTheme.successColor
+                                  : colorScheme.primary,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
                     // Premium Next Button
                     PremiumButton(
                       label: 'Continue to Bank Statement',

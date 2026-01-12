@@ -6,6 +6,7 @@ class AppRoutes {
   
   // Main Flow
   static const String home = '/home';
+  static const String instructions = '/instructions';
   static const String termsAndConditions = '/terms';
   
   // Document Steps
