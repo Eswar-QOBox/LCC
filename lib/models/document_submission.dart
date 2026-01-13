@@ -4,6 +4,7 @@ class DocumentSubmission {
   PanDocument? pan;
   BankStatement? bankStatement;
   PersonalData? personalData;
+  SalarySlips? salarySlips;
   DateTime? submittedAt;
   SubmissionStatus status;
 
@@ -13,6 +14,7 @@ class DocumentSubmission {
     this.pan,
     this.bankStatement,
     this.personalData,
+    this.salarySlips,
     this.submittedAt,
     this.status = SubmissionStatus.inProgress,
   });
@@ -26,7 +28,9 @@ class DocumentSubmission {
         bankStatement != null &&
         bankStatement!.isComplete &&
         personalData != null &&
-        personalData!.isComplete;
+        personalData!.isComplete &&
+        salarySlips != null &&
+        salarySlips!.isComplete;
   }
 }
 
@@ -66,6 +70,20 @@ class BankStatement {
   });
 
   bool get isComplete => pages.isNotEmpty;
+}
+
+class SalarySlips {
+  List<String> slips;
+  String? pdfPassword;
+  bool isPdf;
+
+  SalarySlips({
+    this.slips = const [],
+    this.pdfPassword,
+    this.isPdf = false,
+  });
+
+  bool get isComplete => slips.isNotEmpty;
 }
 
 class PersonalData {

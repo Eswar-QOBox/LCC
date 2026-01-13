@@ -52,14 +52,22 @@ class _SplashScreenState extends State<SplashScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.document_scanner,
-                size: 100,
-                color: Theme.of(context).colorScheme.onPrimary,
+              Image.asset(
+                'assets/JSEE_icon.jpg',
+                width: 150,
+                height: 150,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    Icons.document_scanner,
+                    size: 100,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  );
+                },
               ),
               const SizedBox(height: 24),
               Text(
-                'LCC',
+                'JSEE',
                 style: Theme.of(context).textTheme.displayLarge?.copyWith(
                       color: Theme.of(context).colorScheme.onPrimary,
                       fontWeight: FontWeight.bold,

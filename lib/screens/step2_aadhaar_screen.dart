@@ -250,7 +250,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 ),
               ),
             ),
-            StepProgressIndicator(currentStep: 2, totalSteps: 6),
+            StepProgressIndicator(currentStep: 2, totalSteps: 7),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

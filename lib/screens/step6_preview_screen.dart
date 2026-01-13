@@ -252,13 +252,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step5PersonalData),
+                    onPressed: () => context.go(AppRoutes.step5_1SalarySlips),
                     color: colorScheme.primary,
                   ),
                 ),
               ),
             ),
-            StepProgressIndicator(currentStep: 6, totalSteps: 6),
+            StepProgressIndicator(currentStep: 7, totalSteps: 7),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -561,7 +561,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     const SizedBox(height: 20),
                     _buildPremiumSection(
                       context,
-                      stepNumber: 5,
+                      stepNumber: 6,
                       title: 'Personal Data',
                       icon: Icons.person,
                       isComplete: submission.personalData?.isComplete ?? false,
@@ -589,6 +589,108 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               : _buildEmptyState(context, 'No personal data entered. Please go back to Step 5 to fill in your information.');
                         },
                       ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildPremiumSection(
+                      context,
+                      stepNumber: 5,
+                      title: 'Salary Slips',
+                      icon: Icons.receipt_long,
+                      isComplete: submission.salarySlips?.isComplete ?? false,
+                      onEdit: () => _editStep(context, AppRoutes.step5_1SalarySlips),
+                      child: submission.salarySlips?.isComplete == true
+                          ? PremiumCard(
+                              gradientColors: [
+                                colorScheme.primary.withValues(alpha: 0.05),
+                                colorScheme.secondary.withValues(alpha: 0.02),
+                              ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              colorScheme.primary,
+                                              colorScheme.secondary,
+                                            ],
+                                          ),
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          Icons.receipt_long,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              '${submission.salarySlips!.slips.length} ${submission.salarySlips!.slips.length == 1 ? 'Slip' : 'Slips'} Uploaded',
+                                              style: theme.textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              submission.salarySlips!.isPdf ? 'PDF Format' : 'Image Format',
+                                              style: theme.textTheme.bodySmall,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (submission.salarySlips!.slips.length <= 3) ...[
+                                    const SizedBox(height: 16),
+                                    Wrap(
+                                      spacing: 12,
+                                      runSpacing: 12,
+                                      children: submission.salarySlips!.slips.asMap().entries.map((entry) {
+                                        return SizedBox(
+                                          width: 100,
+                                          height: 140,
+                                          child: _buildPremiumDocumentPreview(
+                                            context,
+                                            entry.value,
+                                            'Slip ${entry.key + 1}',
+                                            submission.salarySlips!.isPdf && entry.key == 0,
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ] else ...[
+                                    const SizedBox(height: 16),
+                                    GridView.builder(
+                                      shrinkWrap: true,
+                                      physics: const NeverScrollableScrollPhysics(),
+                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 3,
+                                        crossAxisSpacing: 12,
+                                        mainAxisSpacing: 12,
+                                        childAspectRatio: 0.7,
+                                      ),
+                                      itemCount: submission.salarySlips!.slips.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildPremiumDocumentPreview(
+                                          context,
+                                          submission.salarySlips!.slips[index],
+                                          'Slip ${index + 1}',
+                                          submission.salarySlips!.isPdf && index == 0,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
+                          : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
                     // Save as Draft button

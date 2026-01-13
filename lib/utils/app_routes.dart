@@ -15,6 +15,7 @@ class AppRoutes {
   static const String step3Pan = '/step3-pan';
   static const String step4BankStatement = '/step4-bank-statement';
   static const String step5PersonalData = '/step5-personal-data';
+  static const String step5_1SalarySlips = '/step5-1-salary-slips';
   static const String step6Preview = '/step6-preview';
   
   // After Submission

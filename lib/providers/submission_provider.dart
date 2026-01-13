@@ -64,6 +64,29 @@ class SubmissionProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // Salary Slips
+  void setSalarySlips(List<String> slips, {bool isPdf = false}) {
+    _submission.salarySlips ??= SalarySlips(isPdf: isPdf);
+    _submission.salarySlips!.slips = slips;
+    _submission.salarySlips!.isPdf = isPdf;
+    notifyListeners();
+  }
+
+  void addSalarySlip(String path) {
+    _submission.salarySlips ??= SalarySlips();
+    _submission.salarySlips!.slips = [
+      ..._submission.salarySlips!.slips,
+      path,
+    ];
+    notifyListeners();
+  }
+
+  void setSalarySlipsPassword(String password) {
+    _submission.salarySlips ??= SalarySlips();
+    _submission.salarySlips!.pdfPassword = password;
+    notifyListeners();
+  }
+
   // Personal Data
   void setPersonalData(PersonalData data) {
     _submission.personalData = data;

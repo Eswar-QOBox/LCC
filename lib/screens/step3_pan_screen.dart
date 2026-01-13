@@ -225,7 +225,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               ),
             ),
             // Premium Progress Indicator (below AppBar)
-            StepProgressIndicator(currentStep: 3, totalSteps: 6),
+            StepProgressIndicator(currentStep: 3, totalSteps: 7),
             
             // Content
             Expanded(

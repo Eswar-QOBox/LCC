@@ -16,6 +16,7 @@ import 'screens/step2_aadhaar_screen.dart';
 import 'screens/step3_pan_screen.dart';
 import 'screens/step4_bank_statement_screen.dart';
 import 'screens/step5_personal_data_screen.dart';
+import 'screens/step5_1_salary_slips_screen.dart';
 import 'screens/step6_preview_screen.dart';
 import 'screens/submission_success_screen.dart';
 
@@ -91,6 +92,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.step5PersonalData,
       builder: (context, state) => const Step5PersonalDataScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step5_1SalarySlips,
+      builder: (context, state) => const Step5_1SalarySlipsScreen(),
     ),
     GoRoute(
       path: AppRoutes.step6Preview,

@@ -31,14 +31,22 @@ class _BrandingScreenState extends State<BrandingScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.business,
-              size: 120,
-              color: Theme.of(context).colorScheme.primary,
+            Image.asset(
+              'assets/JSEE_icon.jpg',
+              width: 200,
+              height: 200,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.business,
+                  size: 120,
+                  color: Theme.of(context).colorScheme.primary,
+                );
+              },
             ),
             const SizedBox(height: 32),
             Text(
-              'Company Name',
+              'JSEE',
               style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: Theme.of(context).colorScheme.primary,

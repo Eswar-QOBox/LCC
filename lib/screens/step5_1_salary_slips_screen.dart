@@ -13,16 +13,16 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
-class Step4BankStatementScreen extends StatefulWidget {
-  const Step4BankStatementScreen({super.key});
+class Step5_1SalarySlipsScreen extends StatefulWidget {
+  const Step5_1SalarySlipsScreen({super.key});
 
   @override
-  State<Step4BankStatementScreen> createState() =>
-      _Step4BankStatementScreenState();
+  State<Step5_1SalarySlipsScreen> createState() =>
+      _Step5_1SalarySlipsScreenState();
 }
 
-class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
-  List<String> _pages = [];
+class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
+  List<String> _slips = [];
   String? _pdfPassword;
   bool _isPdf = false;
   bool _isDraftSaved = false;
@@ -32,9 +32,9 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   void initState() {
     super.initState();
     final provider = context.read<SubmissionProvider>();
-    _pages = List.from(provider.submission.bankStatement?.pages ?? []);
-    _isPdf = provider.submission.bankStatement?.isPdf ?? false;
-    _pdfPassword = provider.submission.bankStatement?.pdfPassword;
+    _slips = List.from(provider.submission.salarySlips?.slips ?? []);
+    _isPdf = provider.submission.salarySlips?.isPdf ?? false;
+    _pdfPassword = provider.submission.salarySlips?.pdfPassword;
   }
 
 
@@ -48,7 +48,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       String path;
       
       if (kIsWeb) {
-        // On web, use bytes to create a blob URL
         final bytes = result.files.single.bytes;
         if (bytes == null) {
           if (mounted) {
@@ -66,10 +65,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           }
           return;
         }
-        // Create blob URL from bytes
         path = createBlobUrl(bytes, mimeType: 'application/pdf');
       } else {
-        // On mobile/desktop, use file path
         if (result.files.single.path == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -91,32 +88,30 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       
       if (mounted) {
         setState(() {
-          _pages = [path];
+          _slips = [path];
           _isPdf = true;
           _resetDraftState();
         });
         context
             .read<SubmissionProvider>()
-            .setBankStatementPages([path], isPdf: true);
+            .setSalarySlips([path], isPdf: true);
         _showPasswordDialogIfNeeded();
       }
     }
   }
 
-
-
-
-  void _removePage(int index) {
+  void _removeSlip(int index) {
     setState(() {
-      _pages.removeAt(index);
+      _slips.removeAt(index);
       _resetDraftState();
     });
     context
         .read<SubmissionProvider>()
-        .setBankStatementPages(_pages, isPdf: _isPdf);
+        .setSalarySlips(_slips, isPdf: _isPdf);
   }
 
   void _showPasswordDialogIfNeeded() {
+    final passwordController = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -127,29 +122,28 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             const Text('Is this PDF password protected?'),
             const SizedBox(height: 16),
             TextField(
+              controller: passwordController,
               decoration: const InputDecoration(
                 labelText: 'PDF Password (if required)',
-                border: OutlineInputBorder(),
+                hintText: 'Enter password or leave blank',
               ),
               obscureText: true,
-              onChanged: (value) => _pdfPassword = value,
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              _pdfPassword = null;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Not Required'),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Skip'),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () {
-              if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-                context
-                    .read<SubmissionProvider>()
-                    .setBankStatementPassword(_pdfPassword!);
+              final password = passwordController.text.trim();
+              if (password.isNotEmpty) {
+                setState(() {
+                  _pdfPassword = password;
+                });
+                context.read<SubmissionProvider>().setSalarySlipsPassword(password);
               }
               Navigator.of(context).pop();
             },
@@ -158,17 +152,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         ],
       ),
     );
-  }
-
-  void _proceedToNext() {
-    if (_pages.isNotEmpty) {
-      context.go(AppRoutes.step5_1SalarySlips);
-    } else {
-      PremiumToast.showWarning(
-        context,
-        'Please upload bank statement (last 6 months)',
-      );
-    }
   }
 
   void _resetDraftState() {
@@ -188,12 +171,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
     final provider = context.read<SubmissionProvider>();
     
-    // Save current state to provider
-    if (_pages.isNotEmpty) {
-      provider.setBankStatementPages(_pages, isPdf: _isPdf);
+    if (_slips.isNotEmpty) {
+      provider.setSalarySlips(_slips, isPdf: _isPdf);
     }
     if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-      provider.setBankStatementPassword(_pdfPassword!);
+      provider.setSalarySlipsPassword(_pdfPassword!);
     }
 
     try {
@@ -233,6 +215,17 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     }
   }
 
+  void _proceedToNext() {
+    if (_slips.isEmpty) {
+      PremiumToast.showWarning(
+        context,
+        'Please upload at least one salary slip',
+      );
+      return;
+    }
+    context.go(AppRoutes.step6Preview);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -247,7 +240,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             colors: [
               colorScheme.primary.withValues(alpha: 0.08),
               colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
+              colorScheme.surface,
             ],
           ),
         ),
@@ -259,13 +252,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white,
+                    colorScheme.surface,
                     colorScheme.primary.withValues(alpha: 0.03),
                   ],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: colorScheme.shadow.withValues(alpha: 0.05),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -294,14 +287,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         ],
                       ),
                       child: const Icon(
-                        Icons.account_balance,
+                        Icons.receipt_long,
                         color: Colors.white,
                         size: 20,
                       ),
                     ),
                     const SizedBox(width: 12),
                     const Text(
-                      'Bank Statement',
+                      'Salary Slips',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 20,
@@ -315,11 +308,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 leading: Container(
                   margin: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: colorScheme.surface,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
+                        color: colorScheme.shadow.withValues(alpha: 0.1),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -327,13 +320,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step3Pan),
-                    color: colorScheme.primary,
+                    onPressed: () => context.go(AppRoutes.step4BankStatement),
+                    color: colorScheme.onSurface,
                   ),
                 ),
               ),
             ),
-            StepProgressIndicator(currentStep: 4, totalSteps: 7),
+            StepProgressIndicator(currentStep: 5, totalSteps: 7),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -342,7 +335,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   children: [
                     PremiumCard(
                       gradientColors: [
-                        Colors.white,
+                        colorScheme.surface,
                         colorScheme.primary.withValues(alpha: 0.03),
                       ],
                       child: Column(
@@ -369,7 +362,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                                   ],
                                 ),
                                 child: const Icon(
-                                  Icons.account_balance,
+                                  Icons.receipt_long,
                                   color: Colors.white,
                                   size: 28,
                                 ),
@@ -380,17 +373,15 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Bank Statement Requirements',
+                                      'Upload Salary Slips',
                                       style: theme.textTheme.titleLarge?.copyWith(
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                        letterSpacing: -0.5,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Last 6 months statement required',
-                                      style: theme.textTheme.bodySmall?.copyWith(
+                                      'Upload your salary slips for income verification',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
                                     ),
@@ -400,114 +391,41 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
-                          _buildPremiumRequirement(context, Icons.calendar_today, 'Must be last 6 months'),
+                          _buildPremiumRequirement(context, Icons.description, 'Upload last 3-6 months salary slips'),
                           const SizedBox(height: 12),
                           _buildPremiumRequirement(context, Icons.lock_outline, 'PDF password supported'),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 32),
-                    if (_pages.isEmpty) ...[
+                    const SizedBox(height: 24),
+                    if (_slips.isEmpty)
+                      _buildEmptyState(context)
+                    else ...[
                       PremiumCard(
-                        gradientColors: [
-                          Colors.white,
-                          colorScheme.primary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(32),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary.withValues(alpha: 0.1),
-                                    colorScheme.secondary.withValues(alpha: 0.05),
-                                  ],
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.description_outlined,
-                                size: 64,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'Upload Bank Statement',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 24,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Upload PDF file (last 6 months)',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            PremiumButton(
-                              label: 'Upload PDF',
-                              icon: Icons.picture_as_pdf,
-                              isPrimary: true,
-                              onPressed: _uploadPdf,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else ...[
-                      PremiumCard(
-                        gradientColors: [
-                          Colors.white,
-                          colorScheme.primary.withValues(alpha: 0.02),
-                        ],
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Uploaded Pages',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${_pages.length} ${_pages.length == 1 ? 'page' : 'pages'}',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       colors: [
-                                        AppTheme.successColor.withValues(alpha: 0.2),
-                                        AppTheme.successColor.withValues(alpha: 0.1),
+                                        AppTheme.successColor,
+                                        AppTheme.successColor.withValues(alpha: 0.7),
                                       ],
                                     ),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Row(
                                     children: [
-                                      Icon(Icons.check_circle, size: 18, color: AppTheme.successColor),
+                                      Icon(Icons.check_circle, size: 18, color: Colors.white),
                                       const SizedBox(width: 6),
                                       Text(
-                                        'Ready',
-                                        style: TextStyle(
-                                          color: AppTheme.successColor,
+                                        '${_slips.length} Salary Slip${_slips.length > 1 ? 's' : ''} Uploaded',
+                                        style: const TextStyle(
+                                          color: Colors.white,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -529,9 +447,9 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                           mainAxisSpacing: 16,
                           childAspectRatio: 0.75,
                         ),
-                        itemCount: _pages.length,
+                        itemCount: _slips.length,
                         itemBuilder: (context, index) {
-                          return _buildPremiumPageCard(context, index);
+                          return _buildPremiumSlipCard(context, index);
                         },
                       ),
                       const SizedBox(height: 20),
@@ -584,7 +502,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       ),
                     ],
                     const SizedBox(height: 40),
-                    // Save as Draft button
                     Builder(
                       builder: (context) {
                         final colorScheme = Theme.of(context).colorScheme;
@@ -621,7 +538,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     ),
                     const SizedBox(height: 16),
                     PremiumButton(
-                      label: 'Continue to Salary Slips',
+                      label: 'Continue to Personal Data',
                       icon: Icons.arrow_forward_rounded,
                       isPrimary: true,
                       onPressed: _proceedToNext,
@@ -660,7 +577,44 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     );
   }
 
-  Widget _buildPremiumPageCard(BuildContext context, int index) {
+  Widget _buildEmptyState(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return PremiumCard(
+      child: Column(
+        children: [
+          Icon(
+            Icons.receipt_long_outlined,
+            size: 80,
+            color: colorScheme.primary.withValues(alpha: 0.5),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'No Salary Slips Uploaded',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Upload your salary slips to continue',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+          PremiumButton(
+            label: 'Upload PDF',
+            icon: Icons.picture_as_pdf,
+            isPrimary: true,
+            onPressed: _uploadPdf,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumSlipCard(BuildContext context, int index) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     
@@ -675,68 +629,65 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.2),
-          width: 1.5,
-        ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18.5),
+        borderRadius: BorderRadius.circular(20),
         child: Stack(
           children: [
-            _isPdf && index == 0
-                ? Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          colorScheme.primary.withValues(alpha: 0.1),
-                          colorScheme.secondary.withValues(alpha: 0.05),
-                        ],
-                      ),
-                    ),
-                    child: Center(
+            Container(
+              width: double.infinity,
+              height: double.infinity,
+              color: colorScheme.surface,
+              child: _isPdf && index == 0
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.picture_as_pdf, size: 40, color: colorScheme.primary),
+                          Icon(
+                            Icons.picture_as_pdf,
+                            size: 40,
+                            color: colorScheme.primary,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'PDF',
-                            style: TextStyle(
+                            style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  )
-                : PlatformImage(imagePath: _pages[index], fit: BoxFit.cover),
+                    )
+                  : PlatformImage(imagePath: _slips[index], fit: BoxFit.cover),
+            ),
             Positioned(
               top: 8,
               right: 8,
-              child: GestureDetector(
-                onTap: () => _removePage(index),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.errorColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.errorColor.withValues(alpha: 0.4),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                  onPressed: () => _removeSlip(index),
+                  padding: const EdgeInsets.all(8),
+                  constraints: const BoxConstraints(),
                 ),
               ),
             ),
             Positioned(
               bottom: 8,
               left: 8,
+              right: 8,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
@@ -749,7 +700,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  'Page ${index + 1}',
+                  'Slip ${index + 1}',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -764,4 +715,3 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     );
   }
 }
-

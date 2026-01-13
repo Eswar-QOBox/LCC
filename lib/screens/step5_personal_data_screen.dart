@@ -593,7 +593,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                   ),
                 ),
               ),
-            StepProgressIndicator(currentStep: 5, totalSteps: 6),
+            StepProgressIndicator(currentStep: 6, totalSteps: 7),
             Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -1109,7 +1109,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       ),
                       const SizedBox(height: 16),
                       PremiumButton(
-                        label: _isSaving ? 'Saving...' : 'Next: Preview',
+                        label: _isSaving ? 'Saving...' : 'Next: Salary Slips',
                         icon: _isSaving ? null : Icons.arrow_forward_rounded,
                         isPrimary: true,
                         onPressed: _isSaving ? null : _saveAndProceed,
