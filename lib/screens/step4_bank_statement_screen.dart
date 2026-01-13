@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
@@ -22,6 +23,7 @@ class Step4BankStatementScreen extends StatefulWidget {
 }
 
 class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
+  final ImagePicker _imagePicker = ImagePicker();
   List<String> _pages = [];
   String? _pdfPassword;
   bool _isPdf = false;
@@ -35,6 +37,34 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     _pages = List.from(provider.submission.bankStatement?.pages ?? []);
     _isPdf = provider.submission.bankStatement?.isPdf ?? false;
     _pdfPassword = provider.submission.bankStatement?.pdfPassword;
+  }
+
+  Future<void> _captureFromCamera() async {
+    final image = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (image != null && mounted) {
+      setState(() {
+        _pages.add(image.path);
+        _isPdf = false;
+        _resetDraftState();
+      });
+      context
+          .read<SubmissionProvider>()
+          .setBankStatementPages(_pages, isPdf: false);
+    }
+  }
+
+  Future<void> _selectFromGallery() async {
+    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (image != null && mounted) {
+      setState(() {
+        _pages.add(image.path);
+        _isPdf = false;
+        _resetDraftState();
+      });
+      context
+          .read<SubmissionProvider>()
+          .setBankStatementPages(_pages, isPdf: false);
+    }
   }
 
   Future<void> _uploadPdf() async {
@@ -442,14 +472,36 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Upload PDF file (last 6 months)',
+                              'Capture images or upload PDF (last 6 months)',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
                             ),
                             const SizedBox(height: 32),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: PremiumButton(
+                                    label: 'Camera',
+                                    icon: Icons.camera_alt,
+                                    isPrimary: false,
+                                    onPressed: _captureFromCamera,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: PremiumButton(
+                                    label: 'Gallery',
+                                    icon: Icons.photo_library,
+                                    isPrimary: false,
+                                    onPressed: _selectFromGallery,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
                             PremiumButton(
-                              label: 'Upload PDF',
+                              label: 'Upload PDF (if password)',
                               icon: Icons.picture_as_pdf,
                               isPrimary: true,
                               onPressed: _uploadPdf,
@@ -534,8 +586,30 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         },
                       ),
                       const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PremiumButton(
+                              label: 'Add Camera',
+                              icon: Icons.camera_alt,
+                              isPrimary: false,
+                              onPressed: _captureFromCamera,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: PremiumButton(
+                              label: 'Add Gallery',
+                              icon: Icons.photo_library,
+                              isPrimary: false,
+                              onPressed: _selectFromGallery,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       PremiumButton(
-                        label: 'Change PDF',
+                        label: _isPdf ? 'Change PDF' : 'Upload PDF (if password)',
                         icon: Icons.picture_as_pdf,
                         isPrimary: false,
                         onPressed: _uploadPdf,

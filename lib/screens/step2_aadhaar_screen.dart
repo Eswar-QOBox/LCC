@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
@@ -23,7 +22,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _frontPath;
   String? _backPath;
-  bool _isPdf = false;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
 
@@ -33,7 +31,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.aadhaar?.frontPath;
     _backPath = provider.submission.aadhaar?.backPath;
-    _isPdf = provider.submission.aadhaar?.isPdf ?? false;
   }
 
   void _resetDraftState() {
@@ -45,88 +42,46 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   }
 
   Future<void> _captureFront() async {
-    if (_isPdf) {
-      await _pickPdf('front');
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.camera);
-      if (image != null && mounted) {
-        setState(() {
-          _frontPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarFront(image.path);
-      }
+    final image = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (image != null && mounted) {
+      setState(() {
+        _frontPath = image.path;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().setAadhaarFront(image.path);
     }
   }
 
   Future<void> _selectFrontFromGallery() async {
-    if (_isPdf) {
-      await _pickPdf('front');
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        setState(() {
-          _frontPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarFront(image.path);
-      }
+    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (image != null && mounted) {
+      setState(() {
+        _frontPath = image.path;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().setAadhaarFront(image.path);
     }
   }
 
   Future<void> _captureBack() async {
-    if (_isPdf) {
-      await _pickPdf('back');
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.camera);
-      if (image != null && mounted) {
-        setState(() {
-          _backPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarBack(image.path);
-      }
+    final image = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (image != null && mounted) {
+      setState(() {
+        _backPath = image.path;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().setAadhaarBack(image.path);
     }
   }
 
   Future<void> _selectBackFromGallery() async {
-    if (_isPdf) {
-      await _pickPdf('back');
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        setState(() {
-          _backPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarBack(image.path);
-      }
-    }
-  }
-
-  Future<void> _pickPdf(String side) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
-
-    if (result != null && result.files.single.path != null && mounted) {
-      final path = result.files.single.path!;
-      if (side == 'front') {
-        setState(() {
-          _frontPath = path;
-          _isPdf = true;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarFront(path, isPdf: true);
-      } else {
-        setState(() {
-          _backPath = path;
-          _isPdf = true;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarBack(path);
-      }
+    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (image != null && mounted) {
+      setState(() {
+        _backPath = image.path;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().setAadhaarBack(image.path);
     }
   }
 
@@ -152,7 +107,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     
     // Save current state to provider
     if (_frontPath != null) {
-      provider.setAadhaarFront(_frontPath!, isPdf: _isPdf);
+      provider.setAadhaarFront(_frontPath!);
     }
     if (_backPath != null) {
       provider.setAadhaarBack(_backPath!);
@@ -382,7 +337,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   context,
                                   'Front',
                                   _frontPath!,
-                                  _isPdf,
                                   onTap: _captureFront,
                                 ),
                                 const SizedBox(height: 16),
@@ -390,7 +344,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   context,
                                   'Back',
                                   _backPath!,
-                                  _isPdf,
                                   onTap: _captureBack,
                                 ),
                               ],
@@ -403,7 +356,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     context,
                                     'Front',
                                     _frontPath!,
-                                    _isPdf,
                                     onTap: _captureFront,
                                   ),
                                 ),
@@ -413,7 +365,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     context,
                                     'Back',
                                     _backPath!,
-                                    _isPdf,
                                     onTap: _captureBack,
                                   ),
                                 ),
@@ -433,7 +384,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_frontPath != null)
-                        _buildSidePreview(context, 'Front', _frontPath!, _isPdf, onTap: _captureFront)
+                        _buildSidePreview(context, 'Front', _frontPath!, onTap: _captureFront)
                       else
                         _buildUploadCard(
                           context,
@@ -453,7 +404,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_backPath != null)
-                        _buildSidePreview(context, 'Back', _backPath!, _isPdf, onTap: _captureBack)
+                        _buildSidePreview(context, 'Back', _backPath!, onTap: _captureBack)
                       else
                         _buildUploadCard(
                           context,
@@ -539,7 +490,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     BuildContext context,
     String label,
     String path,
-    bool isPdf,
     {required VoidCallback onTap}
   ) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -566,28 +516,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           borderRadius: BorderRadius.circular(18),
           child: Stack(
             children: [
-              isPdf
-                  ? Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary.withValues(alpha: 0.1),
-                            colorScheme.secondary.withValues(alpha: 0.05),
-                          ],
-                        ),
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.picture_as_pdf, size: 48, color: colorScheme.primary),
-                            const SizedBox(height: 8),
-                            Text(label, style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    )
-                  : PlatformImage(imagePath: path, fit: BoxFit.cover),
+              PlatformImage(imagePath: path, fit: BoxFit.cover),
               Positioned(
                 top: 12,
                 left: 12,

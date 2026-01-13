@@ -468,7 +468,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     context,
                                     submission.aadhaar!.frontPath!,
                                     'Front',
-                                    submission.aadhaar!.isPdf,
+                                    false, // Aadhaar is always image, never PDF
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -477,7 +477,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     context,
                                     submission.aadhaar!.backPath!,
                                     'Back',
-                                    submission.aadhaar!.isPdf,
+                                    false, // Aadhaar is always image, never PDF
                                   ),
                                 ),
                               ],
@@ -497,7 +497,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               context,
                               submission.pan!.frontPath!,
                               'Front',
-                              submission.pan!.isPdf,
+                              false, // PAN is always image, never PDF
                             )
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),

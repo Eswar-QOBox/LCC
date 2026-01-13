@@ -33,14 +33,10 @@ class DocumentSubmission {
 class AadhaarDocument {
   String? frontPath;
   String? backPath;
-  String? pdfPassword;
-  bool isPdf;
 
   AadhaarDocument({
     this.frontPath,
     this.backPath,
-    this.pdfPassword,
-    this.isPdf = false,
   });
 
   bool get isComplete => frontPath != null && backPath != null;
@@ -48,13 +44,9 @@ class AadhaarDocument {
 
 class PanDocument {
   String? frontPath;
-  String? pdfPassword;
-  bool isPdf;
 
   PanDocument({
     this.frontPath,
-    this.pdfPassword,
-    this.isPdf = false,
   });
 
   bool get isComplete => frontPath != null;

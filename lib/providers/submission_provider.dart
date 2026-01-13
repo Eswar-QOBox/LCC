@@ -22,10 +22,9 @@ class SubmissionProvider with ChangeNotifier {
   }
 
   // Aadhaar
-  void setAadhaarFront(String path, {bool isPdf = false}) {
-    _submission.aadhaar ??= AadhaarDocument(isPdf: isPdf);
+  void setAadhaarFront(String path) {
+    _submission.aadhaar ??= AadhaarDocument();
     _submission.aadhaar!.frontPath = path;
-    _submission.aadhaar!.isPdf = isPdf;
     notifyListeners();
   }
 
@@ -35,23 +34,10 @@ class SubmissionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void setAadhaarPassword(String password) {
-    _submission.aadhaar ??= AadhaarDocument();
-    _submission.aadhaar!.pdfPassword = password;
-    notifyListeners();
-  }
-
   // PAN
-  void setPanFront(String path, {bool isPdf = false}) {
-    _submission.pan ??= PanDocument(isPdf: isPdf);
-    _submission.pan!.frontPath = path;
-    _submission.pan!.isPdf = isPdf;
-    notifyListeners();
-  }
-
-  void setPanPassword(String password) {
+  void setPanFront(String path) {
     _submission.pan ??= PanDocument();
-    _submission.pan!.pdfPassword = password;
+    _submission.pan!.frontPath = path;
     notifyListeners();
   }
 
@@ -302,15 +288,11 @@ class SubmissionProvider with ChangeNotifier {
           ? {
               'frontPath': submission.aadhaar!.frontPath,
               'backPath': submission.aadhaar!.backPath,
-              'pdfPassword': submission.aadhaar!.pdfPassword,
-              'isPdf': submission.aadhaar!.isPdf,
             }
           : null,
       'pan': submission.pan != null
           ? {
               'frontPath': submission.pan!.frontPath,
-              'pdfPassword': submission.pan!.pdfPassword,
-              'isPdf': submission.pan!.isPdf,
             }
           : null,
       'bankStatement': submission.bankStatement != null
@@ -375,8 +357,6 @@ class SubmissionProvider with ChangeNotifier {
       submission.aadhaar = AadhaarDocument(
         frontPath: aadhaarData['frontPath'] as String?,
         backPath: aadhaarData['backPath'] as String?,
-        pdfPassword: aadhaarData['pdfPassword'] as String?,
-        isPdf: aadhaarData['isPdf'] as bool? ?? false,
       );
     }
 
@@ -384,8 +364,6 @@ class SubmissionProvider with ChangeNotifier {
       final panData = json['pan'] as Map<String, dynamic>;
       submission.pan = PanDocument(
         frontPath: panData['frontPath'] as String?,
-        pdfPassword: panData['pdfPassword'] as String?,
-        isPdf: panData['isPdf'] as bool? ?? false,
       );
     }
 

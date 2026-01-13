@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
@@ -22,7 +21,6 @@ class Step3PanScreen extends StatefulWidget {
 class _Step3PanScreenState extends State<Step3PanScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   String? _frontPath;
-  bool _isPdf = false;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
 
@@ -31,53 +29,27 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     super.initState();
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.pan?.frontPath;
-    _isPdf = provider.submission.pan?.isPdf ?? false;
   }
 
   Future<void> _captureFromCamera() async {
-    if (_isPdf) {
-      await _pickPdf();
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.camera);
-      if (image != null && mounted) {
-        setState(() {
-          _frontPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setPanFront(image.path);
-      }
+    final image = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (image != null && mounted) {
+      setState(() {
+        _frontPath = image.path;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().setPanFront(image.path);
     }
   }
 
   Future<void> _selectFromGallery() async {
-    if (_isPdf) {
-      await _pickPdf();
-    } else {
-      final image = await _imagePicker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        setState(() {
-          _frontPath = image.path;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setPanFront(image.path);
-      }
-    }
-  }
-
-  Future<void> _pickPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
-
-    if (result != null && result.files.single.path != null && mounted) {
-      final path = result.files.single.path!;
+    final image = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (image != null && mounted) {
       setState(() {
-        _frontPath = path;
-        _isPdf = true;
+        _frontPath = image.path;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
+      context.read<SubmissionProvider>().setPanFront(image.path);
     }
   }
 
@@ -111,7 +83,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     
     // Save current state to provider
     if (_frontPath != null) {
-      provider.setPanFront(_frontPath!, isPdf: _isPdf);
+      provider.setPanFront(_frontPath!);
     }
 
     try {
@@ -369,62 +341,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                           borderRadius: BorderRadius.circular(22),
                           child: Stack(
                             children: [
-                              _isPdf
-                                  ? Container(
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
-                                          colors: [
-                                            colorScheme.primary.withValues(alpha: 0.1),
-                                            colorScheme.secondary.withValues(alpha: 0.05),
-                                          ],
-                                        ),
-                                      ),
-                                      child: Center(
-                                        child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(24),
-                                              decoration: BoxDecoration(
-                                                gradient: LinearGradient(
-                                                  colors: [
-                                                    colorScheme.primary,
-                                                    colorScheme.secondary,
-                                                  ],
-                                                ),
-                                                shape: BoxShape.circle,
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: colorScheme.primary.withValues(alpha: 0.4),
-                                                    blurRadius: 20,
-                                                    spreadRadius: 5,
-                                                  ),
-                                                ],
-                                              ),
-                                              child: const Icon(
-                                                Icons.picture_as_pdf,
-                                                size: 64,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 16),
-                                            Text(
-                                              'PDF Document',
-                                              style: theme.textTheme.titleLarge?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                                color: colorScheme.primary,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                  : PlatformImage(
-                                      imagePath: _frontPath!,
-                                      fit: BoxFit.cover,
-                                    ),
+                              PlatformImage(
+                                imagePath: _frontPath!,
+                                fit: BoxFit.cover,
+                              ),
                               // Overlay gradient
                               Container(
                                 decoration: BoxDecoration(
@@ -515,7 +435,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: PremiumButton(
-                                    label: 'Gallery / PDF',
+                                    label: 'Gallery',
                                     icon: Icons.photo_library,
                                     isPrimary: false,
                                     onPressed: _selectFromGallery,
