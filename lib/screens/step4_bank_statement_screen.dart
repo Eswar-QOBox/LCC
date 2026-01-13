@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
@@ -22,11 +25,13 @@ class Step4BankStatementScreen extends StatefulWidget {
 }
 
 class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
+  final FileUploadService _fileUploadService = FileUploadService();
   List<String> _pages = [];
   String? _pdfPassword;
   bool _isPdf = false;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -35,6 +40,77 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     _pages = List.from(provider.submission.bankStatement?.pages ?? []);
     _isPdf = provider.submission.bankStatement?.isPdf ?? false;
     _pdfPassword = provider.submission.bankStatement?.pdfPassword;
+    
+    // Load existing data from backend
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingData();
+    });
+  }
+
+  Future<void> _loadExistingData() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+
+    final application = appProvider.currentApplication!;
+    if (application.step4BankStatement != null) {
+      final stepData = application.step4BankStatement as Map<String, dynamic>;
+      if (stepData['pages'] != null) {
+        setState(() {
+          _pages = List<String>.from(stepData['pages'] as List);
+          _isPdf = stepData['isPdf'] as bool? ?? false;
+          _pdfPassword = stepData['pdfPassword'] as String?;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveToBackend() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication || _pages.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Convert paths to XFile objects and upload
+      final files = _pages.map((path) => XFile(path)).toList();
+      final uploadResults = await _fileUploadService.uploadBankStatements(files);
+
+      // Save step data to backend
+      await appProvider.updateApplication(
+        currentStep: 5, // Move to next step
+        step4BankStatement: {
+          'pages': _pages,
+          'isPdf': _isPdf,
+          'pdfPassword': _pdfPassword,
+          'uploadedFiles': uploadResults,
+          'savedAt': DateTime.now().toIso8601String(),
+        },
+      );
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'Bank statement saved successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Failed to save bank statement: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
 
@@ -160,9 +236,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     );
   }
 
-  void _proceedToNext() {
+  Future<void> _proceedToNext() async {
     if (_pages.isNotEmpty) {
-      context.go(AppRoutes.step5_1SalarySlips);
+      if (!_isSaving) {
+        await _saveToBackend();
+      }
+      if (mounted) {
+        context.go(AppRoutes.step5_1SalarySlips);
+      }
     } else {
       PremiumToast.showWarning(
         context,

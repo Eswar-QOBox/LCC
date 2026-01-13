@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
 import '../widgets/step_progress_indicator.dart';
@@ -107,6 +108,47 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
 
   void _loadExistingData() {
     try {
+      // First try to load from backend
+      final appProvider = context.read<ApplicationProvider>();
+      if (appProvider.hasApplication && appProvider.currentApplication!.step5PersonalData != null) {
+        final stepData = appProvider.currentApplication!.step5PersonalData as Map<String, dynamic>;
+        _nameAsPerAadhaarController.text = stepData['nameAsPerAadhaar'] ?? '';
+        _panNoController.text = stepData['panNo'] ?? '';
+        _mobileNumberController.text = stepData['mobileNumber'] ?? '';
+        _personalEmailIdController.text = stepData['personalEmailId'] ?? '';
+        if (stepData['dateOfBirth'] != null) {
+          _dateOfBirth = DateTime.parse(stepData['dateOfBirth']);
+        }
+        _countryOfResidenceController.text = stepData['countryOfResidence'] ?? '';
+        _residenceAddressController.text = stepData['residenceAddress'] ?? '';
+        _residenceTypeController.text = stepData['residenceType'] ?? '';
+        _residenceStabilityController.text = stepData['residenceStability'] ?? '';
+        _companyNameController.text = stepData['companyName'] ?? '';
+        _companyAddressController.text = stepData['companyAddress'] ?? '';
+        _nationalityController.text = stepData['nationality'] ?? '';
+        _countryOfBirthController.text = stepData['countryOfBirth'] ?? '';
+        _occupationController.text = stepData['occupation'] ?? '';
+        _educationalQualificationController.text = stepData['educationalQualification'] ?? '';
+        _workTypeController.text = stepData['workType'] ?? '';
+        _industryController.text = stepData['industry'] ?? '';
+        _annualIncomeController.text = stepData['annualIncome'] ?? '';
+        _totalWorkExperienceController.text = stepData['totalWorkExperience'] ?? '';
+        _currentCompanyExperienceController.text = stepData['currentCompanyExperience'] ?? '';
+        _loanAmountTenureController.text = stepData['loanAmountTenure'] ?? '';
+        _maritalStatus = stepData['maritalStatus'];
+        _spouseNameController.text = stepData['spouseName'] ?? '';
+        _fatherNameController.text = stepData['fatherName'] ?? '';
+        _motherNameController.text = stepData['motherName'] ?? '';
+        _reference1NameController.text = stepData['reference1Name'] ?? '';
+        _reference1AddressController.text = stepData['reference1Address'] ?? '';
+        _reference1ContactController.text = stepData['reference1Contact'] ?? '';
+        _reference2NameController.text = stepData['reference2Name'] ?? '';
+        _reference2AddressController.text = stepData['reference2Address'] ?? '';
+        _reference2ContactController.text = stepData['reference2Contact'] ?? '';
+        return;
+      }
+      
+      // Fallback to provider
       final provider = context.read<SubmissionProvider>();
       final data = provider.submission.personalData;
       if (data != null) {
@@ -289,8 +331,54 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         context.read<SubmissionProvider>().setPersonalData(personalData);
       }
 
-      // Small delay to ensure state is saved
-      await Future.delayed(const Duration(milliseconds: 100));
+      // Save to backend
+      final appProvider = context.read<ApplicationProvider>();
+      if (appProvider.hasApplication) {
+        await appProvider.updateApplication(
+          currentStep: 6, // Move to preview step
+          step5PersonalData: {
+            'nameAsPerAadhaar': personalData.nameAsPerAadhaar,
+            'dateOfBirth': personalData.dateOfBirth?.toIso8601String(),
+            'panNo': personalData.panNo,
+            'mobileNumber': personalData.mobileNumber,
+            'personalEmailId': personalData.personalEmailId,
+            'countryOfResidence': personalData.countryOfResidence,
+            'residenceAddress': personalData.residenceAddress,
+            'residenceType': personalData.residenceType,
+            'residenceStability': personalData.residenceStability,
+            'companyName': personalData.companyName,
+            'companyAddress': personalData.companyAddress,
+            'nationality': personalData.nationality,
+            'countryOfBirth': personalData.countryOfBirth,
+            'occupation': personalData.occupation,
+            'educationalQualification': personalData.educationalQualification,
+            'workType': personalData.workType,
+            'industry': personalData.industry,
+            'annualIncome': personalData.annualIncome,
+            'totalWorkExperience': personalData.totalWorkExperience,
+            'currentCompanyExperience': personalData.currentCompanyExperience,
+            'loanAmountTenure': personalData.loanAmountTenure,
+            'maritalStatus': personalData.maritalStatus,
+            'spouseName': personalData.spouseName,
+            'fatherName': personalData.fatherName,
+            'motherName': personalData.motherName,
+            'reference1Name': personalData.reference1Name,
+            'reference1Address': personalData.reference1Address,
+            'reference1Contact': personalData.reference1Contact,
+            'reference2Name': personalData.reference2Name,
+            'reference2Address': personalData.reference2Address,
+            'reference2Contact': personalData.reference2Contact,
+            'savedAt': DateTime.now().toIso8601String(),
+          },
+        );
+        
+        if (mounted) {
+          PremiumToast.showSuccess(
+            context,
+            'Personal data saved successfully!',
+          );
+        }
+      }
 
       if (mounted && context.mounted) {
         // Navigate to preview screen

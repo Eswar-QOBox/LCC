@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
@@ -20,10 +22,12 @@ class Step2AadhaarScreen extends StatefulWidget {
 
 class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   final ImagePicker _imagePicker = ImagePicker();
+  final FileUploadService _fileUploadService = FileUploadService();
   String? _frontPath;
   String? _backPath;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -31,6 +35,31 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.aadhaar?.frontPath;
     _backPath = provider.submission.aadhaar?.backPath;
+    
+    // Load existing data from backend
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingData();
+    });
+  }
+
+  Future<void> _loadExistingData() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+
+    final application = appProvider.currentApplication!;
+    if (application.step2Aadhaar != null) {
+      final stepData = application.step2Aadhaar as Map<String, dynamic>;
+      if (stepData['frontPath'] != null) {
+        setState(() {
+          _frontPath = stepData['frontPath'] as String;
+        });
+      }
+      if (stepData['backPath'] != null) {
+        setState(() {
+          _backPath = stepData['backPath'] as String;
+        });
+      }
+    }
   }
 
   void _resetDraftState() {
@@ -85,9 +114,73 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
-  void _proceedToNext() {
+  Future<void> _saveToBackend() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication || _frontPath == null || _backPath == null) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Upload front image
+      final frontFile = XFile(_frontPath!);
+      final frontUpload = await _fileUploadService.uploadAadhaar(
+        frontFile,
+        side: 'front',
+      );
+
+      // Upload back image
+      final backFile = XFile(_backPath!);
+      final backUpload = await _fileUploadService.uploadAadhaar(
+        backFile,
+        side: 'back',
+      );
+
+      // Save step data to backend
+      await appProvider.updateApplication(
+        currentStep: 3, // Move to next step
+        step2Aadhaar: {
+          'frontPath': _frontPath,
+          'backPath': _backPath,
+          'frontUpload': frontUpload,
+          'backUpload': backUpload,
+          'savedAt': DateTime.now().toIso8601String(),
+        },
+      );
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'Aadhaar saved successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Failed to save Aadhaar: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _proceedToNext() async {
     if (_frontPath != null && _backPath != null) {
-      context.go(AppRoutes.step3Pan);
+      if (!_isSaving) {
+        await _saveToBackend();
+      }
+      if (mounted) {
+        context.go(AppRoutes.step3Pan);
+      }
     } else {
       PremiumToast.showWarning(
         context,

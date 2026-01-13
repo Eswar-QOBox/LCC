@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
@@ -30,6 +31,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
   Future<void> _submit(BuildContext context) async {
     final provider = context.read<SubmissionProvider>();
+    final appProvider = context.read<ApplicationProvider>();
+    
+    if (!appProvider.hasApplication) {
+      PremiumToast.showError(
+        context,
+        'No application found. Please start a new application.',
+      );
+      return;
+    }
     
     if (!provider.submission.isComplete) {
       if (context.mounted) {
@@ -53,8 +63,21 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     }
 
     try {
-      // Simulate submission delay
-      await Future.delayed(const Duration(seconds: 1));
+      // Save preview data and submit to backend
+      await appProvider.updateApplication(
+        currentStep: 7,
+        status: 'submitted',
+        step6Preview: {
+          'submittedAt': DateTime.now().toIso8601String(),
+          'allStepsComplete': true,
+        },
+        step7Submission: {
+          'submittedAt': DateTime.now().toIso8601String(),
+          'status': 'submitted',
+        },
+      );
+      
+      // Also save to provider for local state
       await provider.submit();
       
       // Clear draft after successful submission
@@ -63,6 +86,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (context.mounted) {
         // Close loading dialog
         Navigator.of(context).pop();
+        PremiumToast.showSuccess(
+          context,
+          'Application submitted successfully!',
+        );
         // Navigate to success screen
         context.go(AppRoutes.submissionSuccess);
       }

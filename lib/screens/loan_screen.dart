@@ -7,6 +7,8 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
+import '../providers/application_provider.dart';
+import 'package:provider/provider.dart';
 
 class LoanScreen extends StatefulWidget {
   const LoanScreen({super.key});
@@ -60,14 +62,15 @@ class _LoanScreenState extends State<LoanScreen> {
   Future<void> _createAndStartApplication(String loanType) async {
     try {
       // Create new application
-      await _applicationService.createApplication(
+      final application = await _applicationService.createApplication(
         loanType: loanType,
         status: 'in_progress',
         currentStep: 1,
       );
 
-      // Navigate to instructions or step 1
+      // Set in ApplicationProvider
       if (mounted) {
+        context.read<ApplicationProvider>().setApplication(application);
         context.go(AppRoutes.instructions);
       }
     } catch (e) {
@@ -630,10 +633,12 @@ class _LoanScreenState extends State<LoanScreen> {
                     // If paused, resume it first
                     if (application.isPaused) {
                       try {
-                        await _applicationService.continueApplication(
-                          application.id,
-                        );
+                        final continued = await _applicationService
+                            .continueApplication(application.id);
                         if (mounted) {
+                          context.read<ApplicationProvider>().setApplication(
+                            continued,
+                          );
                           _loadApplications(); // Refresh list
                         }
                       } catch (e) {
@@ -646,6 +651,13 @@ class _LoanScreenState extends State<LoanScreen> {
                           );
                         }
                         return;
+                      }
+                    } else {
+                      // Load and set application in provider
+                      if (mounted) {
+                        context.read<ApplicationProvider>().setApplication(
+                          application,
+                        );
                       }
                     }
                     if (mounted) {

@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
@@ -20,15 +22,84 @@ class Step3PanScreen extends StatefulWidget {
 
 class _Step3PanScreenState extends State<Step3PanScreen> {
   final ImagePicker _imagePicker = ImagePicker();
+  final FileUploadService _fileUploadService = FileUploadService();
   String? _frontPath;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.pan?.frontPath;
+    
+    // Load existing data from backend
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingData();
+    });
+  }
+
+  Future<void> _loadExistingData() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+
+    final application = appProvider.currentApplication!;
+    if (application.step3Pan != null) {
+      final stepData = application.step3Pan as Map<String, dynamic>;
+      if (stepData['frontPath'] != null) {
+        setState(() {
+          _frontPath = stepData['frontPath'] as String;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveToBackend() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication || _frontPath == null) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Upload PAN image
+      final panFile = XFile(_frontPath!);
+      final uploadResult = await _fileUploadService.uploadPan(panFile);
+
+      // Save step data to backend
+      await appProvider.updateApplication(
+        currentStep: 4, // Move to next step
+        step3Pan: {
+          'frontPath': _frontPath,
+          'uploadedFile': uploadResult,
+          'savedAt': DateTime.now().toIso8601String(),
+        },
+      );
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'PAN saved successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Failed to save PAN: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   Future<void> _captureFromCamera() async {
@@ -53,9 +124,14 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
   }
 
-  void _proceedToNext() {
+  Future<void> _proceedToNext() async {
     if (_frontPath != null) {
-      context.go(AppRoutes.step4BankStatement);
+      if (!_isSaving) {
+        await _saveToBackend();
+      }
+      if (mounted) {
+        context.go(AppRoutes.step4BankStatement);
+      }
     } else {
       PremiumToast.showWarning(
         context,

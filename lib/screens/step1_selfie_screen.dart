@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
 import '../services/document_service.dart';
+import '../services/file_upload_service.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
@@ -22,9 +24,11 @@ class Step1SelfieScreen extends StatefulWidget {
 
 class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   final ImagePicker _imagePicker = ImagePicker();
+  final FileUploadService _fileUploadService = FileUploadService();
   String? _imagePath;
   Uint8List? _imageBytes;
   bool _isValidating = false;
+  bool _isSaving = false;
   SelfieValidationResult? _validationResult;
 
   Future<void> _captureFromCamera() async {
@@ -205,6 +209,8 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             context,
             'Selfie validated successfully!',
           );
+          // Save to backend
+          await _saveToBackend();
         }
       } else {
         if (mounted) {
@@ -259,15 +265,91 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     }
   }
 
-  void _proceedToNext() {
+  Future<void> _saveToBackend() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication || _imagePath == null) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Upload image
+      final imageFile = XFile(_imagePath!);
+      final uploadResult = await _fileUploadService.uploadSelfie(imageFile);
+
+      // Save step data to backend
+      await appProvider.updateApplication(
+        currentStep: 2, // Move to next step
+        step1Selfie: {
+          'imagePath': _imagePath,
+          'uploadedFile': uploadResult,
+          'validated': true,
+          'validatedAt': DateTime.now().toIso8601String(),
+        },
+      );
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'Selfie saved successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Failed to save selfie: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  void _proceedToNext() async {
     if (_imagePath != null && _validationResult?.isValid == true) {
-      context.go(AppRoutes.step2Aadhaar);
+      // Ensure data is saved before proceeding
+      if (!_isSaving) {
+        await _saveToBackend();
+      }
+      if (mounted) {
+        context.go(AppRoutes.step2Aadhaar);
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please capture and validate your selfie first'),
         ),
       );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Load existing data from backend if available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingData();
+    });
+  }
+
+  Future<void> _loadExistingData() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+
+    final application = appProvider.currentApplication!;
+    if (application.step1Selfie != null) {
+      final stepData = application.step1Selfie as Map<String, dynamic>;
+      if (stepData['imagePath'] != null) {
+        setState(() {
+          _imagePath = stepData['imagePath'] as String;
+        });
+      }
     }
   }
 

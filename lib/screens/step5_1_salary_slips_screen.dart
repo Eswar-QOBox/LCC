@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
@@ -22,11 +25,13 @@ class Step5_1SalarySlipsScreen extends StatefulWidget {
 }
 
 class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
+  final FileUploadService _fileUploadService = FileUploadService();
   List<String> _slips = [];
   String? _pdfPassword;
   bool _isPdf = false;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -35,6 +40,66 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     _slips = List.from(provider.submission.salarySlips?.slips ?? []);
     _isPdf = provider.submission.salarySlips?.isPdf ?? false;
     _pdfPassword = provider.submission.salarySlips?.pdfPassword;
+    
+    // Load existing data from backend
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadExistingData();
+    });
+  }
+
+  Future<void> _loadExistingData() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+    // Salary slips are optional, so we don't require them to exist
+  }
+
+  Future<void> _saveToBackend() async {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return;
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // Only save if slips are uploaded (this step is optional)
+      if (_slips.isNotEmpty) {
+        final files = _slips.map((path) => XFile(path)).toList();
+        final uploadResults = await _fileUploadService.uploadSalarySlips(files);
+
+        // Save to step4BankStatement or create a separate field
+        // Since salary slips are part of step 5, we can include them in step5PersonalData
+        // or keep them in step4BankStatement as additional documents
+        await appProvider.updateApplication(
+          step4BankStatement: {
+            'salarySlips': _slips,
+            'salarySlipsIsPdf': _isPdf,
+            'salarySlipsPassword': _pdfPassword,
+            'salarySlipsUploaded': uploadResults,
+          },
+        );
+      }
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'Salary slips saved successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Failed to save salary slips: ${e.toString()}',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
 
@@ -215,15 +280,15 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     }
   }
 
-  void _proceedToNext() {
-    if (_slips.isEmpty) {
-      PremiumToast.showWarning(
-        context,
-        'Please upload at least one salary slip',
-      );
-      return;
+  Future<void> _proceedToNext() async {
+    // Salary slips are optional, so we can proceed even if empty
+    // But if slips are uploaded, save them
+    if (_slips.isNotEmpty && !_isSaving) {
+      await _saveToBackend();
     }
-    context.go(AppRoutes.step6Preview);
+    if (mounted) {
+      context.go(AppRoutes.step5PersonalData);
+    }
   }
 
   @override
