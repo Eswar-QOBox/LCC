@@ -4,33 +4,82 @@ import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
+import '../models/loan_application.dart';
+import '../services/loan_application_service.dart';
 
-class InProgressApplication {
-  final String loanType;
-  final int currentStep;
-  final IconData icon;
-  final Color color;
-
-  InProgressApplication({
-    required this.loanType,
-    required this.currentStep,
-    required this.icon,
-    required this.color,
-  });
-}
-
-class LoanScreen extends StatelessWidget {
+class LoanScreen extends StatefulWidget {
   const LoanScreen({super.key});
 
-  // Demo in-progress applications
-  static final List<InProgressApplication> _demoInProgressApps = [
-    InProgressApplication(
-      loanType: 'Education Loan',
-      currentStep: 3,
-      icon: Icons.school,
-      color: AppTheme.infoColor,
-    ),
-  ];
+  @override
+  State<LoanScreen> createState() => _LoanScreenState();
+}
+
+class _LoanScreenState extends State<LoanScreen> {
+  final LoanApplicationService _applicationService = LoanApplicationService();
+  List<LoanApplication> _applications = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApplications();
+  }
+
+  Future<void> _loadApplications() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      // Fetch applications that are in progress or paused
+      final allApps = await _applicationService.getApplications(
+        status: 'all',
+        limit: 50,
+      );
+
+      // Filter for in-progress, paused, or draft applications
+      final inProgressApps = allApps
+          .where((app) => app.isInProgress || app.isPaused || app.isDraft)
+          .toList();
+
+      setState(() {
+        _applications = inProgressApps;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _createAndStartApplication(String loanType) async {
+    try {
+      // Create new application
+      await _applicationService.createApplication(
+        loanType: loanType,
+        status: 'in_progress',
+        currentStep: 1,
+      );
+
+      // Navigate to instructions or step 1
+      if (mounted) {
+        context.go(AppRoutes.instructions);
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.show(
+          context,
+          message: 'Failed to create application: ${e.toString()}',
+          type: ToastType.error,
+        );
+      }
+    }
+  }
 
   String _getRouteForStep(int step) {
     switch (step) {
@@ -101,10 +150,7 @@ class LoanScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
+                          colors: [colorScheme.primary, colorScheme.secondary],
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -153,7 +199,7 @@ class LoanScreen extends StatelessWidget {
                   title: 'Personal Loan',
                   subtitle: 'For personal expenses',
                   color: colorScheme.primary,
-                  onTap: () => context.go(AppRoutes.instructions),
+                  onTap: () => _createAndStartApplication('Personal Loan'),
                 ),
                 const SizedBox(height: 12),
                 _buildLoanTypeButton(
@@ -162,7 +208,7 @@ class LoanScreen extends StatelessWidget {
                   title: 'Car Loan',
                   subtitle: 'Finance your vehicle',
                   color: AppTheme.infoColor,
-                  onTap: () => context.go(AppRoutes.instructions),
+                  onTap: () => _createAndStartApplication('Car Loan'),
                 ),
                 const SizedBox(height: 12),
                 _buildLoanTypeButton(
@@ -171,7 +217,7 @@ class LoanScreen extends StatelessWidget {
                   title: 'Home Loan',
                   subtitle: 'Buy or renovate your home',
                   color: AppTheme.successColor,
-                  onTap: () => context.go(AppRoutes.instructions),
+                  onTap: () => _createAndStartApplication('Home Loan'),
                 ),
                 const SizedBox(height: 12),
                 _buildLoanTypeButton(
@@ -180,7 +226,7 @@ class LoanScreen extends StatelessWidget {
                   title: 'Business Loan',
                   subtitle: 'Grow your business',
                   color: AppTheme.warningColor,
-                  onTap: () => context.go(AppRoutes.instructions),
+                  onTap: () => _createAndStartApplication('Business Loan'),
                 ),
                 const SizedBox(height: 12),
                 _buildLoanTypeButton(
@@ -189,18 +235,14 @@ class LoanScreen extends StatelessWidget {
                   title: 'Education Loan',
                   subtitle: 'Fund your education',
                   color: colorScheme.secondary,
-                  onTap: () => context.go(AppRoutes.instructions),
+                  onTap: () => _createAndStartApplication('Education Loan'),
                 ),
                 const SizedBox(height: 32),
 
                 // My Applications Section
                 Row(
                   children: [
-                    Icon(
-                      Icons.folder,
-                      color: colorScheme.primary,
-                      size: 24,
-                    ),
+                    Icon(Icons.folder, color: colorScheme.primary, size: 24),
                     const SizedBox(width: 8),
                     Text(
                       'My Applications',
@@ -211,17 +253,58 @@ class LoanScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                if (_demoInProgressApps.isNotEmpty)
-                  ..._demoInProgressApps.map((app) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildContinueApplicationCard(
-                          context,
-                          app.loanType,
-                          app.currentStep,
-                          app.icon,
-                          app.color,
+                if (_isLoading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24.0),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                else if (_error != null)
+                  PremiumCard(
+                    gradientColors: [
+                      Colors.white,
+                      AppTheme.errorColor.withValues(alpha: 0.05),
+                    ],
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 48,
+                          color: AppTheme.errorColor,
                         ),
-                      ))
+                        const SizedBox(height: 12),
+                        Text(
+                          'Error Loading Applications',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error!,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        PremiumButton(
+                          label: 'Retry',
+                          icon: Icons.refresh,
+                          isPrimary: false,
+                          onPressed: _loadApplications,
+                        ),
+                      ],
+                    ),
+                  )
+                else if (_applications.isNotEmpty)
+                  ..._applications.map(
+                    (app) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildContinueApplicationCard(context, app),
+                    ),
+                  )
                 else
                   PremiumCard(
                     gradientColors: [
@@ -373,20 +456,14 @@ class LoanScreen extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: PremiumCard(
         padding: const EdgeInsets.all(20),
-        gradientColors: [
-          Colors.white,
-          color.withValues(alpha: 0.05),
-        ],
+        gradientColors: [Colors.white, color.withValues(alpha: 0.05)],
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    color,
-                    color.withValues(alpha: 0.7),
-                  ],
+                  colors: [color, color.withValues(alpha: 0.7)],
                 ),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
@@ -397,11 +474,7 @@ class LoanScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: 28,
-              ),
+              child: Icon(icon, color: Colors.white, size: 28),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -437,19 +510,42 @@ class LoanScreen extends StatelessWidget {
 
   Widget _buildContinueApplicationCard(
     BuildContext context,
-    String loanType,
-    int currentStep,
-    IconData loanIcon,
-    Color loanColor,
+    LoanApplication application,
   ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // Get icon and color based on loan type
+    IconData loanIcon;
+    Color loanColor;
+    switch (application.loanType) {
+      case 'Personal Loan':
+        loanIcon = Icons.person;
+        loanColor = colorScheme.primary;
+        break;
+      case 'Car Loan':
+        loanIcon = Icons.directions_car;
+        loanColor = AppTheme.infoColor;
+        break;
+      case 'Home Loan':
+        loanIcon = Icons.home;
+        loanColor = AppTheme.successColor;
+        break;
+      case 'Business Loan':
+        loanIcon = Icons.business;
+        loanColor = AppTheme.warningColor;
+        break;
+      case 'Education Loan':
+        loanIcon = Icons.school;
+        loanColor = colorScheme.secondary;
+        break;
+      default:
+        loanIcon = Icons.account_balance_wallet;
+        loanColor = colorScheme.primary;
+    }
+
     return PremiumCard(
-      gradientColors: [
-        Colors.white,
-        loanColor.withValues(alpha: 0.05),
-      ],
+      gradientColors: [Colors.white, loanColor.withValues(alpha: 0.05)],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -459,10 +555,7 @@ class LoanScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      loanColor,
-                      loanColor.withValues(alpha: 0.7),
-                    ],
+                    colors: [loanColor, loanColor.withValues(alpha: 0.7)],
                   ),
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: [
@@ -473,11 +566,7 @@ class LoanScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: Icon(
-                  loanIcon,
-                  color: Colors.white,
-                  size: 24,
-                ),
+                child: Icon(loanIcon, color: Colors.white, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -485,14 +574,16 @@ class LoanScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      loanType,
+                      application.loanType,
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Continue where you left off',
+                      application.isPaused
+                          ? 'Paused - Continue where you left off'
+                          : 'Continue where you left off',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -511,15 +602,11 @@ class LoanScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  color: loanColor,
-                  size: 20,
-                ),
+                Icon(Icons.info_outline, color: loanColor, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Last saved: ${_getStepName(currentStep)}',
+                    'Last saved: ${_getStepName(application.currentStep)}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: loanColor,
                       fontWeight: FontWeight.w500,
@@ -530,13 +617,44 @@ class LoanScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          PremiumButton(
-            label: 'Continue Application',
-            icon: Icons.play_arrow_rounded,
-            isPrimary: true,
-            onPressed: () {
-              context.go(_getRouteForStep(currentStep));
-            },
+          Row(
+            children: [
+              Expanded(
+                child: PremiumButton(
+                  label: application.isPaused
+                      ? 'Continue'
+                      : 'Continue Application',
+                  icon: Icons.play_arrow_rounded,
+                  isPrimary: true,
+                  onPressed: () async {
+                    // If paused, resume it first
+                    if (application.isPaused) {
+                      try {
+                        await _applicationService.continueApplication(
+                          application.id,
+                        );
+                        if (mounted) {
+                          _loadApplications(); // Refresh list
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          PremiumToast.show(
+                            context,
+                            message:
+                                'Failed to continue application: ${e.toString()}',
+                            type: ToastType.error,
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    if (mounted) {
+                      context.go(_getRouteForStep(application.currentStep));
+                    }
+                  },
+                ),
+              ),
+            ],
           ),
         ],
       ),

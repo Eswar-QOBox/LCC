@@ -1,72 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../widgets/premium_card.dart';
+import '../widgets/premium_button.dart';
 import '../utils/app_theme.dart';
+import '../models/loan_application.dart';
+import '../services/loan_application_service.dart';
 
-class DemoApplication {
-  final String id;
-  final String loanType;
-  final String loanAmount;
-  final String status;
-  final DateTime submittedDate;
-  final IconData icon;
-
-  DemoApplication({
-    required this.id,
-    required this.loanType,
-    required this.loanAmount,
-    required this.status,
-    required this.submittedDate,
-    required this.icon,
-  });
-}
-
-class ApplicationsScreen extends StatelessWidget {
+class ApplicationsScreen extends StatefulWidget {
   const ApplicationsScreen({super.key});
 
-  // Demo applications data
-  static final List<DemoApplication> _demoApplications = [
-    DemoApplication(
-      id: 'APP-2024-001',
-      loanType: 'Personal Loan',
-      loanAmount: '₹5,00,000',
-      status: 'pendingVerification',
-      submittedDate: DateTime.now().subtract(const Duration(days: 2)),
-      icon: Icons.person,
-    ),
-    DemoApplication(
-      id: 'APP-2024-002',
-      loanType: 'Home Loan',
-      loanAmount: '₹25,00,000',
-      status: 'approved',
-      submittedDate: DateTime.now().subtract(const Duration(days: 15)),
-      icon: Icons.home,
-    ),
-    DemoApplication(
-      id: 'APP-2024-003',
-      loanType: 'Car Loan',
-      loanAmount: '₹8,50,000',
-      status: 'pendingVerification',
-      submittedDate: DateTime.now().subtract(const Duration(days: 5)),
-      icon: Icons.directions_car,
-    ),
-    DemoApplication(
-      id: 'APP-2024-004',
-      loanType: 'Business Loan',
-      loanAmount: '₹15,00,000',
-      status: 'rejected',
-      submittedDate: DateTime.now().subtract(const Duration(days: 30)),
-      icon: Icons.business,
-    ),
-    DemoApplication(
-      id: 'APP-2024-005',
-      loanType: 'Education Loan',
-      loanAmount: '₹3,00,000',
-      status: 'approved',
-      submittedDate: DateTime.now().subtract(const Duration(days: 45)),
-      icon: Icons.school,
-    ),
-  ];
+  @override
+  State<ApplicationsScreen> createState() => _ApplicationsScreenState();
+}
+
+class _ApplicationsScreenState extends State<ApplicationsScreen> {
+  final LoanApplicationService _applicationService = LoanApplicationService();
+  List<LoanApplication> _applications = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApplications();
+  }
+
+  Future<void> _loadApplications() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final apps = await _applicationService.getApplications(
+        status: 'all',
+        limit: 100,
+      );
+      
+      setState(() {
+        _applications = apps;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -138,50 +119,103 @@ class ApplicationsScreen extends StatelessWidget {
 
               // Content
               Expanded(
-                child: _demoApplications.isEmpty
-                    ? ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        children: [
-                          // Empty State
-                          PremiumCard(
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.inbox_outlined,
-                                  size: 64,
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No Applications Yet',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Your submitted loan applications will appear here',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                child: _isLoading
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24.0),
+                          child: CircularProgressIndicator(),
+                        ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        itemCount: _demoApplications.length,
-                        itemBuilder: (context, index) {
-                          final application = _demoApplications[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: _buildApplicationCard(context, application),
-                          );
-                        },
-                      ),
+                    : _error != null
+                        ? ListView(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            children: [
+                              PremiumCard(
+                                gradientColors: [
+                                  Colors.white,
+                                  AppTheme.errorColor.withValues(alpha: 0.05),
+                                ],
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.error_outline,
+                                      size: 64,
+                                      color: AppTheme.errorColor,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Error Loading Applications',
+                                      style: theme.textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      _error!,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    PremiumButton(
+                                      label: 'Retry',
+                                      icon: Icons.refresh,
+                                      isPrimary: false,
+                                      onPressed: _loadApplications,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : _applications.isEmpty
+                            ? ListView(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                children: [
+                                  // Empty State
+                                  PremiumCard(
+                                    child: Column(
+                                      children: [
+                                        Icon(
+                                          Icons.inbox_outlined,
+                                          size: 64,
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          'No Applications Yet',
+                                          style: theme.textTheme.titleLarge?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Your submitted loan applications will appear here',
+                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                            color: colorScheme.onSurfaceVariant,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : RefreshIndicator(
+                                onRefresh: _loadApplications,
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                                  itemCount: _applications.length,
+                                  itemBuilder: (context, index) {
+                                    final application = _applications[index];
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 16),
+                                      child: _buildApplicationCard(context, application),
+                                    );
+                                  },
+                                ),
+                              ),
               ),
             ],
           ),
@@ -192,11 +226,33 @@ class ApplicationsScreen extends StatelessWidget {
 
   Widget _buildApplicationCard(
     BuildContext context,
-    DemoApplication application,
+    LoanApplication application,
   ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final dateFormat = DateFormat('dd MMM yyyy');
+
+    // Get icon based on loan type
+    IconData loanIcon;
+    switch (application.loanType) {
+      case 'Personal Loan':
+        loanIcon = Icons.person;
+        break;
+      case 'Car Loan':
+        loanIcon = Icons.directions_car;
+        break;
+      case 'Home Loan':
+        loanIcon = Icons.home;
+        break;
+      case 'Business Loan':
+        loanIcon = Icons.business;
+        break;
+      case 'Education Loan':
+        loanIcon = Icons.school;
+        break;
+      default:
+        loanIcon = Icons.account_balance_wallet;
+    }
 
     // Get status color and text
     Color statusColor;
@@ -214,11 +270,26 @@ class ApplicationsScreen extends StatelessWidget {
         statusText = 'Rejected';
         statusIcon = Icons.cancel;
         break;
-      case 'pendingVerification':
-      default:
+      case 'submitted':
         statusColor = AppTheme.warningColor;
         statusText = 'Verification Pending';
         statusIcon = Icons.verified_user;
+        break;
+      case 'in_progress':
+        statusColor = AppTheme.infoColor;
+        statusText = 'In Progress';
+        statusIcon = Icons.hourglass_empty;
+        break;
+      case 'paused':
+        statusColor = AppTheme.warningColor;
+        statusText = 'Paused';
+        statusIcon = Icons.pause_circle;
+        break;
+      case 'draft':
+      default:
+        statusColor = colorScheme.onSurfaceVariant;
+        statusText = 'Draft';
+        statusIcon = Icons.edit;
         break;
     }
 
@@ -240,7 +311,7 @@ class ApplicationsScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  application.icon,
+                  loanIcon,
                   color: Colors.white,
                   size: 24,
                 ),
@@ -258,7 +329,7 @@ class ApplicationsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      application.id,
+                      application.applicationId,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -307,7 +378,9 @@ class ApplicationsScreen extends StatelessWidget {
                   context,
                   icon: Icons.currency_rupee,
                   label: 'Loan Amount',
-                  value: application.loanAmount,
+                  value: application.loanAmount != null
+                      ? '₹${_formatAmount(application.loanAmount!)}'
+                      : 'Not specified',
                 ),
               ),
               const SizedBox(width: 16),
@@ -315,8 +388,10 @@ class ApplicationsScreen extends StatelessWidget {
                 child: _buildInfoItem(
                   context,
                   icon: Icons.calendar_today,
-                  label: 'Submitted',
-                  value: dateFormat.format(application.submittedDate),
+                  label: application.submittedAt != null ? 'Submitted' : 'Created',
+                  value: dateFormat.format(
+                    application.submittedAt ?? application.createdAt,
+                  ),
                 ),
               ),
             ],
@@ -362,5 +437,16 @@ class ApplicationsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _formatAmount(double amount) {
+    if (amount >= 10000000) {
+      return '${(amount / 10000000).toStringAsFixed(1)}Cr';
+    } else if (amount >= 100000) {
+      return '${(amount / 100000).toStringAsFixed(1)}L';
+    } else if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(1)}K';
+    }
+    return amount.toStringAsFixed(0);
   }
 }
