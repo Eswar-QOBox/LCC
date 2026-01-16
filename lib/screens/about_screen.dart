@@ -77,7 +77,7 @@ class AboutScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'LCC Application',
+              'JSEE',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,

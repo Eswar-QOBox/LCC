@@ -84,25 +84,6 @@ class _LoanScreenState extends State<LoanScreen> {
     }
   }
 
-  String _getRouteForStep(int step) {
-    switch (step) {
-      case 1:
-        return AppRoutes.step1Selfie;
-      case 2:
-        return AppRoutes.step2Aadhaar;
-      case 3:
-        return AppRoutes.step3Pan;
-      case 4:
-        return AppRoutes.step4BankStatement;
-      case 5:
-        return AppRoutes.step5PersonalData;
-      case 6:
-        return AppRoutes.step6Preview;
-      default:
-        return AppRoutes.instructions;
-    }
-  }
-
   String _getStepName(int step) {
     switch (step) {
       case 1:
@@ -660,8 +641,10 @@ class _LoanScreenState extends State<LoanScreen> {
                         );
                       }
                     }
+                    // Always navigate to selfie screen first when resuming
+                    // This ensures a fresh selfie is captured for each session
                     if (mounted) {
-                      context.go(_getRouteForStep(application.currentStep));
+                      context.go(AppRoutes.step1Selfie);
                     }
                   },
                 ),

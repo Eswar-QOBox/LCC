@@ -414,7 +414,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 ),
               ),
             ),
-            StepProgressIndicator(currentStep: 4, totalSteps: 7),
+            StepProgressIndicator(currentStep: 4, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

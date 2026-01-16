@@ -34,11 +34,18 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => SubmissionProvider()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final provider = SubmissionProvider();
+            // Initialize draft loading asynchronously
+            provider.initialize();
+            return provider;
+          },
+        ),
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
       ],
       child: MaterialApp.router(
-        title: 'LCC - Document Submission',
+        title: 'JSEE',
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.light,
