@@ -3,6 +3,7 @@ import '../utils/app_theme.dart';
 import 'loan_screen.dart';
 import 'applications_screen.dart';
 import 'settings_screen.dart';
+import 'required_documents_screen.dart';
 
 class MainHomeScreen extends StatefulWidget {
   const MainHomeScreen({super.key});
@@ -17,6 +18,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   final List<Widget> _screens = [
     const LoanScreen(),
     const ApplicationsScreen(),
+    const RequiredDocumentsScreen(),
     const SettingsScreen(),
   ];
 
@@ -66,6 +68,11 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
               icon: Icon(Icons.folder_outlined),
               activeIcon: Icon(Icons.folder),
               label: 'Applications',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.description_outlined),
+              activeIcon: Icon(Icons.description),
+              label: 'Documents',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),

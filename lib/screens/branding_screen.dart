@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
+import '../providers/auth_provider.dart';
 
 class BrandingScreen extends StatefulWidget {
   const BrandingScreen({super.key});
@@ -13,15 +15,34 @@ class _BrandingScreenState extends State<BrandingScreen> {
   @override
   void initState() {
     super.initState();
-    _navigateToLogin();
+    _navigateToNext();
   }
 
-  void _navigateToLogin() {
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        context.go(AppRoutes.login);
+  void _navigateToNext() async {
+    // Wait for branding display duration
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (!mounted) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    
+    // Wait for auth check to complete if still loading
+    if (authProvider.isLoading) {
+      int attempts = 0;
+      while (authProvider.isLoading && attempts < 50 && mounted) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
       }
-    });
+    }
+
+    if (!mounted) return;
+
+    // Navigate based on authentication status
+    if (authProvider.isAuthenticated) {
+      context.go(AppRoutes.home);
+    } else {
+      context.go(AppRoutes.login);
+    }
   }
 
   @override

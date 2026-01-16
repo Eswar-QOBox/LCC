@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../widgets/premium_card.dart';
 import '../providers/submission_provider.dart';
+import '../providers/auth_provider.dart';
+import '../utils/app_routes.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -37,10 +40,7 @@ class SettingsScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
+                          colors: [colorScheme.primary, colorScheme.secondary],
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -111,9 +111,10 @@ class SettingsScreen extends StatelessWidget {
                                   Expanded(
                                     child: Text(
                                       'Profile',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                     ),
                                   ),
                                 ],
@@ -187,6 +188,30 @@ class SettingsScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // Account
+                    PremiumCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Account',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildSettingItem(
+                            context,
+                            icon: Icons.logout,
+                            title: 'Logout',
+                            subtitle: 'Sign out of your account',
+                            onTap: () => _handleLogout(context),
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -220,11 +245,7 @@ class SettingsScreen extends StatelessWidget {
                 color: colorScheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                icon,
-                color: colorScheme.primary,
-                size: 20,
-              ),
+              child: Icon(icon, color: colorScheme.primary, size: 20),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -234,33 +255,27 @@ class SettingsScreen extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: colorScheme.onSurfaceVariant,
-            ),
+            Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _buildProfileFields(
-    BuildContext context,
-    dynamic personalData,
-  ) {
+  List<Widget> _buildProfileFields(BuildContext context, dynamic personalData) {
     final dateFormat = DateFormat('dd MMM yyyy');
 
     return [
@@ -350,11 +365,7 @@ class SettingsScreen extends StatelessWidget {
             color: colorScheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            color: colorScheme.primary,
-            size: 20,
-          ),
+          child: Icon(icon, color: colorScheme.primary, size: 20),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -364,16 +375,16 @@ class SettingsScreen extends StatelessWidget {
               Text(
                 label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
                 value,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -410,5 +421,82 @@ class SettingsScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _handleLogout(BuildContext context) async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // Show confirmation dialog
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(
+          'Logout',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to logout?',
+          style: theme.textTheme.bodyMedium,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.error,
+              foregroundColor: colorScheme.onError,
+            ),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && context.mounted) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext loadingContext) =>
+            const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        await authProvider.logout();
+
+        if (context.mounted) {
+          // Close loading dialog
+          Navigator.of(context).pop();
+
+          // Navigate to login screen
+          context.go(AppRoutes.login);
+        }
+      } catch (e) {
+        if (context.mounted) {
+          // Close loading dialog
+          Navigator.of(context).pop();
+
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to logout: ${e.toString()}'),
+              backgroundColor: colorScheme.error,
+            ),
+          );
+        }
+      }
+    }
   }
 }

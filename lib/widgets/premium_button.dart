@@ -47,92 +47,38 @@ class _PremiumButtonState extends State<PremiumButton>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-
     if (widget.isPrimary) {
       return Semantics(
         label: widget.label,
         button: true,
         enabled: widget.onPressed != null && !widget.isLoading,
         child: GestureDetector(
-        onTapDown: (_) => _controller.forward(),
-        onTapUp: (_) {
-          _controller.reverse();
-          if (widget.onPressed != null && !widget.isLoading) {
-            widget.onPressed!();
-          }
-        },
-        onTapCancel: () => _controller.reverse(),
-        child: ScaleTransition(
-          scale: _scaleAnimation,
-          child: Container(
-            width: widget.width ?? double.infinity,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colorScheme.primary,
-                  colorScheme.secondary,
-                ],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.primary.withValues(alpha: 0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                  spreadRadius: 0,
-                ),
-                BoxShadow(
-                  color: colorScheme.secondary.withValues(alpha: 0.2),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                  spreadRadius: 0,
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: widget.isLoading ? null : widget.onPressed,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (widget.isLoading)
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
-                          ),
-                        )
-                      else if (widget.icon != null) ...[
-                        Icon(widget.icon, color: colorScheme.onPrimary, size: 22),
-                        const SizedBox(width: 12),
-                      ],
-                      Text(
-                        widget.label,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: colorScheme.onPrimary,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+          onTapDown: (_) => _controller.forward(),
+          onTapUp: (_) {
+            _controller.reverse();
+            if (widget.onPressed != null && !widget.isLoading) {
+              widget.onPressed!();
+            }
+          },
+          onTapCancel: () => _controller.reverse(),
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // If width is explicitly set, use it
+                if (widget.width != null) {
+                  return _buildPrimaryButton(context, widget.width);
+                }
+                // If constraints are bounded (e.g., in Column), expand to fill
+                if (constraints.maxWidth != double.infinity) {
+                  return _buildPrimaryButton(context, constraints.maxWidth);
+                }
+                // If constraints are unbounded (e.g., in Row), size to content
+                return _buildPrimaryButton(context, null);
+              },
             ),
           ),
         ),
-      ),
       );
     }
 
@@ -140,8 +86,101 @@ class _PremiumButtonState extends State<PremiumButton>
       label: widget.label,
       button: true,
       enabled: widget.onPressed != null,
-      child: Container(
-      width: widget.width ?? double.infinity,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // If width is explicitly set, use it
+          if (widget.width != null) {
+            return _buildSecondaryButton(context, widget.width);
+          }
+          // If constraints are bounded (e.g., in Column), expand to fill
+          if (constraints.maxWidth != double.infinity) {
+            return _buildSecondaryButton(context, constraints.maxWidth);
+          }
+          // If constraints are unbounded (e.g., in Row), size to content
+          return _buildSecondaryButton(context, null);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton(BuildContext context, double? width) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return Container(
+      width: width,
+      height: 56,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.primary,
+            colorScheme.secondary,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withValues(alpha: 0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+            spreadRadius: 0,
+          ),
+          BoxShadow(
+            color: colorScheme.secondary.withValues(alpha: 0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.isLoading ? null : widget.onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Row(
+              mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.isLoading)
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+                    ),
+                  )
+                else if (widget.icon != null) ...[
+                  Icon(widget.icon, color: colorScheme.onPrimary, size: 22),
+                  const SizedBox(width: 12),
+                ],
+                Text(
+                  widget.label,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onPrimary,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSecondaryButton(BuildContext context, double? width) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+
+    return Container(
+      width: width,
       height: 56,
       decoration: BoxDecoration(
         color: colorScheme.surface,
@@ -166,6 +205,7 @@ class _PremiumButtonState extends State<PremiumButton>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Row(
+              mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (widget.icon != null) ...[
@@ -185,8 +225,6 @@ class _PremiumButtonState extends State<PremiumButton>
           ),
         ),
       ),
-    ),
     );
   }
 }
-

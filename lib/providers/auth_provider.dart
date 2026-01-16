@@ -31,11 +31,35 @@ class AuthProvider with ChangeNotifier {
       final isLoggedIn = await storage.isLoggedIn();
       if (isLoggedIn) {
         // Try to get current user
-        await getCurrentUser();
+        try {
+          await getCurrentUser();
+        } catch (e) {
+          // Only clear auth state if it's an authentication error (401/403)
+          // Don't clear on network errors - user might be offline
+          if (e is AuthException) {
+            final statusCode = e.statusCode;
+            if (statusCode == 401 || statusCode == 403) {
+              // Token is invalid or expired, clear auth state
+              await logout();
+            } else {
+              // Network or other error - keep tokens but don't set authenticated
+              _isAuthenticated = false;
+              _user = null;
+            }
+          } else {
+            // Unknown error - keep tokens but don't set authenticated
+            _isAuthenticated = false;
+            _user = null;
+          }
+        }
+      } else {
+        _isAuthenticated = false;
+        _user = null;
       }
     } catch (e) {
-      // If getting user fails, clear auth state
-      await logout();
+      // If storage check fails, assume not authenticated
+      _isAuthenticated = false;
+      _user = null;
     } finally {
       _isLoading = false;
       notifyListeners();
