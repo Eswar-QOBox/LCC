@@ -54,7 +54,7 @@ class _BrandingScreenState extends State<BrandingScreen>
     if (authProvider.isAuthenticated) {
       context.go(AppRoutes.home);
     } else {
-      context.go(AppRoutes.login);
+      context.go(AppRoutes.onboarding);
     }
   }
 

@@ -23,9 +23,10 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(seconds: 2),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
     _controller.forward();
     _navigateToNext();
   }
@@ -33,11 +34,11 @@ class _SplashScreenState extends State<SplashScreen>
   void _navigateToNext() async {
     // Wait for minimum splash duration (2 seconds) and auth check
     await Future.delayed(const Duration(seconds: 2));
-    
+
     if (!mounted) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     // Wait for auth check to complete if still loading
     if (authProvider.isLoading) {
       // Wait for auth check to complete (with timeout)
@@ -54,7 +55,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (authProvider.isAuthenticated) {
       context.go(AppRoutes.home);
     } else {
-      context.go(AppRoutes.branding);
+      context.go(AppRoutes.onboarding);
     }
   }
 
@@ -91,9 +92,9 @@ class _SplashScreenState extends State<SplashScreen>
               Text(
                 'JSEE',
                 style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -102,4 +103,3 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 }
-
