@@ -141,7 +141,9 @@ class _PremiumButtonState extends State<PremiumButton>
           onTap: widget.isLoading ? null : widget.onPressed,
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            padding: EdgeInsets.symmetric(
+              horizontal: width == null ? 32 : 16, // Less padding when width is constrained
+            ),
             child: Row(
               mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -156,15 +158,21 @@ class _PremiumButtonState extends State<PremiumButton>
                     ),
                   )
                 else if (widget.icon != null) ...[
-                  Icon(widget.icon, color: colorScheme.onPrimary, size: 22),
-                  const SizedBox(width: 12),
+                  Icon(widget.icon, color: colorScheme.onPrimary, size: width == null ? 22 : 20),
+                  SizedBox(width: width == null ? 12 : 8),
                 ],
-                Text(
-                  widget.label,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onPrimary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                      fontSize: width == null ? null : 14, // Smaller font when constrained
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ],
@@ -203,21 +211,29 @@ class _PremiumButtonState extends State<PremiumButton>
           onTap: widget.onPressed,
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            padding: EdgeInsets.symmetric(
+              horizontal: width == null ? 32 : 16, // Less padding when width is constrained
+            ),
             child: Row(
               mainAxisSize: width == null ? MainAxisSize.min : MainAxisSize.max,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (widget.icon != null) ...[
-                  Icon(widget.icon, color: colorScheme.primary, size: 22),
-                  const SizedBox(width: 12),
+                  Icon(widget.icon, color: colorScheme.primary, size: 20), // Slightly smaller icon
+                  const SizedBox(width: 8), // Less spacing
                 ],
-                Text(
-                  widget.label,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: colorScheme.primary,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                      fontSize: 14, // Slightly smaller font
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ],

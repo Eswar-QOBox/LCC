@@ -301,7 +301,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               ),
             ),
             // Premium Progress Indicator (below AppBar)
-            StepProgressIndicator(currentStep: 3, totalSteps: 7),
+            StepProgressIndicator(currentStep: 3, totalSteps: 6),
             
             // Content
             Expanded(
@@ -498,26 +498,58 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                               ),
                             ),
                             const SizedBox(height: 32),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Camera',
-                                    icon: Icons.camera_alt,
-                                    isPrimary: false,
-                                    onPressed: _captureFromCamera,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Gallery',
-                                    icon: Icons.photo_library,
-                                    isPrimary: false,
-                                    onPressed: _selectFromGallery,
-                                  ),
-                                ),
-                              ],
+                            // Use LayoutBuilder to handle overflow on small screens
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                // On very small screens, stack buttons vertically
+                                if (constraints.maxWidth < 300) {
+                                  return Column(
+                                    children: [
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: PremiumButton(
+                                          label: 'Camera',
+                                          icon: Icons.camera_alt,
+                                          isPrimary: false,
+                                          onPressed: _captureFromCamera,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: PremiumButton(
+                                          label: 'Gallery',
+                                          icon: Icons.photo_library,
+                                          isPrimary: false,
+                                          onPressed: _selectFromGallery,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                } else {
+                                  return Row(
+                                    children: [
+                                      Expanded(
+                                        child: PremiumButton(
+                                          label: 'Camera',
+                                          icon: Icons.camera_alt,
+                                          isPrimary: false,
+                                          onPressed: _captureFromCamera,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: PremiumButton(
+                                          label: 'Gallery',
+                                          icon: Icons.photo_library,
+                                          isPrimary: false,
+                                          onPressed: _selectFromGallery,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }
+                              },
                             ),
                           ],
                         ),

@@ -458,7 +458,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             ),
             
             // Progress Indicator (below AppBar)
-            const StepProgressIndicator(currentStep: 1, totalSteps: 7),
+            const StepProgressIndicator(currentStep: 1, totalSteps: 6),
             
             // Content
             Expanded(

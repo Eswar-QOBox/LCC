@@ -9,11 +9,20 @@ import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as i
 class SubmissionProvider with ChangeNotifier {
   DocumentSubmission _submission = DocumentSubmission();
   bool _termsAccepted = false;
+  bool _isInitialized = false;
   static const String _draftKey = 'submission_draft';
   static const String _termsAcceptedKey = 'terms_accepted_draft';
 
   DocumentSubmission get submission => _submission;
   bool get termsAccepted => _termsAccepted;
+  bool get isInitialized => _isInitialized;
+
+  /// Initialize the provider by loading any existing draft
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+    await loadDraft();
+    _isInitialized = true;
+  }
 
   // Selfie
   void setSelfie(String path) {
@@ -275,6 +284,25 @@ class SubmissionProvider with ChangeNotifier {
       }
     }
 
+    // Validate Salary Slips
+    if (_submission.salarySlips != null && _submission.salarySlips!.slips.isNotEmpty) {
+      final validSlips = <String>[];
+      for (final slipPath in _submission.salarySlips!.slips) {
+        final file = io.File(slipPath);
+        if (await file.exists()) {
+          validSlips.add(slipPath);
+        } else {
+          debugPrint('⚠️ Salary slip file not found: $slipPath');
+          hasInvalidFiles = true;
+        }
+      }
+      _submission.salarySlips!.slips = validSlips;
+      // If no valid slips, clear the salary slips
+      if (_submission.salarySlips!.slips.isEmpty) {
+        _submission.salarySlips = null;
+      }
+    }
+
     if (hasInvalidFiles) {
       debugPrint('⚠️ Some files from draft were deleted. Draft loaded with missing files.');
       // Optionally save the cleaned draft back
@@ -361,6 +389,13 @@ class SubmissionProvider with ChangeNotifier {
               'reference2Contact': submission.personalData!.reference2Contact,
             }
           : null,
+      'salarySlips': submission.salarySlips != null
+          ? {
+              'slips': submission.salarySlips!.slips,
+              'pdfPassword': submission.salarySlips!.pdfPassword,
+              'isPdf': submission.salarySlips!.isPdf,
+            }
+          : null,
       'submittedAt': submission.submittedAt?.toIso8601String(),
       'status': submission.status.toString().split('.').last,
     };
@@ -438,6 +473,15 @@ class SubmissionProvider with ChangeNotifier {
         reference2Name: personalData['reference2Name'] as String?,
         reference2Address: personalData['reference2Address'] as String?,
         reference2Contact: personalData['reference2Contact'] as String?,
+      );
+    }
+
+    if (json['salarySlips'] != null) {
+      final salaryData = json['salarySlips'] as Map<String, dynamic>;
+      submission.salarySlips = SalarySlips(
+        slips: (salaryData['slips'] as List<dynamic>?)?.cast<String>() ?? [],
+        pdfPassword: salaryData['pdfPassword'] as String?,
+        isPdf: salaryData['isPdf'] as bool? ?? false,
       );
     }
 

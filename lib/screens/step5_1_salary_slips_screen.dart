@@ -32,19 +32,56 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
   bool _isSaving = false;
+  bool _hasSyncedWithProvider = false;
 
   @override
   void initState() {
     super.initState();
-    final provider = context.read<SubmissionProvider>();
-    _slips = List.from(provider.submission.salarySlips?.slips ?? []);
-    _isPdf = provider.submission.salarySlips?.isPdf ?? false;
-    _pdfPassword = provider.submission.salarySlips?.pdfPassword;
+    _loadDraftData();
     
-    // Load existing data from backend
+    // Load existing data from backend and sync with provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
+      // Sync with provider after draft loads (in case it loads after initState)
+      _syncWithProvider();
     });
+  }
+
+  void _loadDraftData() {
+    final provider = context.read<SubmissionProvider>();
+    _slips = List<String>.from(provider.submission.salarySlips?.slips ?? []);
+    _isPdf = provider.submission.salarySlips?.isPdf ?? false;
+    _pdfPassword = provider.submission.salarySlips?.pdfPassword;
+  }
+
+  void _syncWithProvider() {
+    if (_hasSyncedWithProvider) return; // Only sync once
+    
+    final provider = context.read<SubmissionProvider>();
+    final salarySlips = provider.submission.salarySlips;
+    if (salarySlips != null) {
+      final currentSlips = List<String>.from(salarySlips.slips);
+      final currentIsPdf = salarySlips.isPdf;
+      final currentPassword = salarySlips.pdfPassword;
+      
+      // Update local state if provider has different data (from draft)
+      if (currentSlips.length != _slips.length || 
+          currentIsPdf != _isPdf || 
+          currentPassword != _pdfPassword) {
+        if (mounted) {
+          setState(() {
+            _slips = currentSlips;
+            _isPdf = currentIsPdf;
+            _pdfPassword = currentPassword;
+            _hasSyncedWithProvider = true;
+          });
+        }
+      } else {
+        _hasSyncedWithProvider = true;
+      }
+    } else {
+      _hasSyncedWithProvider = true;
+    }
   }
 
   Future<void> _loadExistingData() async {
@@ -293,6 +330,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch provider to trigger rebuilds when draft loads
+    context.watch<SubmissionProvider>();
+    
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -391,7 +431,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                 ),
               ),
             ),
-            StepProgressIndicator(currentStep: 5, totalSteps: 7),
+            StepProgressIndicator(currentStep: 5, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),

@@ -1,8 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:image_picker/image_picker.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
@@ -22,8 +30,7 @@ class Step6PreviewScreen extends StatefulWidget {
 }
 
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
+  bool _isDownloading = false;
 
   void _editStep(BuildContext context, String route) {
     context.go(route);
@@ -105,50 +112,649 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     }
   }
 
-  Future<void> _saveDraft(BuildContext context) async {
-    if (_isSavingDraft || _isDraftSaved) return;
+  Future<void> _downloadData(BuildContext context) async {
+    if (_isDownloading) return;
 
     setState(() {
-      _isSavingDraft = true;
+      _isDownloading = true;
     });
 
-    final provider = context.read<SubmissionProvider>();
-
     try {
-      final success = await provider.saveDraft();
-      
+      final provider = context.read<SubmissionProvider>();
+      final submission = provider.submission;
+
+      // Generate JSON data
+      final dataMap = <String, dynamic>{
+        'applicationData': {
+          'generatedAt': DateTime.now().toIso8601String(),
+          'applicationStatus': submission.isComplete ? 'Complete' : 'Incomplete',
+        },
+        'personalData': submission.personalData != null
+            ? {
+                'nameAsPerAadhaar': submission.personalData!.nameAsPerAadhaar,
+                'dateOfBirth': submission.personalData!.dateOfBirth?.toIso8601String(),
+                'panNo': submission.personalData!.panNo,
+                'mobileNumber': submission.personalData!.mobileNumber,
+                'personalEmailId': submission.personalData!.personalEmailId,
+                'countryOfResidence': submission.personalData!.countryOfResidence,
+                'residenceAddress': submission.personalData!.residenceAddress,
+                'residenceType': submission.personalData!.residenceType,
+                'residenceStability': submission.personalData!.residenceStability,
+                'companyName': submission.personalData!.companyName,
+                'companyAddress': submission.personalData!.companyAddress,
+                'nationality': submission.personalData!.nationality,
+                'countryOfBirth': submission.personalData!.countryOfBirth,
+                'occupation': submission.personalData!.occupation,
+                'educationalQualification': submission.personalData!.educationalQualification,
+                'workType': submission.personalData!.workType,
+                'industry': submission.personalData!.industry,
+                'annualIncome': submission.personalData!.annualIncome,
+                'totalWorkExperience': submission.personalData!.totalWorkExperience,
+                'currentCompanyExperience': submission.personalData!.currentCompanyExperience,
+                'loanAmountTenure': submission.personalData!.loanAmountTenure,
+                'maritalStatus': submission.personalData!.maritalStatus,
+                'spouseName': submission.personalData!.spouseName,
+                'fatherName': submission.personalData!.fatherName,
+                'motherName': submission.personalData!.motherName,
+                'reference1Name': submission.personalData!.reference1Name,
+                'reference1Address': submission.personalData!.reference1Address,
+                'reference1Contact': submission.personalData!.reference1Contact,
+                'reference2Name': submission.personalData!.reference2Name,
+                'reference2Address': submission.personalData!.reference2Address,
+                'reference2Contact': submission.personalData!.reference2Contact,
+              }
+            : null,
+        'documents': {
+          'selfie': submission.selfiePath != null ? 'Uploaded' : 'Not uploaded',
+          'aadhaar': submission.aadhaar != null
+              ? {
+                  'front': submission.aadhaar!.frontPath != null ? 'Uploaded' : 'Not uploaded',
+                  'back': submission.aadhaar!.backPath != null ? 'Uploaded' : 'Not uploaded',
+                }
+              : 'Not uploaded',
+          'pan': submission.pan != null
+              ? (submission.pan!.frontPath != null ? 'Uploaded' : 'Not uploaded')
+              : 'Not uploaded',
+          'bankStatement': submission.bankStatement != null
+              ? {
+                  'pages': submission.bankStatement!.pages.length,
+                  'status': 'Uploaded',
+                }
+              : 'Not uploaded',
+          'salarySlips': submission.salarySlips != null
+              ? {
+                  'count': submission.salarySlips!.slips.length,
+                  'format': submission.salarySlips!.isPdf ? 'PDF' : 'Image',
+                  'status': 'Uploaded',
+                }
+              : 'Not uploaded',
+        },
+      };
+
+      // Convert to formatted JSON string
+      const encoder = JsonEncoder.withIndent('  ');
+      final jsonString = encoder.convert(dataMap);
+
+      // Get temporary directory
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'application_data_$timestamp.json';
+      final file = File('${directory.path}/$fileName');
+
+      // Write JSON to file
+      await file.writeAsString(jsonString);
+
+      // Share the file
       if (context.mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'My Application Data',
+          subject: 'Application Data Export',
+        );
+
+        PremiumToast.showSuccess(
+          context,
+          'Data downloaded successfully!',
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
         PremiumToast.showError(
           context,
-          'Error saving draft: $e',
+          'Error downloading data: $e',
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
     }
+  }
+
+  /// Read image bytes from file path (handles both web and mobile)
+  Future<Uint8List?> _readImageBytes(String? imagePath) async {
+    if (imagePath == null || imagePath.isEmpty) return null;
+    
+    try {
+      if (kIsWeb) {
+        // On web, if it's a blob URL or data URI, we can't read it directly
+        // Return null - images from web will need to be handled differently
+        if (imagePath.startsWith('blob:') || imagePath.startsWith('data:')) {
+          return null;
+        }
+        // Try to read as XFile if possible
+        final file = XFile(imagePath);
+        return await file.readAsBytes();
+      } else {
+        // On mobile/desktop, read from file path
+        final file = File(imagePath);
+        if (await file.exists()) {
+          return await file.readAsBytes();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error reading image: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Generate PDF with all application data and images
+  Future<void> _downloadAsPdf(BuildContext context) async {
+    if (_isDownloading) return;
+
+    setState(() {
+      _isDownloading = true;
+    });
+
+    try {
+      final provider = context.read<SubmissionProvider>();
+      final submission = provider.submission;
+      final personalData = submission.personalData;
+
+      // Create PDF document
+      final pdf = pw.Document();
+      final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+      final generatedDate = dateFormat.format(DateTime.now());
+
+      // Add title page
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'Loan Application Data',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'Generated on: $generatedDate',
+                  style: pw.TextStyle(fontSize: 12),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Divider(),
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  'Application Status: ${submission.isComplete ? "Complete" : "Incomplete"}',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      // Add Personal Data section
+      if (personalData != null) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Personal Information',
+                    style: pw.TextStyle(
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+                  _buildPdfDataRow('Name (as per Aadhaar)', personalData.nameAsPerAadhaar),
+                  _buildPdfDataRow('Date of Birth', personalData.dateOfBirth != null 
+                    ? DateFormat('dd MMM yyyy').format(personalData.dateOfBirth!) 
+                    : null),
+                  _buildPdfDataRow('PAN Number', personalData.panNo),
+                  _buildPdfDataRow('Mobile Number', personalData.mobileNumber),
+                  _buildPdfDataRow('Email ID', personalData.personalEmailId),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Residence Information',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Country of Residence', personalData.countryOfResidence),
+                  _buildPdfDataRow('Residence Address', personalData.residenceAddress),
+                  _buildPdfDataRow('Residence Type', personalData.residenceType),
+                  _buildPdfDataRow('Residence Stability', personalData.residenceStability),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Company Information',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Company Name', personalData.companyName),
+                  _buildPdfDataRow('Company Address', personalData.companyAddress),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Employment Details',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Occupation', personalData.occupation),
+                  _buildPdfDataRow('Industry', personalData.industry),
+                  _buildPdfDataRow('Annual Income', personalData.annualIncome),
+                  _buildPdfDataRow('Work Type', personalData.workType),
+                  _buildPdfDataRow('Total Work Experience', personalData.totalWorkExperience),
+                  _buildPdfDataRow('Current Company Experience', personalData.currentCompanyExperience),
+                  _buildPdfDataRow('Educational Qualification', personalData.educationalQualification),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Family Information',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Marital Status', personalData.maritalStatus),
+                  _buildPdfDataRow('Spouse Name', personalData.spouseName),
+                  _buildPdfDataRow('Father\'s Name', personalData.fatherName),
+                  _buildPdfDataRow('Mother\'s Name', personalData.motherName),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'References',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Reference 1 Name', personalData.reference1Name),
+                  _buildPdfDataRow('Reference 1 Address', personalData.reference1Address),
+                  _buildPdfDataRow('Reference 1 Contact', personalData.reference1Contact),
+                  _buildPdfDataRow('Reference 2 Name', personalData.reference2Name),
+                  _buildPdfDataRow('Reference 2 Address', personalData.reference2Address),
+                  _buildPdfDataRow('Reference 2 Contact', personalData.reference2Contact),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      // Add Selfie image
+      if (submission.selfiePath != null) {
+        final selfieBytes = await _readImageBytes(submission.selfiePath);
+        if (selfieBytes != null) {
+          try {
+            final selfieImage = pw.MemoryImage(selfieBytes);
+            pdf.addPage(
+              pw.Page(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(40),
+                build: (pw.Context context) {
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Selfie',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 20),
+                      pw.Center(
+                        child: pw.Image(
+                          selfieImage,
+                          fit: pw.BoxFit.contain,
+                          width: 300,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error adding selfie to PDF: $e');
+            }
+          }
+        }
+      }
+
+      // Add Aadhaar images
+      if (submission.aadhaar != null) {
+        if (submission.aadhaar!.frontPath != null) {
+          final frontBytes = await _readImageBytes(submission.aadhaar!.frontPath);
+          if (frontBytes != null) {
+            try {
+              final frontImage = pw.MemoryImage(frontBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Aadhaar Card - Front',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            frontImage,
+                            fit: pw.BoxFit.contain,
+                            width: 400,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding Aadhaar front to PDF: $e');
+              }
+            }
+          }
+        }
+
+        if (submission.aadhaar!.backPath != null) {
+          final backBytes = await _readImageBytes(submission.aadhaar!.backPath);
+          if (backBytes != null) {
+            try {
+              final backImage = pw.MemoryImage(backBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Aadhaar Card - Back',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            backImage,
+                            fit: pw.BoxFit.contain,
+                            width: 400,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding Aadhaar back to PDF: $e');
+              }
+            }
+          }
+        }
+      }
+
+      // Add PAN image
+      if (submission.pan != null && submission.pan!.frontPath != null) {
+        final panBytes = await _readImageBytes(submission.pan!.frontPath);
+        if (panBytes != null) {
+          try {
+            final panImage = pw.MemoryImage(panBytes);
+            pdf.addPage(
+              pw.Page(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(40),
+                build: (pw.Context context) {
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'PAN Card',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 20),
+                      pw.Center(
+                        child: pw.Image(
+                          panImage,
+                          fit: pw.BoxFit.contain,
+                          width: 400,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error adding PAN to PDF: $e');
+            }
+          }
+        }
+      }
+
+      // Add Bank Statement pages
+      if (submission.bankStatement != null && submission.bankStatement!.pages.isNotEmpty) {
+        for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
+          final pagePath = submission.bankStatement!.pages[i];
+          final pageBytes = await _readImageBytes(pagePath);
+          if (pageBytes != null) {
+            try {
+              final pageImage = pw.MemoryImage(pageBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Bank Statement - Page ${i + 1}',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            pageImage,
+                            fit: pw.BoxFit.contain,
+                            width: 500,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding bank statement page $i to PDF: $e');
+              }
+            }
+          }
+        }
+      }
+
+      // Add Salary Slips
+      if (submission.salarySlips != null && submission.salarySlips!.slips.isNotEmpty) {
+        for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
+          final slipPath = submission.salarySlips!.slips[i];
+          final slipBytes = await _readImageBytes(slipPath);
+          if (slipBytes != null) {
+            try {
+              final slipImage = pw.MemoryImage(slipBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Salary Slip - ${i + 1}',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            slipImage,
+                            fit: pw.BoxFit.contain,
+                            width: 500,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding salary slip $i to PDF: $e');
+              }
+            }
+          }
+        }
+      }
+
+      // Save PDF to file
+      final directory = kIsWeb ? null : await getTemporaryDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'application_data_$timestamp.pdf';
+      
+      Uint8List pdfBytes;
+      if (kIsWeb) {
+        pdfBytes = await pdf.save();
+        // On web, share the PDF
+        if (context.mounted) {
+          // Use share_plus to download on web
+          await Share.shareXFiles(
+            [XFile.fromData(pdfBytes, mimeType: 'application/pdf', name: fileName)],
+            text: 'My Application Data',
+            subject: 'Application Data Export',
+          );
+        }
+      } else {
+        pdfBytes = await pdf.save();
+        final file = File('${directory!.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        
+        if (context.mounted) {
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: 'My Application Data',
+            subject: 'Application Data Export',
+          );
+        }
+      }
+
+      if (context.mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'PDF downloaded successfully!',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        PremiumToast.showError(
+          context,
+          'Error generating PDF: $e',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  /// Helper to build data rows in PDF
+  pw.Widget _buildPdfDataRow(String label, String? value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 8),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 150,
+            child: pw.Text(
+              '$label:',
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Text(
+              value ?? 'Not provided',
+              style: const pw.TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -283,9 +889,37 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     color: colorScheme.primary,
                   ),
                 ),
+                actions: [
+                  Container(
+                    margin: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: _isDownloading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(Icons.download_outlined, size: 20),
+                      onPressed: _isDownloading ? null : () => _downloadData(context),
+                      color: colorScheme.primary,
+                      tooltip: 'Download Data',
+                    ),
+                  ),
+                ],
               ),
             ),
-            StepProgressIndicator(currentStep: 7, totalSteps: 7),
+            StepProgressIndicator(currentStep: 6, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -720,36 +1354,27 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
-                    // Save as Draft button
+                    // Download as PDF button
                     Builder(
                       builder: (context) {
                         final colorScheme = Theme.of(context).colorScheme;
                         return OutlinedButton.icon(
-                          onPressed: _isDraftSaved ? null : () => _saveDraft(context),
-                          icon: _isDraftSaved
-                              ? const Icon(Icons.check_circle)
-                              : (_isSavingDraft
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.save_outlined)),
-                          label: Text(_isDraftSaved
-                              ? 'Draft Saved'
-                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
+                          onPressed: _isDownloading ? null : () => _downloadAsPdf(context),
+                          icon: _isDownloading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_outlined),
+                          label: Text(_isDownloading ? 'Generating PDF...' : 'Download your data as PDF'),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            foregroundColor: _isDraftSaved
-                                ? AppTheme.successColor
-                                : null,
                             side: BorderSide(
-                              color: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : colorScheme.primary,
+                              color: colorScheme.primary,
                             ),
                           ),
                         );
