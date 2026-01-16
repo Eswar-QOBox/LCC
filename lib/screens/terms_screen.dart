@@ -72,12 +72,16 @@ class TermsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      'Terms & Conditions',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
+                    Flexible(
+                      child: Text(
+                        'Terms & Conditions',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 20,
+                          letterSpacing: 0.5,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                   ],
@@ -89,11 +93,17 @@ class TermsScreen extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.all(24.0),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight - 48,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                     // Header Card
                     PremiumCard(
                       gradientColors: [
@@ -101,6 +111,7 @@ class TermsScreen extends StatelessWidget {
                         colorScheme.secondary.withValues(alpha: 0.05),
                       ],
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
                             padding: const EdgeInsets.all(16),
@@ -130,6 +141,7 @@ class TermsScreen extends StatelessWidget {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   'Terms and Conditions',
@@ -137,6 +149,8 @@ class TermsScreen extends StatelessWidget {
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: -0.5,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -144,6 +158,8 @@ class TermsScreen extends StatelessWidget {
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
                                   ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ],
                             ),
@@ -203,11 +219,15 @@ class TermsScreen extends StatelessWidget {
                         ),
                       ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.info_outline,
-                            color: colorScheme.primary,
-                            size: 20,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(
+                              Icons.info_outline,
+                              color: colorScheme.primary,
+                              size: 20,
+                            ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -216,6 +236,7 @@ class TermsScreen extends StatelessWidget {
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
+                              overflow: TextOverflow.visible,
                             ),
                           ),
                         ],
@@ -230,8 +251,11 @@ class TermsScreen extends StatelessWidget {
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                     const SizedBox(height: 24),
-                  ],
-                ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -261,6 +285,10 @@ class TermsScreen extends StatelessWidget {
           Container(
             width: 48,
             height: 48,
+            constraints: const BoxConstraints(
+              minWidth: 48,
+              minHeight: 48,
+            ),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -292,13 +320,18 @@ class TermsScreen extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      icon,
-                      color: colorScheme.primary,
-                      size: 20,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Icon(
+                        icon,
+                        color: colorScheme.primary,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -308,6 +341,8 @@ class TermsScreen extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                           color: colorScheme.onSurface,
                         ),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
                       ),
                     ),
                   ],
@@ -319,6 +354,7 @@ class TermsScreen extends StatelessWidget {
                     height: 1.6,
                     color: colorScheme.onSurfaceVariant,
                   ),
+                  overflow: TextOverflow.visible,
                 ),
               ],
             ),

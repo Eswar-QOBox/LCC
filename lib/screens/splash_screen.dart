@@ -67,36 +67,86 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final screenWidth = mediaQuery.size.width;
+    final screenHeight = mediaQuery.size.height;
+    final isPortrait = screenHeight > screenWidth;
+    
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      body: Center(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        minimum: EdgeInsets.zero,
         child: FadeTransition(
           opacity: _fadeAnimation,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/JSEE_icon.jpg',
-                width: 150,
-                height: 150,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    Icons.document_scanner,
-                    size: 100,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'JSEE',
-                style: Theme.of(context).textTheme.displayLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onPrimary,
-                  fontWeight: FontWeight.bold,
+          child: Center(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: screenWidth,
+                  maxHeight: screenHeight,
+                ),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isPortrait ? 24.0 : 48.0,
+                    vertical: isPortrait ? 48.0 : 24.0,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Calculate responsive size based on available space
+                      final availableWidth = constraints.maxWidth;
+                      final availableHeight = constraints.maxHeight;
+                      final minDimension = availableWidth < availableHeight
+                          ? availableWidth
+                          : availableHeight;
+                      
+                      // Use 70% of the smaller dimension, with min/max bounds
+                      final imageSize = (minDimension * 0.7).clamp(150.0, 500.0);
+                      
+                      return SizedBox(
+                        width: imageSize,
+                        height: imageSize,
+                        child: Image.asset(
+                          'assets/main_logo.jpeg',
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.high,
+                          errorBuilder: (context, error, stackTrace) {
+                            // Robust error handling with fallback
+                            return Container(
+                              width: imageSize,
+                              height: imageSize,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.image_not_supported_outlined,
+                                    size: imageSize * 0.3,
+                                    color: Theme.of(context).colorScheme.primary,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Logo not found',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

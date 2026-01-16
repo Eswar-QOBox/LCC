@@ -13,7 +13,7 @@ class MainHomeScreen extends StatefulWidget {
 }
 
 class _MainHomeScreenState extends State<MainHomeScreen> {
-  int _currentIndex = 0; // Default to Loan tab
+  int _currentIndex = 0; // Default to Home tab
 
   final List<Widget> _screens = [
     const LoanScreen(),
@@ -60,14 +60,14 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
           ),
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.account_balance_wallet),
-              activeIcon: Icon(Icons.account_balance_wallet),
-              label: 'Loan',
+              icon: Icon(Icons.home),
+              activeIcon: Icon(Icons.home),
+              label: 'Home',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.folder_outlined),
               activeIcon: Icon(Icons.folder),
-              label: 'Applications',
+              label: 'My Applications',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.description_outlined),

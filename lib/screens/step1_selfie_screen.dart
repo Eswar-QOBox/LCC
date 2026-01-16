@@ -894,13 +894,17 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: ElevatedButton.icon(
           onPressed: onPressed,
-          icon: Icon(icon, color: colorScheme.onPrimary),
+          icon: Icon(icon, color: colorScheme.onPrimary, size: 28),
           label: Text(
             label,
-            style: TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: colorScheme.onPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
           ),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 18),
+            padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 24),
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
           ),
@@ -960,4 +964,3 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     );
   }
 }
-

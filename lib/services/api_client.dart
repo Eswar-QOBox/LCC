@@ -5,9 +5,23 @@ import '../utils/api_config.dart';
 
 class ApiClient {
   late final Dio _dio;
+  late final Dio _refreshDio; // Separate Dio instance for refresh calls to avoid interceptor loop
+  bool _isRefreshing = false; // Flag to prevent concurrent refresh attempts
 
   ApiClient() {
     _dio = Dio(
+      BaseOptions(
+        baseUrl: ApiConfig.baseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      ),
+    );
+    
+    // Create a separate Dio instance for refresh calls without interceptors
+    _refreshDio = Dio(
       BaseOptions(
         baseUrl: ApiConfig.baseUrl,
         connectTimeout: const Duration(seconds: 30),
@@ -43,9 +57,26 @@ class ApiClient {
         onError: (error, handler) async {
           // Handle 401 Unauthorized - try to refresh token
           if (error.response?.statusCode == 401) {
+            // Don't try to refresh if the failed request is already a refresh request
+            // This prevents infinite loops when refresh token is expired
+            final requestPath = error.requestOptions.path;
+            if (requestPath.contains('/api/v1/auth/refresh')) {
+              // Refresh token is expired, clear tokens and reject
+              final storage = StorageService.instance;
+              await storage.clearAll();
+              return handler.reject(error);
+            }
+            
+            // Prevent concurrent refresh attempts
+            if (_isRefreshing) {
+              // If already refreshing, wait a bit and reject
+              return handler.reject(error);
+            }
+            
             final storage = StorageService.instance;
             final refreshToken = await storage.getRefreshToken();
             if (refreshToken != null) {
+              _isRefreshing = true;
               try {
                 // Try to refresh the access token
                 final newToken = await _refreshAccessToken(refreshToken);
@@ -66,14 +97,24 @@ class ApiClient {
                     queryParameters: opts.queryParameters,
                   );
                   
+                  _isRefreshing = false;
                   return handler.resolve(response);
+                } else {
+                  // Refresh failed, clear tokens and logout
+                  await storage.clearAll();
+                  _isRefreshing = false;
+                  return handler.reject(error);
                 }
               } catch (e) {
                 // Refresh failed, clear tokens and logout
                 await storage.clearAll();
-                // You can emit an event here to notify the app to navigate to login
+                _isRefreshing = false;
                 return handler.reject(error);
               }
+            } else {
+              // No refresh token available, clear storage
+              final storage = StorageService.instance;
+              await storage.clearAll();
             }
           }
           handler.next(error);
@@ -84,7 +125,8 @@ class ApiClient {
 
   Future<String?> _refreshAccessToken(String refreshToken) async {
     try {
-      final response = await _dio.post(
+      // Use separate Dio instance to avoid interceptor loop
+      final response = await _refreshDio.post(
         '/api/v1/auth/refresh',
         options: Options(
           headers: {

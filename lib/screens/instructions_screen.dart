@@ -4,11 +4,24 @@ import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/loan_application_service.dart';
 import '../utils/app_theme.dart';
 
-class InstructionsScreen extends StatelessWidget {
-  const InstructionsScreen({super.key});
+class InstructionsScreen extends StatefulWidget {
+  final String? loanType;
+  
+  const InstructionsScreen({super.key, this.loanType});
+
+  @override
+  State<InstructionsScreen> createState() => _InstructionsScreenState();
+}
+
+class _InstructionsScreenState extends State<InstructionsScreen> {
+  bool _isCreatingApplication = false;
+  final LoanApplicationService _applicationService = LoanApplicationService();
 
   @override
   Widget build(BuildContext context) {
@@ -333,33 +346,74 @@ class InstructionsScreen extends StatelessWidget {
                       builder: (context, provider, _) {
                         final termsAccepted = provider.termsAccepted;
                         return PremiumButton(
-                          label: 'Start Submission',
-                          icon: Icons.arrow_forward_rounded,
-                          isPrimary: termsAccepted,
-                          onPressed: termsAccepted
-                              ? () {
-                                  context.go(AppRoutes.step1Selfie);
+                          label: _isCreatingApplication 
+                              ? 'Creating Application...' 
+                              : 'Start Submission',
+                          icon: _isCreatingApplication 
+                              ? Icons.hourglass_empty 
+                              : Icons.arrow_forward_rounded,
+                          isPrimary: termsAccepted && !_isCreatingApplication,
+                          onPressed: (termsAccepted && !_isCreatingApplication)
+                              ? () async {
+                                  // If loan type is provided, create application first
+                                  if (widget.loanType != null) {
+                                    setState(() {
+                                      _isCreatingApplication = true;
+                                    });
+
+                                    try {
+                                      // Create new application with selected loan type
+                                      final application = await _applicationService.createApplication(
+                                        loanType: widget.loanType!,
+                                        currentStep: 1,
+                                        status: 'draft',
+                                      );
+
+                                      // Set application in provider
+                                      if (mounted) {
+                                        context.read<ApplicationProvider>().setApplication(application);
+                                        // Navigate to step 1
+                                        context.go(AppRoutes.step1Selfie);
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        PremiumToast.show(
+                                          context,
+                                          message: 'Failed to create application: ${e.toString()}',
+                                          type: ToastType.error,
+                                        );
+                                        setState(() {
+                                          _isCreatingApplication = false;
+                                        });
+                                      }
+                                    }
+                                  } else {
+                                    // No loan type, just navigate (for existing flow)
+                                    context.go(AppRoutes.step1Selfie);
+                                  }
                                 }
                               : () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: const Row(
-                                        children: [
-                                          Icon(Icons.warning_amber_rounded,
-                                              color: Colors.white),
-                                          SizedBox(width: 12),
-                                          Expanded(
-                                            child: Text(
-                                              'Please accept Terms & Conditions to continue',
+                                  if (!termsAccepted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: const Row(
+                                          children: [
+                                            Icon(Icons.warning_amber_rounded,
+                                                color: Colors.white),
+                                            SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                'Please accept Terms & Conditions to continue',
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
+                                        backgroundColor: AppTheme.warningColor,
+                                        behavior: SnackBarBehavior.floating,
+                                        duration: const Duration(seconds: 3),
                                       ),
-                                      backgroundColor: AppTheme.warningColor,
-                                      behavior: SnackBarBehavior.floating,
-                                      duration: const Duration(seconds: 3),
-                                    ),
-                                  );
+                                    );
+                                  }
                                 },
                         );
                       },
