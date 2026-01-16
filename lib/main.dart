@@ -6,7 +6,6 @@ import 'providers/auth_provider.dart';
 import 'providers/application_provider.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_routes.dart';
-import 'screens/splash_screen.dart';
 import 'screens/branding_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/forgot_password_screen.dart';
@@ -50,12 +49,8 @@ class MyApp extends StatelessWidget {
 }
 
 final GoRouter _router = GoRouter(
-  initialLocation: AppRoutes.splash,
+  initialLocation: AppRoutes.branding,
   routes: [
-    GoRoute(
-      path: AppRoutes.splash,
-      builder: (context, state) => const SplashScreen(),
-    ),
     GoRoute(
       path: AppRoutes.branding,
       builder: (context, state) => const BrandingScreen(),
