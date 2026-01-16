@@ -376,4 +376,119 @@ class AuthService {
     final storage = StorageService.instance;
     return await storage.isLoggedIn();
   }
+
+  /// Request password reset (forgot password)
+  /// Returns a message and optionally a temporary password
+  Future<Map<String, dynamic>> forgotPassword(String email) async {
+    try {
+      final response = await _apiClient.post(
+        '/api/v1/auth/forgot-password',
+        data: {'email': email},
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['success'] == true) {
+          final responseData = data['data'] as Map<String, dynamic>;
+          return {
+            'message': responseData['message'] as String? ?? 'Password reset request processed',
+            'tempPassword': responseData['tempPassword'] as String?,
+          };
+        }
+      }
+
+      throw AuthException(
+        code: AuthErrorCodes.internalError,
+        message: 'Password reset failed: Invalid response',
+        statusCode: response.statusCode,
+      );
+    } catch (e) {
+      if (e is DioException) {
+        // Handle CORS/connection errors
+        if (e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout ||
+            e.type == DioExceptionType.sendTimeout) {
+          final errorMessage = e.message?.toLowerCase() ?? '';
+          if (errorMessage.contains('xmlhttprequest') ||
+              errorMessage.contains('cors') ||
+              errorMessage.contains('network')) {
+            throw AuthException(
+              code: 'NETWORK_ERROR',
+              message:
+                  'Connection error. This may be a CORS issue. Please ensure:\n'
+                  '1. Backend server is running on port 5000\n'
+                  '2. CORS is properly configured on the backend\n'
+                  '3. Backend includes CORS headers in POST responses (not just OPTIONS)',
+              statusCode: null,
+            );
+          }
+          throw AuthException(
+            code: 'NETWORK_ERROR',
+            message:
+                'Network error. Please check your internet connection and try again.',
+            statusCode: null,
+          );
+        }
+
+        // Handle HTTP status code errors
+        final statusCode = e.response?.statusCode;
+
+        String errorCode = AuthErrorCodes.internalError;
+        String errorMessage = 'Password reset failed';
+
+        if (statusCode == 404) {
+          errorCode = AuthErrorCodes.notFound;
+          errorMessage =
+              'Password reset endpoint not found. Please check if the server is running.';
+        } else if (statusCode == 400) {
+          errorCode = AuthErrorCodes.validationError;
+          errorMessage = 'Invalid email address. Please check your input.';
+        } else if (statusCode == 500) {
+          errorCode = AuthErrorCodes.internalError;
+          errorMessage = 'Server error. Please try again later.';
+        }
+
+        // Handle API error responses with body
+        final errorData = e.response?.data;
+        if (errorData != null && errorData is Map) {
+          try {
+            dynamic errorObj = errorData['error'];
+
+            if (errorObj != null) {
+              if (errorObj is Map<String, dynamic>) {
+                final code = errorObj['code'];
+                final message = errorObj['message'];
+                if (code != null) errorCode = code.toString();
+                if (message != null) errorMessage = message.toString();
+              } else if (errorObj is String) {
+                errorMessage = errorObj;
+              }
+            } else if (errorData['message'] != null) {
+              errorMessage = errorData['message'].toString();
+            }
+          } catch (parseError) {
+            // If parsing fails, use the status code-based error message
+          }
+        }
+
+        throw AuthException(
+          code: errorCode,
+          message: errorMessage,
+          statusCode: statusCode,
+        );
+      }
+
+      // Re-throw AuthException as-is
+      if (e is AuthException) {
+        rethrow;
+      }
+
+      // Wrap other exceptions
+      throw AuthException(
+        code: AuthErrorCodes.internalError,
+        message: e.toString(),
+      );
+    }
+  }
 }
