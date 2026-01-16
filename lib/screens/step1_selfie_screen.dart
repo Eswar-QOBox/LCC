@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/document_service.dart';
 import '../services/file_upload_service.dart';
@@ -59,33 +58,6 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     }
   }
 
-  Future<void> _selectFromGallery() async {
-    if (!mounted) return;
-    
-    try {
-      final image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 90,
-      );
-      if (image != null && mounted) {
-        await _setImage(image);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Unable to select image. Please try again.'),
-            backgroundColor: AppTheme.errorColor,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _selectFromGallery,
-            ),
-          ),
-        );
-      }
-    }
-  }
 
   Future<void> _setImage(XFile imageFile) async {
     if (!mounted) return;
@@ -204,7 +176,6 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
       if (result.isValid) {
         if (mounted) {
-          context.read<SubmissionProvider>().setSelfie(_imagePath!);
           PremiumToast.showSuccess(
             context,
             'Selfie validated successfully!',
@@ -343,22 +314,37 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     if (!appProvider.hasApplication) return;
 
     final application = appProvider.currentApplication!;
-    if (application.step1Selfie != null) {
+    // When resuming a pending application (currentStep > 1), always require a fresh selfie
+    // Only load existing selfie if we're on step 1 and it's a new/ongoing application
+    // For resumed applications, we want to ensure a fresh selfie is captured each time
+    if (application.currentStep == 1 && application.step1Selfie != null) {
       final stepData = application.step1Selfie as Map<String, dynamic>;
       if (stepData['imagePath'] != null) {
         setState(() {
           _imagePath = stepData['imagePath'] as String;
         });
+        // Also load image bytes if available
+        try {
+          final imageFile = XFile(_imagePath!);
+          _imageBytes = await imageFile.readAsBytes();
+        } catch (e) {
+          // If we can't load the bytes, that's okay - we'll just show the path
+        }
       }
+    } else if (application.currentStep > 1) {
+      // When resuming, clear any existing selfie to force fresh capture
+      setState(() {
+        _imagePath = null;
+        _imageBytes = null;
+        _validationResult = null;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<SubmissionProvider>();
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    _imagePath ??= provider.submission.selfiePath;
 
     return Scaffold(
       body: Container(
@@ -803,35 +789,27 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                             ),
                             const SizedBox(height: 24),
                             Text(
-                              'Capture or Select Your Selfie',
+                              'Capture Your Selfie',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
                               textAlign: TextAlign.center,
                             ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Please use the camera to capture a live selfie',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
                             const SizedBox(height: 32),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildCaptureButton(
-                                    context,
-                                    icon: Icons.camera_alt,
-                                    label: 'Camera',
-                                    onPressed: _captureFromCamera,
-                                    isPrimary: false,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildCaptureButton(
-                                    context,
-                                    icon: Icons.photo_library,
-                                    label: 'Gallery',
-                                    onPressed: _selectFromGallery,
-                                    isPrimary: false,
-                                  ),
-                                ),
-                              ],
+                            _buildCaptureButton(
+                              context,
+                              icon: Icons.camera_alt,
+                              label: 'Capture Selfie',
+                              onPressed: _captureFromCamera,
+                              isPrimary: true,
                             ),
                           ],
                         ),

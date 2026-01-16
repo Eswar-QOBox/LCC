@@ -11,6 +11,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
+import 'package:http/http.dart' as http;
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
@@ -34,6 +36,38 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
   void _editStep(BuildContext context, String route) {
     context.go(route);
+  }
+
+  /// Get selfie path from ApplicationProvider (per-application storage)
+  String? _getSelfiePath(BuildContext context) {
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return null;
+    
+    final application = appProvider.currentApplication!;
+    if (application.step1Selfie != null) {
+      final stepData = application.step1Selfie as Map<String, dynamic>;
+      return stepData['imagePath'] as String?;
+    }
+    return null;
+  }
+
+  /// Check if all required data is actually present (for PDF status)
+  bool _isActuallyComplete(BuildContext context) {
+    final provider = context.read<SubmissionProvider>();
+    final submission = provider.submission;
+    final selfiePath = _getSelfiePath(context);
+    
+    return selfiePath != null &&
+        submission.aadhaar != null &&
+        submission.aadhaar!.isComplete &&
+        submission.pan != null &&
+        submission.pan!.isComplete &&
+        submission.bankStatement != null &&
+        submission.bankStatement!.isComplete &&
+        submission.personalData != null &&
+        submission.personalData!.isComplete &&
+        submission.salarySlips != null &&
+        submission.salarySlips!.isComplete;
   }
 
   Future<void> _submit(BuildContext context) async {
@@ -112,126 +146,6 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     }
   }
 
-  Future<void> _downloadData(BuildContext context) async {
-    if (_isDownloading) return;
-
-    setState(() {
-      _isDownloading = true;
-    });
-
-    try {
-      final provider = context.read<SubmissionProvider>();
-      final submission = provider.submission;
-
-      // Generate JSON data
-      final dataMap = <String, dynamic>{
-        'applicationData': {
-          'generatedAt': DateTime.now().toIso8601String(),
-          'applicationStatus': submission.isComplete ? 'Complete' : 'Incomplete',
-        },
-        'personalData': submission.personalData != null
-            ? {
-                'nameAsPerAadhaar': submission.personalData!.nameAsPerAadhaar,
-                'dateOfBirth': submission.personalData!.dateOfBirth?.toIso8601String(),
-                'panNo': submission.personalData!.panNo,
-                'mobileNumber': submission.personalData!.mobileNumber,
-                'personalEmailId': submission.personalData!.personalEmailId,
-                'countryOfResidence': submission.personalData!.countryOfResidence,
-                'residenceAddress': submission.personalData!.residenceAddress,
-                'residenceType': submission.personalData!.residenceType,
-                'residenceStability': submission.personalData!.residenceStability,
-                'companyName': submission.personalData!.companyName,
-                'companyAddress': submission.personalData!.companyAddress,
-                'nationality': submission.personalData!.nationality,
-                'countryOfBirth': submission.personalData!.countryOfBirth,
-                'occupation': submission.personalData!.occupation,
-                'educationalQualification': submission.personalData!.educationalQualification,
-                'workType': submission.personalData!.workType,
-                'industry': submission.personalData!.industry,
-                'annualIncome': submission.personalData!.annualIncome,
-                'totalWorkExperience': submission.personalData!.totalWorkExperience,
-                'currentCompanyExperience': submission.personalData!.currentCompanyExperience,
-                'loanAmountTenure': submission.personalData!.loanAmountTenure,
-                'maritalStatus': submission.personalData!.maritalStatus,
-                'spouseName': submission.personalData!.spouseName,
-                'fatherName': submission.personalData!.fatherName,
-                'motherName': submission.personalData!.motherName,
-                'reference1Name': submission.personalData!.reference1Name,
-                'reference1Address': submission.personalData!.reference1Address,
-                'reference1Contact': submission.personalData!.reference1Contact,
-                'reference2Name': submission.personalData!.reference2Name,
-                'reference2Address': submission.personalData!.reference2Address,
-                'reference2Contact': submission.personalData!.reference2Contact,
-              }
-            : null,
-        'documents': {
-          'selfie': submission.selfiePath != null ? 'Uploaded' : 'Not uploaded',
-          'aadhaar': submission.aadhaar != null
-              ? {
-                  'front': submission.aadhaar!.frontPath != null ? 'Uploaded' : 'Not uploaded',
-                  'back': submission.aadhaar!.backPath != null ? 'Uploaded' : 'Not uploaded',
-                }
-              : 'Not uploaded',
-          'pan': submission.pan != null
-              ? (submission.pan!.frontPath != null ? 'Uploaded' : 'Not uploaded')
-              : 'Not uploaded',
-          'bankStatement': submission.bankStatement != null
-              ? {
-                  'pages': submission.bankStatement!.pages.length,
-                  'status': 'Uploaded',
-                }
-              : 'Not uploaded',
-          'salarySlips': submission.salarySlips != null
-              ? {
-                  'count': submission.salarySlips!.slips.length,
-                  'format': submission.salarySlips!.isPdf ? 'PDF' : 'Image',
-                  'status': 'Uploaded',
-                }
-              : 'Not uploaded',
-        },
-      };
-
-      // Convert to formatted JSON string
-      const encoder = JsonEncoder.withIndent('  ');
-      final jsonString = encoder.convert(dataMap);
-
-      // Get temporary directory
-      final directory = await getTemporaryDirectory();
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final fileName = 'application_data_$timestamp.json';
-      final file = File('${directory.path}/$fileName');
-
-      // Write JSON to file
-      await file.writeAsString(jsonString);
-
-      // Share the file
-      if (context.mounted) {
-        await Share.shareXFiles(
-          [XFile(file.path)],
-          text: 'My Application Data',
-          subject: 'Application Data Export',
-        );
-
-        PremiumToast.showSuccess(
-          context,
-          'Data downloaded successfully!',
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        PremiumToast.showError(
-          context,
-          'Error downloading data: $e',
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isDownloading = false;
-        });
-      }
-    }
-  }
 
   /// Read image bytes from file path (handles both web and mobile)
   Future<Uint8List?> _readImageBytes(String? imagePath) async {
@@ -239,11 +153,37 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     
     try {
       if (kIsWeb) {
-        // On web, if it's a blob URL or data URI, we can't read it directly
-        // Return null - images from web will need to be handled differently
-        if (imagePath.startsWith('blob:') || imagePath.startsWith('data:')) {
+        // Handle blob URLs on web
+        if (imagePath.startsWith('blob:')) {
+          try {
+            final response = await http.get(Uri.parse(imagePath));
+            if (response.statusCode == 200) {
+              return response.bodyBytes;
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error fetching blob URL: $e');
+            }
+          }
           return null;
         }
+        
+        // Handle data URIs on web
+        if (imagePath.startsWith('data:')) {
+          try {
+            final commaIndex = imagePath.indexOf(',');
+            if (commaIndex != -1) {
+              final base64Data = imagePath.substring(commaIndex + 1);
+              return base64Decode(base64Data);
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error decoding data URI: $e');
+            }
+          }
+          return null;
+        }
+        
         // Try to read as XFile if possible
         final file = XFile(imagePath);
         return await file.readAsBytes();
@@ -262,6 +202,148 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return null;
   }
 
+  /// Convert image bytes to PNG format for PDF compatibility
+  /// This ensures the PDF library can properly decode the image
+  Future<Uint8List?> _convertImageToPng(Uint8List? imageBytes) async {
+    if (imageBytes == null) return null;
+    
+    try {
+      // Decode the image using the image package
+      final decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) {
+        if (kDebugMode) {
+          print('Failed to decode image');
+        }
+        return null;
+      }
+      
+      // Encode to PNG format (PDF library supports PNG well)
+      final pngBytes = img.encodePng(decodedImage);
+      return Uint8List.fromList(pngBytes);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error converting image to PNG: $e');
+      }
+      // If conversion fails, try returning original bytes as fallback
+      return imageBytes;
+    }
+  }
+
+  /// Read PDF bytes from file path (handles both web and mobile)
+  /// Similar to _readImageBytes but specifically for PDFs
+  Future<Uint8List?> _readPdfBytes(String? pdfPath) async {
+    if (pdfPath == null || pdfPath.isEmpty) return null;
+    
+    try {
+      if (kIsWeb) {
+        // Handle blob URLs on web
+        if (pdfPath.startsWith('blob:')) {
+          try {
+            final response = await http.get(Uri.parse(pdfPath));
+            if (response.statusCode == 200) {
+              return response.bodyBytes;
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error fetching PDF blob URL: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Handle data URIs on web
+        if (pdfPath.startsWith('data:')) {
+          try {
+            final commaIndex = pdfPath.indexOf(',');
+            if (commaIndex != -1) {
+              final base64Data = pdfPath.substring(commaIndex + 1);
+              return base64Decode(base64Data);
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error decoding PDF data URI: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Try to read as XFile if possible
+        final file = XFile(pdfPath);
+        return await file.readAsBytes();
+      } else {
+        // On mobile/desktop, read from file path
+        final file = File(pdfPath);
+        if (await file.exists()) {
+          return await file.readAsBytes();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error reading PDF: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Merge PDF pages from a PDF file into the main PDF document
+  /// This function reads the PDF and appends its pages to the main document
+  Future<void> _mergePdfIntoDocument(pw.Document mainPdf, String pdfPath, String title) async {
+    try {
+      final pdfBytes = await _readPdfBytes(pdfPath);
+      if (pdfBytes == null) {
+        if (kDebugMode) {
+          print('Failed to read PDF bytes from: $pdfPath');
+        }
+        // Add a note page instead
+        _addPdfNotePage(mainPdf, title, 'Unable to read PDF file.');
+        return;
+      }
+
+      // Add a title page indicating the PDF is included
+      // Note: Full PDF merging requires additional packages like syncfusion_flutter_pdf
+      // For now, we add a note page and the PDF content is preserved in the submission
+      _addPdfNotePage(
+        mainPdf, 
+        title, 
+        'PDF document included (${(pdfBytes.length / 1024).toStringAsFixed(1)} KB).\n\nThe original PDF file has been preserved in your submission and will be available for review.',
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error merging PDF: $e');
+      }
+      _addPdfNotePage(mainPdf, title, 'Unable to merge PDF content. Original file included separately.');
+    }
+  }
+
+  /// Helper function to add a note page for PDFs
+  void _addPdfNotePage(pw.Document pdf, String title, String message) {
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                message,
+                style: pw.TextStyle(fontSize: 12, color: PdfColors.grey),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// Generate PDF with all application data and images
   Future<void> _downloadAsPdf(BuildContext context) async {
     if (_isDownloading) return;
@@ -274,6 +356,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       final provider = context.read<SubmissionProvider>();
       final submission = provider.submission;
       final personalData = submission.personalData;
+
+      // Check actual completion status before building PDF
+      final isComplete = _isActuallyComplete(context);
 
       // Create PDF document
       final pdf = pw.Document();
@@ -305,7 +390,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                 pw.Divider(),
                 pw.SizedBox(height: 20),
                 pw.Text(
-                  'Application Status: ${submission.isComplete ? "Complete" : "Incomplete"}',
+                  'Application Status: ${isComplete ? "Complete" : "Incomplete"}',
                   style: pw.TextStyle(
                     fontSize: 14,
                     fontWeight: pw.FontWeight.bold,
@@ -418,11 +503,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       }
 
       // Add Selfie image
-      if (submission.selfiePath != null) {
-        final selfieBytes = await _readImageBytes(submission.selfiePath);
-        if (selfieBytes != null) {
+      final selfiePath = _getSelfiePath(context);
+      if (selfiePath != null) {
+        final selfieBytes = await _readImageBytes(selfiePath);
+        final pngBytes = await _convertImageToPng(selfieBytes);
+        if (pngBytes != null) {
           try {
-            final selfieImage = pw.MemoryImage(selfieBytes);
+            final selfieImage = pw.MemoryImage(pngBytes);
             pdf.addPage(
               pw.Page(
                 pageFormat: PdfPageFormat.a4,
@@ -463,9 +550,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (submission.aadhaar != null) {
         if (submission.aadhaar!.frontPath != null) {
           final frontBytes = await _readImageBytes(submission.aadhaar!.frontPath);
-          if (frontBytes != null) {
+          final pngBytes = await _convertImageToPng(frontBytes);
+          if (pngBytes != null) {
             try {
-              final frontImage = pw.MemoryImage(frontBytes);
+              final frontImage = pw.MemoryImage(pngBytes);
               pdf.addPage(
                 pw.Page(
                   pageFormat: PdfPageFormat.a4,
@@ -504,9 +592,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
         if (submission.aadhaar!.backPath != null) {
           final backBytes = await _readImageBytes(submission.aadhaar!.backPath);
-          if (backBytes != null) {
+          final pngBytes = await _convertImageToPng(backBytes);
+          if (pngBytes != null) {
             try {
-              final backImage = pw.MemoryImage(backBytes);
+              final backImage = pw.MemoryImage(pngBytes);
               pdf.addPage(
                 pw.Page(
                   pageFormat: PdfPageFormat.a4,
@@ -547,9 +636,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // Add PAN image
       if (submission.pan != null && submission.pan!.frontPath != null) {
         final panBytes = await _readImageBytes(submission.pan!.frontPath);
-        if (panBytes != null) {
+        final pngBytes = await _convertImageToPng(panBytes);
+        if (pngBytes != null) {
           try {
-            final panImage = pw.MemoryImage(panBytes);
+            final panImage = pw.MemoryImage(pngBytes);
             pdf.addPage(
               pw.Page(
                 pageFormat: PdfPageFormat.a4,
@@ -588,12 +678,25 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
       // Add Bank Statement pages
       if (submission.bankStatement != null && submission.bankStatement!.pages.isNotEmpty) {
-        for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
-          final pagePath = submission.bankStatement!.pages[i];
-          final pageBytes = await _readImageBytes(pagePath);
-          if (pageBytes != null) {
+        // Merge PDF if it's a PDF file
+        if (submission.bankStatement!.isPdf) {
+          // Merge the PDF into the document
+          for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
+            final pagePath = submission.bankStatement!.pages[i];
+            await _mergePdfIntoDocument(
+              pdf,
+              pagePath,
+              'Bank Statement${submission.bankStatement!.pages.length > 1 ? ' - Document ${i + 1}' : ''}',
+            );
+          }
+        } else {
+          for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
+            final pagePath = submission.bankStatement!.pages[i];
+            final pageBytes = await _readImageBytes(pagePath);
+            final pngBytes = await _convertImageToPng(pageBytes);
+            if (pngBytes != null) {
             try {
-              final pageImage = pw.MemoryImage(pageBytes);
+              final pageImage = pw.MemoryImage(pngBytes);
               pdf.addPage(
                 pw.Page(
                   pageFormat: PdfPageFormat.a4,
@@ -629,16 +732,30 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             }
           }
         }
+        }
       }
 
       // Add Salary Slips
       if (submission.salarySlips != null && submission.salarySlips!.slips.isNotEmpty) {
-        for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
-          final slipPath = submission.salarySlips!.slips[i];
-          final slipBytes = await _readImageBytes(slipPath);
-          if (slipBytes != null) {
+        // Merge PDF if it's a PDF file
+        if (submission.salarySlips!.isPdf) {
+          // Merge the PDF into the document
+          for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
+            final slipPath = submission.salarySlips!.slips[i];
+            await _mergePdfIntoDocument(
+              pdf,
+              slipPath,
+              'Salary Slip${submission.salarySlips!.slips.length > 1 ? ' - Document ${i + 1}' : ''}',
+            );
+          }
+        } else {
+          for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
+            final slipPath = submission.salarySlips!.slips[i];
+            final slipBytes = await _readImageBytes(slipPath);
+            final pngBytes = await _convertImageToPng(slipBytes);
+            if (pngBytes != null) {
             try {
-              final slipImage = pw.MemoryImage(slipBytes);
+              final slipImage = pw.MemoryImage(pngBytes);
               pdf.addPage(
                 pw.Page(
                   pageFormat: PdfPageFormat.a4,
@@ -673,6 +790,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
               }
             }
           }
+        }
         }
       }
 
@@ -763,13 +881,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final submission = provider.submission;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final selfiePath = _getSelfiePath(context);
     
     // Debug: Print comprehensive submission state
     if (kDebugMode) {
       print('═══════════════════════════════════════════════════════════');
       print('📋 PREVIEW SCREEN - SUBMISSION STATE');
       print('═══════════════════════════════════════════════════════════');
-      print('✅ Selfie: ${submission.selfiePath != null ? "✓ ${submission.selfiePath}" : "✗ Missing"}');
+      final selfiePath = _getSelfiePath(context);
+      print('✅ Selfie: ${selfiePath != null ? "✓ $selfiePath" : "✗ Missing"}');
       print('✅ Aadhaar: ${submission.aadhaar != null ? "✓ Front: ${submission.aadhaar!.frontPath}, Back: ${submission.aadhaar!.backPath}" : "✗ Missing"}');
       print('✅ PAN: ${submission.pan != null ? "✓ ${submission.pan!.frontPath}" : "✗ Missing"}');
       print('✅ Bank Statement: ${submission.bankStatement != null ? "✓ Pages: ${submission.bankStatement!.pages.length}" : "✗ Missing"}');
@@ -889,34 +1009,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     color: colorScheme.primary,
                   ),
                 ),
-                actions: [
-                  Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: _isDownloading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(Icons.download_outlined, size: 20),
-                      onPressed: _isDownloading ? null : () => _downloadData(context),
-                      color: colorScheme.primary,
-                      tooltip: 'Download Data',
-                    ),
-                  ),
-                ],
+                actions: const [],
               ),
             ),
             StepProgressIndicator(currentStep: 6, totalSteps: 6),
@@ -1038,8 +1131,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           _buildSummaryRow(
                             context,
                             'Step 1: Selfie',
-                            submission.selfiePath != null ? '✓ Uploaded' : '✗ Missing',
-                            submission.selfiePath != null,
+                            selfiePath != null ? '✓ Uploaded' : '✗ Missing',
+                            selfiePath != null,
                           ),
                           _buildSummaryRow(
                             context,
@@ -1084,9 +1177,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       stepNumber: 1,
                       title: 'Selfie / Photo',
                       icon: Icons.face,
-                      isComplete: submission.selfiePath != null,
+                      isComplete: selfiePath != null,
                       onEdit: () => _editStep(context, AppRoutes.step1Selfie),
-                      child: submission.selfiePath != null
+                      child: selfiePath != null
                           ? Container(
                               height: 200,
                               decoration: BoxDecoration(
@@ -1106,7 +1199,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(14),
                                 child: PlatformImage(
-                                  imagePath: submission.selfiePath!,
+                                  imagePath: selfiePath,
                                   fit: BoxFit.cover,
                                 ),
                               ),

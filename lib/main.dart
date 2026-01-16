@@ -44,7 +44,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
       ],
       child: MaterialApp.router(
-        title: 'LCC - Document Submission',
+        title: 'JSEE',
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.light,

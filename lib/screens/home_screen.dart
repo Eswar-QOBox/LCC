@@ -86,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 12),
                 const Text(
-                  'LCC Home',
+                  'JSEE',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
