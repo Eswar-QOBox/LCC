@@ -3,6 +3,7 @@ class AppRoutes {
   static const String splash = '/';
   static const String branding = '/branding';
   static const String login = '/login';
+  static const String forgotPassword = '/forgot-password';
   
   // Main Flow
   static const String home = '/home';

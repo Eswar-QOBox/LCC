@@ -140,4 +140,27 @@ class AuthProvider with ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
   }
+
+  /// Request password reset (forgot password)
+  Future<Map<String, dynamic>?> forgotPassword(String email) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await _authService.forgotPassword(email);
+      _isLoading = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      if (e is AuthException) {
+        _errorMessage = e.userFriendlyMessage;
+      } else {
+        _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      }
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
 }
