@@ -13,6 +13,19 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 
+void main() {
+  runApp(
+  MultiProvider(
+    providers: [
+      ChangeNotifierProvider(create: (_) => SubmissionProvider()),
+      ChangeNotifierProvider(create: (_) => ApplicationProvider()),
+    ],
+    child: MaterialApp(
+      home: Step5PersonalDataScreen(),
+      ),
+    ),
+  );
+}
 
 class Step5PersonalDataScreen extends StatefulWidget {
   const Step5PersonalDataScreen({super.key});
@@ -27,6 +40,14 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   bool _isSaving = false;
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
+  
+  // Track expanded sections - first section expanded by default
+  bool _basicInfoExpanded = true;
+  bool _residenceInfoExpanded = false;
+  bool _companyInfoExpanded = false;
+  bool _personalDetailsExpanded = false;
+  bool _familyInfoExpanded = false;
+  bool _referenceInfoExpanded = false;
   
   // Validation patterns
   static final RegExp _emailRegex = RegExp(
@@ -104,6 +125,46 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   void initState() {
     super.initState();
     _loadExistingData();
+    _addTextControllersListeners();
+  }
+
+  void _addTextControllersListeners() {
+    // Add listeners to update summaries in real-time
+    void updateSummary() {
+      if (mounted) {
+        setState(() {});
+      }
+    }
+
+    _nameAsPerAadhaarController.addListener(updateSummary);
+    _panNoController.addListener(updateSummary);
+    _mobileNumberController.addListener(updateSummary);
+    _personalEmailIdController.addListener(updateSummary);
+    _countryOfResidenceController.addListener(updateSummary);
+    _residenceAddressController.addListener(updateSummary);
+    _residenceTypeController.addListener(updateSummary);
+    _residenceStabilityController.addListener(updateSummary);
+    _companyNameController.addListener(updateSummary);
+    _companyAddressController.addListener(updateSummary);
+    _nationalityController.addListener(updateSummary);
+    _countryOfBirthController.addListener(updateSummary);
+    _occupationController.addListener(updateSummary);
+    _educationalQualificationController.addListener(updateSummary);
+    _workTypeController.addListener(updateSummary);
+    _industryController.addListener(updateSummary);
+    _annualIncomeController.addListener(updateSummary);
+    _totalWorkExperienceController.addListener(updateSummary);
+    _currentCompanyExperienceController.addListener(updateSummary);
+    _loanAmountTenureController.addListener(updateSummary);
+    _spouseNameController.addListener(updateSummary);
+    _fatherNameController.addListener(updateSummary);
+    _motherNameController.addListener(updateSummary);
+    _reference1NameController.addListener(updateSummary);
+    _reference1AddressController.addListener(updateSummary);
+    _reference1ContactController.addListener(updateSummary);
+    _reference2NameController.addListener(updateSummary);
+    _reference2AddressController.addListener(updateSummary);
+    _reference2ContactController.addListener(updateSummary);
   }
 
   void _loadExistingData() {
@@ -747,419 +808,503 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
                       
                       // Section 1: Basic Information
-                      _buildSectionHeader(context, 'Basic Information', Icons.person),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _nameAsPerAadhaarController,
-                        label: 'Name as per Aadhaar Card',
-                        icon: Icons.badge,
-                        isRequired: true,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter name as per Aadhaar Card';
-                          }
-                          return null;
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Basic Information',
+                        icon: Icons.person,
+                        summary: _getBasicInfoSummary(),
+                        isExpanded: _basicInfoExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _basicInfoExpanded = !_basicInfoExpanded;
+                          });
                         },
+                        expandedContent: Column(
+                          children: [
+                            _buildPremiumTextField(
+                              context,
+                              controller: _nameAsPerAadhaarController,
+                              label: 'Name as per Aadhaar Card',
+                              icon: Icons.badge,
+                              isRequired: true,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter name as per Aadhaar Card';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildDatePickerField(context),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _panNoController,
+                              label: 'PAN No',
+                              icon: Icons.credit_card,
+                              isRequired: true,
+                              inputFormatters: [_panFormatter],
+                              textCapitalization: TextCapitalization.characters,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter PAN number';
+                                }
+                                final pan = value.trim().toUpperCase();
+                                if (pan.length != 10) {
+                                  return 'PAN number must be 10 characters';
+                                }
+                                if (!_panRegex.hasMatch(pan)) {
+                                  return 'Invalid PAN format. Format: ABCDE1234F';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _mobileNumberController,
+                              label: 'Mobile Number',
+                              icon: Icons.phone,
+                              isRequired: true,
+                              keyboardType: TextInputType.phone,
+                              inputFormatters: [
+                                _phoneFormatter,
+                                LengthLimitingTextInputFormatter(10),
+                              ],
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter mobile number';
+                                }
+                                final phone = value.trim();
+                                if (phone.length != 10) {
+                                  return 'Mobile number must be 10 digits';
+                                }
+                                if (!_phoneRegex.hasMatch(phone)) {
+                                  return 'Please enter a valid 10-digit mobile number';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _personalEmailIdController,
+                              label: 'Personal Email Id',
+                              icon: Icons.email,
+                              isRequired: true,
+                              keyboardType: TextInputType.emailAddress,
+                              textCapitalization: TextCapitalization.none,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter personal email';
+                                }
+                                final email = value.trim().toLowerCase();
+                                if (!_emailRegex.hasMatch(email)) {
+                                  return 'Please enter a valid email address';
+                                }
+                                return null;
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildDatePickerField(context),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _panNoController,
-                        label: 'PAN No',
-                        icon: Icons.credit_card,
-                        isRequired: true,
-                        inputFormatters: [_panFormatter],
-                        textCapitalization: TextCapitalization.characters,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter PAN number';
-                          }
-                          final pan = value.trim().toUpperCase();
-                          if (pan.length != 10) {
-                            return 'PAN number must be 10 characters';
-                          }
-                          if (!_panRegex.hasMatch(pan)) {
-                            return 'Invalid PAN format. Format: ABCDE1234F';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _mobileNumberController,
-                        label: 'Mobile Number',
-                        icon: Icons.phone,
-                        isRequired: true,
-                        keyboardType: TextInputType.phone,
-                        inputFormatters: [
-                          _phoneFormatter,
-                          LengthLimitingTextInputFormatter(10),
-                        ],
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter mobile number';
-                          }
-                          final phone = value.trim();
-                          if (phone.length != 10) {
-                            return 'Mobile number must be 10 digits';
-                          }
-                          if (!_phoneRegex.hasMatch(phone)) {
-                            return 'Please enter a valid 10-digit mobile number';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _personalEmailIdController,
-                        label: 'Personal Email Id',
-                        icon: Icons.email,
-                        isRequired: true,
-                        keyboardType: TextInputType.emailAddress,
-                        textCapitalization: TextCapitalization.none,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter personal email';
-                          }
-                          final email = value.trim().toLowerCase();
-                          if (!_emailRegex.hasMatch(email)) {
-                            return 'Please enter a valid email address';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 32),
                       
                       // Section 2: Residence Information
-                      _buildSectionHeader(context, 'Residence Information', Icons.home),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _countryOfResidenceController,
-                        label: 'Country of Residence',
-                        icon: Icons.public,
-                        isRequired: true,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter country of residence';
-                          }
-                          return null;
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Residence Information',
+                        icon: Icons.home,
+                        summary: _getResidenceInfoSummary(),
+                        isExpanded: _residenceInfoExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _residenceInfoExpanded = !_residenceInfoExpanded;
+                          });
                         },
+                        expandedContent: Column(
+                          children: [
+                            _buildPremiumTextField(
+                              context,
+                              controller: _countryOfResidenceController,
+                              label: 'Country of Residence',
+                              icon: Icons.public,
+                              isRequired: true,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter country of residence';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _residenceAddressController,
+                              label: 'Residence Address',
+                              icon: Icons.location_on,
+                              isRequired: true,
+                              maxLines: 3,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter residence address';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _residenceTypeController,
+                              label: 'Residence Type',
+                              icon: Icons.home_work,
+                              isRequired: false,
+                              hintText: 'e.g., Owned, Rented',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _residenceStabilityController,
+                              label: 'Residence Stability',
+                              icon: Icons.calendar_today,
+                              isRequired: false,
+                              hintText: 'e.g., Years of residence',
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _residenceAddressController,
-                        label: 'Residence Address',
-                        icon: Icons.location_on,
-                        isRequired: true,
-                        maxLines: 3,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter residence address';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _residenceTypeController,
-                        label: 'Residence Type',
-                        icon: Icons.home_work,
-                        isRequired: false,
-                        hintText: 'e.g., Owned, Rented',
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _residenceStabilityController,
-                        label: 'Residence Stability',
-                        icon: Icons.calendar_today,
-                        isRequired: false,
-                        hintText: 'e.g., Years of residence',
-                      ),
-                      const SizedBox(height: 32),
                       
                       // Section 3: Company Information
-                      _buildSectionHeader(context, 'Company Information', Icons.business),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _companyNameController,
-                        label: 'Company Name',
-                        icon: Icons.business_center,
-                        isRequired: false,
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Company Information',
+                        icon: Icons.business,
+                        summary: _getCompanyInfoSummary(),
+                        isExpanded: _companyInfoExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _companyInfoExpanded = !_companyInfoExpanded;
+                          });
+                        },
+                        expandedContent: Column(
+                          children: [
+                            _buildPremiumTextField(
+                              context,
+                              controller: _companyNameController,
+                              label: 'Company Name',
+                              icon: Icons.business_center,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _companyAddressController,
+                              label: 'Company Address',
+                              icon: Icons.location_city,
+                              isRequired: false,
+                              maxLines: 3,
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _companyAddressController,
-                        label: 'Company Address',
-                        icon: Icons.location_city,
-                        isRequired: false,
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 32),
                       
                       // Section 4: Personal Details
-                      _buildSectionHeader(context, 'Personal Details', Icons.info),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _nationalityController,
-                        label: 'Nationality',
-                        icon: Icons.flag,
-                        isRequired: false,
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Personal Details',
+                        icon: Icons.info,
+                        summary: _getPersonalDetailsSummary(),
+                        isExpanded: _personalDetailsExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _personalDetailsExpanded = !_personalDetailsExpanded;
+                          });
+                        },
+                        expandedContent: Column(
+                          children: [
+                            _buildPremiumTextField(
+                              context,
+                              controller: _nationalityController,
+                              label: 'Nationality',
+                              icon: Icons.flag,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _countryOfBirthController,
+                              label: 'Country of Birth',
+                              icon: Icons.public,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _occupationController,
+                              label: 'Occupation',
+                              icon: Icons.work,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _educationalQualificationController,
+                              label: 'Educational Qualification',
+                              icon: Icons.school,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _workTypeController,
+                              label: 'Work Type',
+                              icon: Icons.work_outline,
+                              isRequired: false,
+                              hintText: 'e.g., Full-time, Part-time',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _industryController,
+                              label: 'Industry',
+                              icon: Icons.business_center,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _annualIncomeController,
+                              label: 'Annual Income',
+                              icon: Icons.account_balance_wallet,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _totalWorkExperienceController,
+                              label: 'Total work experience',
+                              icon: Icons.timeline,
+                              isRequired: false,
+                              hintText: 'e.g., 5 years',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _currentCompanyExperienceController,
+                              label: 'Current Company experience',
+                              icon: Icons.business,
+                              isRequired: false,
+                              hintText: 'e.g., 2 years',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _loanAmountTenureController,
+                              label: 'Loan amount/Tenure',
+                              icon: Icons.monetization_on,
+                              isRequired: false,
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _countryOfBirthController,
-                        label: 'Country of Birth',
-                        icon: Icons.public,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _occupationController,
-                        label: 'Occupation',
-                        icon: Icons.work,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _educationalQualificationController,
-                        label: 'Educational Qualification',
-                        icon: Icons.school,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _workTypeController,
-                        label: 'Work Type',
-                        icon: Icons.work_outline,
-                        isRequired: false,
-                        hintText: 'e.g., Full-time, Part-time',
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _industryController,
-                        label: 'Industry',
-                        icon: Icons.business_center,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _annualIncomeController,
-                        label: 'Annual Income',
-                        icon: Icons.account_balance_wallet,
-                        isRequired: false,
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _totalWorkExperienceController,
-                        label: 'Total work experience',
-                        icon: Icons.timeline,
-                        isRequired: false,
-                        hintText: 'e.g., 5 years',
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _currentCompanyExperienceController,
-                        label: 'Current Company experience',
-                        icon: Icons.business,
-                        isRequired: false,
-                        hintText: 'e.g., 2 years',
-                      ),
-                      const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _loanAmountTenureController,
-                        label: 'Loan amount/Tenure',
-                        icon: Icons.monetization_on,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 32),
                       
                       // Section 5: Family Information
-                      _buildSectionHeader(context, 'Family Information', Icons.family_restroom),
-                      const SizedBox(height: 16),
-                      _buildMaritalStatusField(context),
-                      const SizedBox(height: 16),
-                      if (_maritalStatus == 'Married')
-                        _buildPremiumTextField(
-                          context,
-                          controller: _spouseNameController,
-                          label: 'Spouse Name',
-                          icon: Icons.person_outline,
-                          isRequired: false,
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Family Information',
+                        icon: Icons.family_restroom,
+                        summary: _getFamilyInfoSummary(),
+                        isExpanded: _familyInfoExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _familyInfoExpanded = !_familyInfoExpanded;
+                          });
+                        },
+                        expandedContent: Column(
+                          children: [
+                            _buildMaritalStatusField(context),
+                            const SizedBox(height: 16),
+                            if (_maritalStatus == 'Married')
+                              _buildPremiumTextField(
+                                context,
+                                controller: _spouseNameController,
+                                label: 'Spouse Name',
+                                icon: Icons.person_outline,
+                                isRequired: false,
+                              ),
+                            if (_maritalStatus == 'Married') const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _fatherNameController,
+                              label: 'Father Name',
+                              icon: Icons.person,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _motherNameController,
+                              label: 'Mother Name',
+                              icon: Icons.person,
+                              isRequired: false,
+                            ),
+                          ],
                         ),
-                      if (_maritalStatus == 'Married') const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _fatherNameController,
-                        label: 'Father Name',
-                        icon: Icons.person,
-                        isRequired: false,
                       ),
                       const SizedBox(height: 16),
-                      _buildPremiumTextField(
-                        context,
-                        controller: _motherNameController,
-                        label: 'Mother Name',
-                        icon: Icons.person,
-                        isRequired: false,
-                      ),
-                      const SizedBox(height: 32),
                       
                       // Section 6: Reference Details
-                      _buildSectionHeader(context, 'Two Reference Details', Icons.contacts),
-                      const SizedBox(height: 16),
-                      PremiumCard(
-                        gradientColors: [
-                          colorScheme.primary.withValues(alpha: 0.05),
-                          colorScheme.secondary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      _buildExpandableSection(
+                        context: context,
+                        title: 'Two Reference Details',
+                        icon: Icons.contacts,
+                        summary: _getReferenceInfoSummary(),
+                        isExpanded: _referenceInfoExpanded,
+                        onExpansionChanged: () {
+                          setState(() {
+                            _referenceInfoExpanded = !_referenceInfoExpanded;
+                          });
+                        },
+                        expandedContent: Column(
                           children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    '1',
-                                    style: TextStyle(
-                                      color: colorScheme.primary,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Reference 1',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                            PremiumCard(
+                              gradientColors: [
+                                colorScheme.primary.withValues(alpha: 0.05),
+                                colorScheme.secondary.withValues(alpha: 0.02),
                               ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primary.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '1',
+                                          style: TextStyle(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'Reference 1',
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference1NameController,
+                                    label: 'Name',
+                                    icon: Icons.person,
+                                    isRequired: false,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference1AddressController,
+                                    label: 'Address',
+                                    icon: Icons.location_on,
+                                    isRequired: false,
+                                    maxLines: 2,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference1ContactController,
+                                    label: 'Contact Details',
+                                    icon: Icons.phone,
+                                    isRequired: false,
+                                    keyboardType: TextInputType.phone,
+                                  ),
+                                ],
+                              ),
                             ),
                             const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference1NameController,
-                              label: 'Name',
-                              icon: Icons.person,
-                              isRequired: false,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference1AddressController,
-                              label: 'Address',
-                              icon: Icons.location_on,
-                              isRequired: false,
-                              maxLines: 2,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference1ContactController,
-                              label: 'Contact Details',
-                              icon: Icons.phone,
-                              isRequired: false,
-                              keyboardType: TextInputType.phone,
+                            PremiumCard(
+                              gradientColors: [
+                                colorScheme.primary.withValues(alpha: 0.05),
+                                colorScheme.secondary.withValues(alpha: 0.02),
+                              ],
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primary.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          '2',
+                                          style: TextStyle(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'Reference 2',
+                                        style: theme.textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference2NameController,
+                                    label: 'Name',
+                                    icon: Icons.person,
+                                    isRequired: false,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference2AddressController,
+                                    label: 'Address',
+                                    icon: Icons.location_on,
+                                    isRequired: false,
+                                    maxLines: 2,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildPremiumTextField(
+                                    context,
+                                    controller: _reference2ContactController,
+                                    label: 'Contact Details',
+                                    icon: Icons.phone,
+                                    isRequired: false,
+                                    keyboardType: TextInputType.phone,
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      PremiumCard(
-                        gradientColors: [
-                          colorScheme.primary.withValues(alpha: 0.05),
-                          colorScheme.secondary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary.withValues(alpha: 0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    '2',
-                                    style: TextStyle(
-                                      color: colorScheme.primary,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Reference 2',
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference2NameController,
-                              label: 'Name',
-                              icon: Icons.person,
-                              isRequired: false,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference2AddressController,
-                              label: 'Address',
-                              icon: Icons.location_on,
-                              isRequired: false,
-                              maxLines: 2,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _reference2ContactController,
-                              label: 'Contact Details',
-                              icon: Icons.phone,
-                              isRequired: false,
-                              keyboardType: TextInputType.phone,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 32),
                       // Save as Draft button
                       Builder(
                         builder: (context) {
@@ -1212,43 +1357,6 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         ),
       ),
       ),
-    );
-  }
-
-  Widget _buildSectionHeader(BuildContext context, String title, IconData icon) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                colorScheme.primary,
-                colorScheme.secondary,
-              ],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.primary.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Icon(icon, color: Colors.white, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Text(
-          title,
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-      ],
     );
   }
 
@@ -1379,6 +1487,222 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Helper methods to get summary text for each section
+  String _getBasicInfoSummary() {
+    final parts = <String>[];
+    if (_nameAsPerAadhaarController.text.isNotEmpty) {
+      parts.add(_nameAsPerAadhaarController.text);
+    }
+    if (_panNoController.text.isNotEmpty) {
+      parts.add('PAN: ${_panNoController.text}');
+    }
+    if (_mobileNumberController.text.isNotEmpty) {
+      parts.add('Mobile: ${_mobileNumberController.text}');
+    }
+    if (_personalEmailIdController.text.isNotEmpty) {
+      parts.add(_personalEmailIdController.text);
+    }
+    if (_dateOfBirth != null) {
+      parts.add(DateFormat('dd MMM yyyy').format(_dateOfBirth!));
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getResidenceInfoSummary() {
+    final parts = <String>[];
+    if (_countryOfResidenceController.text.isNotEmpty) {
+      parts.add(_countryOfResidenceController.text);
+    }
+    if (_residenceAddressController.text.isNotEmpty) {
+      final address = _residenceAddressController.text;
+      parts.add(address.length > 30 ? '${address.substring(0, 30)}...' : address);
+    }
+    if (_residenceTypeController.text.isNotEmpty) {
+      parts.add(_residenceTypeController.text);
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getCompanyInfoSummary() {
+    final parts = <String>[];
+    if (_companyNameController.text.isNotEmpty) {
+      parts.add(_companyNameController.text);
+    }
+    if (_companyAddressController.text.isNotEmpty) {
+      final address = _companyAddressController.text;
+      parts.add(address.length > 30 ? '${address.substring(0, 30)}...' : address);
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getPersonalDetailsSummary() {
+    final parts = <String>[];
+    if (_nationalityController.text.isNotEmpty) {
+      parts.add(_nationalityController.text);
+    }
+    if (_occupationController.text.isNotEmpty) {
+      parts.add(_occupationController.text);
+    }
+    if (_annualIncomeController.text.isNotEmpty) {
+      parts.add('Income: ${_annualIncomeController.text}');
+    }
+    if (_totalWorkExperienceController.text.isNotEmpty) {
+      parts.add('Exp: ${_totalWorkExperienceController.text}');
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getFamilyInfoSummary() {
+    final parts = <String>[];
+    if (_maritalStatus != null) {
+      parts.add(_maritalStatus!);
+    }
+    if (_spouseNameController.text.isNotEmpty) {
+      parts.add('Spouse: ${_spouseNameController.text}');
+    }
+    if (_fatherNameController.text.isNotEmpty) {
+      parts.add('Father: ${_fatherNameController.text}');
+    }
+    if (_motherNameController.text.isNotEmpty) {
+      parts.add('Mother: ${_motherNameController.text}');
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getReferenceInfoSummary() {
+    final parts = <String>[];
+    if (_reference1NameController.text.isNotEmpty) {
+      parts.add('Ref 1: ${_reference1NameController.text}');
+    }
+    if (_reference2NameController.text.isNotEmpty) {
+      parts.add('Ref 2: ${_reference2NameController.text}');
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  // Build expandable section widget
+  Widget _buildExpandableSection({
+    required BuildContext context,
+    required String title,
+    required IconData icon,
+    required String summary,
+    required bool isExpanded,
+    required VoidCallback onExpansionChanged,
+    required Widget expandedContent,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hasData = summary != 'Not filled';
+
+    return PremiumCard(
+      gradientColors: [
+        Colors.white,
+        colorScheme.primary.withValues(alpha: 0.02),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onExpansionChanged,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            summary,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: hasData 
+                                  ? colorScheme.onSurfaceVariant 
+                                  : colorScheme.error.withValues(alpha: 0.7),
+                              fontSize: 13,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      child: Icon(
+                        Icons.keyboard_arrow_down,
+                        color: colorScheme.primary,
+                        size: 28,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Divider(
+                    height: 24,
+                    thickness: 1,
+                    color: colorScheme.primary.withValues(alpha: 0.1),
+                  ),
+                  expandedContent,
+                ],
+              ),
+            ),
+            crossFadeState: isExpanded 
+                ? CrossFadeState.showSecond 
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 300),
+            sizeCurve: Curves.easeInOut,
+          ),
+        ],
       ),
     );
   }
