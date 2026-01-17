@@ -56,16 +56,19 @@ class _LoginScreenState extends State<LoginScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
             colors: [
-              colorScheme.primary.withValues(alpha: 0.1),
-              colorScheme.secondary.withValues(alpha: 0.05),
+              colorScheme.primary.withValues(alpha: 0.08),
+              colorScheme.primary.withValues(alpha: 0.03),
+              Colors.white,
               Colors.white,
             ],
+            stops: const [0.0, 0.3, 0.5, 1.0],
           ),
         ),
         child: SafeArea(
@@ -78,38 +81,61 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Logo/Icon Section
-                    Image.asset(
-                      'assets/JSEE_icon.jpg',
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: LinearGradient(
-                              colors: [
-                                colorScheme.primary,
-                                colorScheme.secondary,
-                              ],
+                    // Logo/Icon Section - Blended with background
+                    Center(
+                      child: Container(
+                        width: 140,
+                        height: 140,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.15),
+                              blurRadius: 25,
+                              spreadRadius: 3,
+                              offset: const Offset(0, 8),
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: colorScheme.primary.withValues(alpha: 0.3),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(20),
+                          child: Image.asset(
+                            'assets/JSEE_icon.jpg',
+                            width: 140,
+                            height: 140,
+                            fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              width: 140,
+                              height: 140,
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.rectangle,
+                                borderRadius: BorderRadius.circular(20),
+                                gradient: LinearGradient(
+                                  colors: [
+                                    colorScheme.primary,
+                                    colorScheme.secondary,
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: colorScheme.primary.withValues(alpha: 0.3),
+                                    blurRadius: 20,
+                                    offset: const Offset(0, 10),
+                                  ),
+                                ],
                               ),
-                            ],
+                              child: const Icon(
+                                Icons.lock_outline,
+                                size: 60,
+                                color: Colors.white,
+                              ),
+                            );
+                          },
                           ),
-                          child: const Icon(
-                            Icons.lock_outline,
-                            size: 60,
-                            color: Colors.white,
-                          ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 32),
                     Text(

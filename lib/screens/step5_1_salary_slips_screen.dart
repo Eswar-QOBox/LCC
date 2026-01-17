@@ -15,6 +15,8 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
+import '../models/document_submission.dart';
+import 'package:intl/intl.dart';
 
 class Step5_1SalarySlipsScreen extends StatefulWidget {
   const Step5_1SalarySlipsScreen({super.key});
@@ -26,7 +28,8 @@ class Step5_1SalarySlipsScreen extends StatefulWidget {
 
 class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   final FileUploadService _fileUploadService = FileUploadService();
-  List<String> _slips = [];
+  final ImagePicker _imagePicker = ImagePicker();
+  List<SalarySlipItem> _slipItems = [];
   String? _pdfPassword;
   bool _isPdf = false;
   bool _isDraftSaved = false;
@@ -49,7 +52,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
   void _loadDraftData() {
     final provider = context.read<SubmissionProvider>();
-    _slips = List<String>.from(provider.submission.salarySlips?.slips ?? []);
+    _slipItems = List<SalarySlipItem>.from(
+      provider.submission.salarySlips?.slipItems ?? []
+    );
     _isPdf = provider.submission.salarySlips?.isPdf ?? false;
     _pdfPassword = provider.submission.salarySlips?.pdfPassword;
   }
@@ -60,17 +65,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     final provider = context.read<SubmissionProvider>();
     final salarySlips = provider.submission.salarySlips;
     if (salarySlips != null) {
-      final currentSlips = List<String>.from(salarySlips.slips);
+      final currentSlipItems = List<SalarySlipItem>.from(salarySlips.slipItems);
       final currentIsPdf = salarySlips.isPdf;
       final currentPassword = salarySlips.pdfPassword;
       
       // Update local state if provider has different data (from draft)
-      if (currentSlips.length != _slips.length || 
+      if (currentSlipItems.length != _slipItems.length || 
           currentIsPdf != _isPdf || 
           currentPassword != _pdfPassword) {
         if (mounted) {
           setState(() {
-            _slips = currentSlips;
+            _slipItems = currentSlipItems;
             _isPdf = currentIsPdf;
             _pdfPassword = currentPassword;
             _hasSyncedWithProvider = true;
@@ -100,8 +105,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
     try {
       // Only save if slips are uploaded (this step is optional)
-      if (_slips.isNotEmpty) {
-        final files = _slips.map((path) => XFile(path)).toList();
+      if (_slipItems.isNotEmpty) {
+        final files = _slipItems.map((item) => XFile(item.path)).toList();
         final uploadResults = await _fileUploadService.uploadSalarySlips(files);
 
         // Save to step4BankStatement or create a separate field
@@ -109,7 +114,11 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         // or keep them in step4BankStatement as additional documents
         await appProvider.updateApplication(
           step4BankStatement: {
-            'salarySlips': _slips,
+            'salarySlips': _slipItems.map((item) => item.path).toList(),
+            'salarySlipItems': _slipItems.map((item) => {
+              'path': item.path,
+              'slipDate': item.slipDate?.toIso8601String(),
+            }).toList(),
             'salarySlipsIsPdf': _isPdf,
             'salarySlipsPassword': _pdfPassword,
             'salarySlipsUploaded': uploadResults,
@@ -190,7 +199,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       
       if (mounted) {
         setState(() {
-          _slips = [path];
+          _slipItems = [SalarySlipItem(path: path)];
           _isPdf = true;
           _resetDraftState();
         });
@@ -203,13 +212,104 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   }
 
   void _removeSlip(int index) {
+    context.read<SubmissionProvider>().removeSalarySlip(index);
     setState(() {
-      _slips.removeAt(index);
+      _slipItems.removeAt(index);
       _resetDraftState();
     });
-    context
-        .read<SubmissionProvider>()
-        .setSalarySlips(_slips, isPdf: _isPdf);
+  }
+
+  Future<void> _captureFromCamera() async {
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 90,
+    );
+    if (image != null && mounted) {
+      await _addSlipWithDate(image.path);
+    }
+  }
+
+  Future<void> _selectFromGallery() async {
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (image != null && mounted) {
+      await _addSlipWithDate(image.path);
+    }
+  }
+
+  Future<void> _addSlipWithDate(String path) async {
+    // Show date picker dialog
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'Select Payslip Date',
+      fieldLabelText: 'Payslip Date (Date, Month, Year)',
+      fieldHintText: 'DD/MM/YYYY',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppTheme.primaryColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        _slipItems.add(SalarySlipItem(
+          path: path,
+          slipDate: pickedDate,
+        ));
+        _isPdf = false;
+        _resetDraftState();
+      });
+      
+      // Update provider
+      final provider = context.read<SubmissionProvider>();
+      provider.addSalarySlip(path, slipDate: pickedDate);
+      if (pickedDate != null) {
+        provider.updateSalarySlipDate(_slipItems.length - 1, pickedDate);
+      }
+    }
+  }
+
+  Future<void> _updateSlipDate(int index) async {
+    final currentDate = _slipItems[index].slipDate ?? DateTime.now();
+    
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: currentDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: 'Select Payslip Date',
+      fieldLabelText: 'Payslip Date (Date, Month, Year)',
+      fieldHintText: 'DD/MM/YYYY',
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppTheme.primaryColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (pickedDate != null && mounted) {
+      setState(() {
+        _slipItems[index].slipDate = pickedDate;
+        _resetDraftState();
+      });
+      context.read<SubmissionProvider>().updateSalarySlipDate(index, pickedDate);
+    }
   }
 
   void _showPasswordDialogIfNeeded() {
@@ -273,8 +373,15 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
     final provider = context.read<SubmissionProvider>();
     
-    if (_slips.isNotEmpty) {
-      provider.setSalarySlips(_slips, isPdf: _isPdf);
+    if (_slipItems.isNotEmpty) {
+      final paths = _slipItems.map((item) => item.path).toList();
+      provider.setSalarySlips(paths, isPdf: _isPdf);
+      // Update dates in provider
+      for (int i = 0; i < _slipItems.length; i++) {
+        if (_slipItems[i].slipDate != null) {
+          provider.updateSalarySlipDate(i, _slipItems[i].slipDate!);
+        }
+      }
     }
     if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
       provider.setSalarySlipsPassword(_pdfPassword!);
@@ -320,7 +427,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   Future<void> _proceedToNext() async {
     // Salary slips are optional, so we can proceed even if empty
     // But if slips are uploaded, save them
-    if (_slips.isNotEmpty && !_isSaving) {
+    if (_slipItems.isNotEmpty && !_isSaving) {
       await _saveToBackend();
     }
     if (mounted) {
@@ -496,14 +603,18 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                             ],
                           ),
                           const SizedBox(height: 24),
-                          _buildPremiumRequirement(context, Icons.description, 'Upload last 3-6 months salary slips'),
+                          _buildPremiumRequirement(context, Icons.description, 'Upload salary slips for last 3 months'),
+                          const SizedBox(height: 12),
+                          _buildPremiumRequirement(context, Icons.calendar_today, 'Please specify date, month and year for each payslip'),
                           const SizedBox(height: 12),
                           _buildPremiumRequirement(context, Icons.lock_outline, 'PDF password supported'),
+                          const SizedBox(height: 12),
+                          _buildPremiumRequirement(context, Icons.add_photo_alternate, 'Multiple payslips can be uploaded'),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
-                    if (_slips.isEmpty)
+                    if (_slipItems.isEmpty)
                       _buildEmptyState(context)
                     else ...[
                       PremiumCard(
@@ -528,7 +639,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                                       Icon(Icons.check_circle, size: 18, color: Colors.white),
                                       const SizedBox(width: 6),
                                       Text(
-                                        '${_slips.length} Salary Slip${_slips.length > 1 ? 's' : ''} Uploaded',
+                                        '${_slipItems.length} Salary Slip${_slipItems.length > 1 ? 's' : ''} Uploaded',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontWeight: FontWeight.w600,
@@ -552,17 +663,32 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                           mainAxisSpacing: 16,
                           childAspectRatio: 0.75,
                         ),
-                        itemCount: _slips.length,
+                        itemCount: _slipItems.length,
                         itemBuilder: (context, index) {
                           return _buildPremiumSlipCard(context, index);
                         },
                       ),
                       const SizedBox(height: 20),
-                      PremiumButton(
-                        label: _isPdf ? 'Change PDF' : 'Upload PDF',
-                        icon: Icons.picture_as_pdf,
-                        isPrimary: false,
-                        onPressed: _uploadPdf,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PremiumButton(
+                              label: 'Add Image',
+                              icon: Icons.add_photo_alternate,
+                              isPrimary: false,
+                              onPressed: () => _showImageSourceDialog(),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: PremiumButton(
+                              label: _isPdf ? 'Change PDF' : 'Upload PDF',
+                              icon: Icons.picture_as_pdf,
+                              isPrimary: false,
+                              onPressed: _uploadPdf,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                     if (_pdfPassword != null) ...[
@@ -708,6 +834,28 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 32),
+          Row(
+            children: [
+              Expanded(
+                child: PremiumButton(
+                  label: 'Camera',
+                  icon: Icons.camera_alt,
+                  isPrimary: false,
+                  onPressed: _captureFromCamera,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: PremiumButton(
+                  label: 'Gallery',
+                  icon: Icons.photo_library,
+                  isPrimary: false,
+                  onPressed: _selectFromGallery,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           PremiumButton(
             label: 'Upload PDF',
             icon: Icons.picture_as_pdf,
@@ -719,9 +867,41 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     );
   }
 
+  void _showImageSourceDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Select Image Source'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt),
+              title: const Text('Camera'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _captureFromCamera();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Gallery'),
+              onTap: () {
+                Navigator.of(context).pop();
+                _selectFromGallery();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPremiumSlipCard(BuildContext context, int index) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final slipItem = _slipItems[index];
+    final dateFormat = DateFormat('dd MMM yyyy'); // Clear date format: date, month, year
     
     return Container(
       decoration: BoxDecoration(
@@ -764,7 +944,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                         ],
                       ),
                     )
-                  : PlatformImage(imagePath: _slips[index], fit: BoxFit.cover),
+                  : PlatformImage(imagePath: slipItem.path, fit: BoxFit.cover),
             ),
             Positioned(
               top: 8,
@@ -793,25 +973,68 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               bottom: 8,
               left: 8,
               right: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.black.withValues(alpha: 0.5),
-                    ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.8),
+                          Colors.black.withValues(alpha: 0.6),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          slipItem.slipDate != null
+                              ? dateFormat.format(slipItem.slipDate!)
+                              : 'Tap to set date',
+                          style: TextStyle(
+                            color: slipItem.slipDate != null 
+                                ? Colors.white 
+                                : Colors.orange.shade300,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Slip ${index + 1}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: () => _updateSlipDate(index),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: slipItem.slipDate != null
+                            ? AppTheme.successColor.withValues(alpha: 0.9)
+                            : AppTheme.warningColor.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        slipItem.slipDate != null
+                            ? 'Date Set ✓'
+                            : 'Set Date',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ],

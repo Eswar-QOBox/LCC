@@ -72,18 +72,31 @@ class BankStatement {
   bool get isComplete => pages.isNotEmpty;
 }
 
+class SalarySlipItem {
+  String path;
+  DateTime? slipDate; // Date of the payslip (date, month, year)
+
+  SalarySlipItem({
+    required this.path,
+    this.slipDate,
+  });
+}
+
 class SalarySlips {
-  List<String> slips;
+  List<SalarySlipItem> slipItems;
   String? pdfPassword;
   bool isPdf;
 
   SalarySlips({
-    this.slips = const [],
+    List<SalarySlipItem>? slipItems,
     this.pdfPassword,
     this.isPdf = false,
-  });
+  }) : slipItems = slipItems ?? [];
 
-  bool get isComplete => slips.isNotEmpty;
+  // Legacy getter for backward compatibility
+  List<String> get slips => slipItems.map((item) => item.path).toList();
+
+  bool get isComplete => slipItems.isNotEmpty;
 }
 
 class PersonalData {
@@ -114,7 +127,9 @@ class PersonalData {
   String? annualIncome;
   String? totalWorkExperience;
   String? currentCompanyExperience;
-  String? loanAmountTenure;
+  String? loanAmount; // Enhanced: Separate loan amount field
+  String? loanTenure; // Enhanced: Separate tenure field (in months/years)
+  String? loanAmountTenure; // Legacy field for backward compatibility
   
   // Family Information
   String? maritalStatus; // Married/Unmarried
@@ -151,6 +166,8 @@ class PersonalData {
     this.annualIncome,
     this.totalWorkExperience,
     this.currentCompanyExperience,
+    this.loanAmount,
+    this.loanTenure,
     this.loanAmountTenure,
     this.maritalStatus,
     this.spouseName,

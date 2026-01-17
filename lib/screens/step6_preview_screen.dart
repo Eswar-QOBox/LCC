@@ -442,7 +442,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                   _buildPdfDataRow('Residence Stability', personalData.residenceStability),
                   pw.SizedBox(height: 15),
                   pw.Text(
-                    'Company Information',
+                    'Work Info',
                     style: pw.TextStyle(
                       fontSize: 16,
                       fontWeight: pw.FontWeight.bold,
@@ -451,9 +451,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                   pw.SizedBox(height: 10),
                   _buildPdfDataRow('Company Name', personalData.companyName),
                   _buildPdfDataRow('Company Address', personalData.companyAddress),
+                  _buildPdfDataRow('Work Type', personalData.workType),
+                  _buildPdfDataRow('Industry', personalData.industry),
+                  _buildPdfDataRow('Annual Income', personalData.annualIncome),
+                  _buildPdfDataRow('Total years of experience', personalData.totalWorkExperience),
+                  _buildPdfDataRow('Current Company Experience', personalData.currentCompanyExperience),
                   pw.SizedBox(height: 15),
                   pw.Text(
-                    'Employment Details',
+                    'Personal Details',
                     style: pw.TextStyle(
                       fontSize: 16,
                       fontWeight: pw.FontWeight.bold,
@@ -461,12 +466,34 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                   ),
                   pw.SizedBox(height: 10),
                   _buildPdfDataRow('Occupation', personalData.occupation),
-                  _buildPdfDataRow('Industry', personalData.industry),
-                  _buildPdfDataRow('Annual Income', personalData.annualIncome),
-                  _buildPdfDataRow('Work Type', personalData.workType),
-                  _buildPdfDataRow('Total Work Experience', personalData.totalWorkExperience),
-                  _buildPdfDataRow('Current Company Experience', personalData.currentCompanyExperience),
                   _buildPdfDataRow('Educational Qualification', personalData.educationalQualification),
+                  if ((personalData.loanAmount != null && personalData.loanAmount!.isNotEmpty) || 
+                      (personalData.loanTenure != null && personalData.loanTenure!.isNotEmpty)) ...[
+                    pw.SizedBox(height: 15),
+                    pw.Text(
+                      'Loan Details',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    if (personalData.loanAmount != null && personalData.loanAmount!.isNotEmpty)
+                      _buildPdfDataRow('Loan Amount', '₹ ${personalData.loanAmount}'),
+                    if (personalData.loanTenure != null && personalData.loanTenure!.isNotEmpty)
+                      _buildPdfDataRow('Loan Tenure', '${personalData.loanTenure} months'),
+                  ] else if (personalData.loanAmountTenure != null && personalData.loanAmountTenure!.isNotEmpty) ...[
+                    pw.SizedBox(height: 15),
+                    pw.Text(
+                      'Loan Details',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    _buildPdfDataRow('Loan Amount/Tenure', personalData.loanAmountTenure),
+                  ],
                   pw.SizedBox(height: 15),
                   pw.Text(
                     'Family Information',
@@ -1733,13 +1760,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       print('📋 Residence Information:');
       print('   Country: ${data.countryOfResidence ?? "null"}');
       print('   Address: ${data.residenceAddress ?? "null"}');
-      print('📋 Company Information:');
+      print('📋 Work Info:');
       print('   Company Name: ${data.companyName ?? "null"}');
       print('   Company Address: ${data.companyAddress ?? "null"}');
-      print('📋 Personal Details:');
-      print('   Occupation: ${data.occupation ?? "null"}');
+      print('   Work Type: ${data.workType ?? "null"}');
       print('   Industry: ${data.industry ?? "null"}');
       print('   Annual Income: ${data.annualIncome ?? "null"}');
+      print('   Total Work Experience: ${data.totalWorkExperience ?? "null"}');
+      print('   Current Company Experience: ${data.currentCompanyExperience ?? "null"}');
+      print('📋 Personal Details:');
+      print('   Occupation: ${data.occupation ?? "null"}');
       print('📋 Family Information:');
       print('   Marital Status: ${data.maritalStatus ?? "null"}');
       print('   Spouse Name: ${data.spouseName ?? "null"}');
@@ -1791,11 +1821,21 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         if (data.residenceStability != null && data.residenceStability!.isNotEmpty)
           _buildDataRow('Residence Stability', data.residenceStability!),
         
-        // Company Information
+        // Work Info (formerly Company Information)
         if (data.companyName != null && data.companyName!.isNotEmpty)
           _buildDataRow('Company Name', data.companyName!),
         if (data.companyAddress != null && data.companyAddress!.isNotEmpty)
           _buildDataRow('Company Address', data.companyAddress!),
+        if (data.workType != null && data.workType!.isNotEmpty)
+          _buildDataRow('Work Type', data.workType!),
+        if (data.industry != null && data.industry!.isNotEmpty)
+          _buildDataRow('Industry', data.industry!),
+        if (data.annualIncome != null && data.annualIncome!.isNotEmpty)
+          _buildDataRow('Annual Income', data.annualIncome!),
+        if (data.totalWorkExperience != null && data.totalWorkExperience!.isNotEmpty)
+          _buildDataRow('Total years of experience', data.totalWorkExperience!),
+        if (data.currentCompanyExperience != null && data.currentCompanyExperience!.isNotEmpty)
+          _buildDataRow('Current Company Experience', data.currentCompanyExperience!),
         
         // Personal Details
         if (data.nationality != null && data.nationality!.isNotEmpty)
@@ -1806,17 +1846,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           _buildDataRow('Occupation', data.occupation!),
         if (data.educationalQualification != null && data.educationalQualification!.isNotEmpty)
           _buildDataRow('Educational Qualification', data.educationalQualification!),
-        if (data.workType != null && data.workType!.isNotEmpty)
-          _buildDataRow('Work Type', data.workType!),
-        if (data.industry != null && data.industry!.isNotEmpty)
-          _buildDataRow('Industry', data.industry!),
-        if (data.annualIncome != null && data.annualIncome!.isNotEmpty)
-          _buildDataRow('Annual Income', data.annualIncome!),
-        if (data.totalWorkExperience != null && data.totalWorkExperience!.isNotEmpty)
-          _buildDataRow('Total Work Experience', data.totalWorkExperience!),
-        if (data.currentCompanyExperience != null && data.currentCompanyExperience!.isNotEmpty)
-          _buildDataRow('Current Company Experience', data.currentCompanyExperience!),
-        if (data.loanAmountTenure != null && data.loanAmountTenure!.isNotEmpty)
+        if ((data.loanAmount != null && data.loanAmount!.isNotEmpty) || 
+            (data.loanTenure != null && data.loanTenure!.isNotEmpty)) ...[
+          if (data.loanAmount != null && data.loanAmount!.isNotEmpty)
+            _buildDataRow('Loan Amount', '₹ ${data.loanAmount}'),
+          if (data.loanTenure != null && data.loanTenure!.isNotEmpty)
+            _buildDataRow('Loan Tenure', '${data.loanTenure} months'),
+        ] else if (data.loanAmountTenure != null && data.loanAmountTenure!.isNotEmpty)
           _buildDataRow('Loan Amount/Tenure', data.loanAmountTenure!),
         
         // Family Information

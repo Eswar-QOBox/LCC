@@ -44,7 +44,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   // Track expanded sections - first section expanded by default
   bool _basicInfoExpanded = true;
   bool _residenceInfoExpanded = false;
-  bool _companyInfoExpanded = false;
+  bool _workInfoExpanded = false;
   bool _personalDetailsExpanded = false;
   bool _familyInfoExpanded = false;
   bool _referenceInfoExpanded = false;
@@ -89,21 +89,24 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   final _residenceTypeController = TextEditingController();
   final _residenceStabilityController = TextEditingController();
   
-  // Company Information Controllers
+  // Work Info Controllers (formerly Company Information)
   final _companyNameController = TextEditingController();
   final _companyAddressController = TextEditingController();
+  final _workTypeController = TextEditingController();
+  final _industryController = TextEditingController();
+  final _annualIncomeController = TextEditingController();
+  final _totalWorkExperienceController = TextEditingController();
+  final _currentCompanyExperienceController = TextEditingController();
   
   // Personal Details Controllers
   final _nationalityController = TextEditingController();
   final _countryOfBirthController = TextEditingController();
   final _occupationController = TextEditingController();
   final _educationalQualificationController = TextEditingController();
-  final _workTypeController = TextEditingController();
-  final _industryController = TextEditingController();
-  final _annualIncomeController = TextEditingController();
-  final _totalWorkExperienceController = TextEditingController();
-  final _currentCompanyExperienceController = TextEditingController();
-  final _loanAmountTenureController = TextEditingController();
+  
+  // Loan Details Controllers
+  final _loanAmountController = TextEditingController();
+  final _loanTenureController = TextEditingController();
   
   // Family Information Controllers
   String? _maritalStatus;
@@ -155,7 +158,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _annualIncomeController.addListener(updateSummary);
     _totalWorkExperienceController.addListener(updateSummary);
     _currentCompanyExperienceController.addListener(updateSummary);
-    _loanAmountTenureController.addListener(updateSummary);
+    _loanAmountController.addListener(updateSummary);
+    _loanTenureController.addListener(updateSummary);
     _spouseNameController.addListener(updateSummary);
     _fatherNameController.addListener(updateSummary);
     _motherNameController.addListener(updateSummary);
@@ -195,7 +199,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         _annualIncomeController.text = stepData['annualIncome'] ?? '';
         _totalWorkExperienceController.text = stepData['totalWorkExperience'] ?? '';
         _currentCompanyExperienceController.text = stepData['currentCompanyExperience'] ?? '';
-        _loanAmountTenureController.text = stepData['loanAmountTenure'] ?? '';
+        _loanAmountController.text = stepData['loanAmount'] ?? stepData['loanAmountTenure']?.split('/')[0].trim() ?? '';
+        _loanTenureController.text = stepData['loanTenure'] ?? stepData['loanAmountTenure']?.split('/').length == 2 ? stepData['loanAmountTenure']?.split('/')[1].trim() ?? '' : '';
         _maritalStatus = stepData['maritalStatus'];
         _spouseNameController.text = stepData['spouseName'] ?? '';
         _fatherNameController.text = stepData['fatherName'] ?? '';
@@ -236,7 +241,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       _annualIncomeController.text = data.annualIncome ?? '';
       _totalWorkExperienceController.text = data.totalWorkExperience ?? '';
       _currentCompanyExperienceController.text = data.currentCompanyExperience ?? '';
-      _loanAmountTenureController.text = data.loanAmountTenure ?? '';
+      _loanAmountController.text = data.loanAmount ?? (data.loanAmountTenure?.split('/')[0].trim() ?? '');
+      _loanTenureController.text = data.loanTenure ?? (data.loanAmountTenure?.split('/').length == 2 ? data.loanAmountTenure?.split('/')[1].trim() ?? '' : '');
       
       _maritalStatus = data.maritalStatus;
       _spouseNameController.text = data.spouseName ?? '';
@@ -278,7 +284,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _annualIncomeController.dispose();
     _totalWorkExperienceController.dispose();
     _currentCompanyExperienceController.dispose();
-    _loanAmountTenureController.dispose();
+    _loanAmountController.dispose();
+    _loanTenureController.dispose();
     _spouseNameController.dispose();
     _fatherNameController.dispose();
     _motherNameController.dispose();
@@ -374,7 +381,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         annualIncome: _annualIncomeController.text.trim(),
         totalWorkExperience: _totalWorkExperienceController.text.trim(),
         currentCompanyExperience: _currentCompanyExperienceController.text.trim(),
-        loanAmountTenure: _loanAmountTenureController.text.trim(),
+        loanAmount: _loanAmountController.text.trim().isEmpty ? null : _loanAmountController.text.trim(),
+        loanTenure: _loanTenureController.text.trim().isEmpty ? null : _loanTenureController.text.trim(),
+        loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
+            ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
+            : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
         maritalStatus: _maritalStatus,
         spouseName: _spouseNameController.text.trim(),
         fatherName: _fatherNameController.text.trim(),
@@ -418,6 +429,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'annualIncome': personalData.annualIncome,
             'totalWorkExperience': personalData.totalWorkExperience,
             'currentCompanyExperience': personalData.currentCompanyExperience,
+            'loanAmount': personalData.loanAmount,
+            'loanTenure': personalData.loanTenure,
             'loanAmountTenure': personalData.loanAmountTenure,
             'maritalStatus': personalData.maritalStatus,
             'spouseName': personalData.spouseName,
@@ -533,9 +546,15 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         currentCompanyExperience: _currentCompanyExperienceController.text.trim().isEmpty 
             ? null 
             : _currentCompanyExperienceController.text.trim(),
-        loanAmountTenure: _loanAmountTenureController.text.trim().isEmpty 
+        loanAmount: _loanAmountController.text.trim().isEmpty 
             ? null 
-            : _loanAmountTenureController.text.trim(),
+            : _loanAmountController.text.trim(),
+        loanTenure: _loanTenureController.text.trim().isEmpty 
+            ? null 
+            : _loanTenureController.text.trim(),
+        loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
+            ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
+            : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
         maritalStatus: _maritalStatus,
         spouseName: _spouseNameController.text.trim().isEmpty 
             ? null 
@@ -978,16 +997,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       ),
                       const SizedBox(height: 16),
                       
-                      // Section 3: Company Information
+                      // Section 3: Work Info (formerly Company Information)
                       _buildExpandableSection(
                         context: context,
-                        title: 'Company Information',
-                        icon: Icons.business,
-                        summary: _getCompanyInfoSummary(),
-                        isExpanded: _companyInfoExpanded,
+                        title: 'Work Info',
+                        icon: Icons.work,
+                        summary: _getWorkInfoSummary(),
+                        isExpanded: _workInfoExpanded,
                         onExpansionChanged: () {
                           setState(() {
-                            _companyInfoExpanded = !_companyInfoExpanded;
+                            _workInfoExpanded = !_workInfoExpanded;
                           });
                         },
                         expandedContent: Column(
@@ -1007,6 +1026,50 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               icon: Icons.location_city,
                               isRequired: false,
                               maxLines: 3,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _workTypeController,
+                              label: 'Work Type',
+                              icon: Icons.work_outline,
+                              isRequired: false,
+                              hintText: 'e.g., Full-time, Part-time',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _industryController,
+                              label: 'Industry',
+                              icon: Icons.business_center,
+                              isRequired: false,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _annualIncomeController,
+                              label: 'Annual Income',
+                              icon: Icons.account_balance_wallet,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _totalWorkExperienceController,
+                              label: 'Total years of experience',
+                              icon: Icons.timeline,
+                              isRequired: false,
+                              hintText: 'e.g., 5 years',
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _currentCompanyExperienceController,
+                              label: 'Current Company experience',
+                              icon: Icons.business,
+                              isRequired: false,
+                              hintText: 'e.g., 2 years',
                             ),
                           ],
                         ),
@@ -1059,56 +1122,41 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               isRequired: false,
                             ),
                             const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _workTypeController,
-                              label: 'Work Type',
-                              icon: Icons.work_outline,
-                              isRequired: false,
-                              hintText: 'e.g., Full-time, Part-time',
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _industryController,
-                              label: 'Industry',
-                              icon: Icons.business_center,
-                              isRequired: false,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _annualIncomeController,
-                              label: 'Annual Income',
-                              icon: Icons.account_balance_wallet,
-                              isRequired: false,
-                              keyboardType: TextInputType.number,
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _totalWorkExperienceController,
-                              label: 'Total work experience',
-                              icon: Icons.timeline,
-                              isRequired: false,
-                              hintText: 'e.g., 5 years',
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _currentCompanyExperienceController,
-                              label: 'Current Company experience',
-                              icon: Icons.business,
-                              isRequired: false,
-                              hintText: 'e.g., 2 years',
-                            ),
-                            const SizedBox(height: 16),
-                            _buildPremiumTextField(
-                              context,
-                              controller: _loanAmountTenureController,
-                              label: 'Loan amount/Tenure',
-                              icon: Icons.monetization_on,
-                              isRequired: false,
+                            Row(
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: _buildPremiumTextField(
+                                    context,
+                                    controller: _loanAmountController,
+                                    label: 'Loan Amount',
+                                    icon: Icons.account_balance_wallet,
+                                    isRequired: false,
+                                    keyboardType: TextInputType.number,
+                                    hintText: 'e.g., 500000',
+                                    prefixText: '₹ ',
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: _buildPremiumTextField(
+                                    context,
+                                    controller: _loanTenureController,
+                                    label: 'Tenure',
+                                    icon: Icons.calendar_today,
+                                    isRequired: false,
+                                    keyboardType: TextInputType.number,
+                                    hintText: 'Months',
+                                    suffixText: ' months',
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -1372,6 +1420,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     String? Function(String?)? validator,
     List<TextInputFormatter>? inputFormatters,
     TextCapitalization textCapitalization = TextCapitalization.words,
+    String? prefixText,
+    String? suffixText,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
@@ -1406,6 +1456,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             ),
             child: Icon(icon, color: colorScheme.primary, size: 20),
           ),
+          prefixText: prefixText,
+          suffixText: suffixText,
           filled: true,
           fillColor: colorScheme.surface,
         ),
@@ -1527,14 +1579,22 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     return parts.isEmpty ? 'Not filled' : parts.join(' • ');
   }
 
-  String _getCompanyInfoSummary() {
+  String _getWorkInfoSummary() {
     final parts = <String>[];
     if (_companyNameController.text.isNotEmpty) {
       parts.add(_companyNameController.text);
     }
-    if (_companyAddressController.text.isNotEmpty) {
-      final address = _companyAddressController.text;
-      parts.add(address.length > 30 ? '${address.substring(0, 30)}...' : address);
+    if (_workTypeController.text.isNotEmpty) {
+      parts.add(_workTypeController.text);
+    }
+    if (_industryController.text.isNotEmpty) {
+      parts.add(_industryController.text);
+    }
+    if (_annualIncomeController.text.isNotEmpty) {
+      parts.add('Income: ${_annualIncomeController.text}');
+    }
+    if (_totalWorkExperienceController.text.isNotEmpty) {
+      parts.add('Exp: ${_totalWorkExperienceController.text}');
     }
     return parts.isEmpty ? 'Not filled' : parts.join(' • ');
   }
@@ -1547,11 +1607,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     if (_occupationController.text.isNotEmpty) {
       parts.add(_occupationController.text);
     }
-    if (_annualIncomeController.text.isNotEmpty) {
-      parts.add('Income: ${_annualIncomeController.text}');
-    }
-    if (_totalWorkExperienceController.text.isNotEmpty) {
-      parts.add('Exp: ${_totalWorkExperienceController.text}');
+    if (_educationalQualificationController.text.isNotEmpty) {
+      parts.add(_educationalQualificationController.text);
     }
     return parts.isEmpty ? 'Not filled' : parts.join(' • ');
   }

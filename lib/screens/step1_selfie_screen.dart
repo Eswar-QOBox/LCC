@@ -58,6 +58,34 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     }
   }
 
+  Future<void> _selectFromGallery() async {
+    if (!mounted) return;
+    
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (image != null && mounted) {
+        await _setImage(image);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Unable to select image from gallery. Please try again.'),
+            backgroundColor: AppTheme.errorColor,
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _selectFromGallery,
+            ),
+          ),
+        );
+      }
+    }
+  }
+
 
   Future<void> _setImage(XFile imageFile) async {
     if (!mounted) return;
@@ -180,8 +208,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             context,
             'Selfie validated successfully!',
           );
-          // Save to backend
-          await _saveToBackend();
+          // Don't auto-save - only save when user proceeds (passport photo/authentication)
         }
       } else {
         if (mounted) {
@@ -712,7 +739,27 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: colorScheme.primary,
+                                  width: 2,
+                                ),
+                              ),
+                              child: OutlinedButton.icon(
+                                onPressed: _selectFromGallery,
+                                icon: const Icon(Icons.photo_library),
+                                label: const Text('Gallery'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
                             flex: 2,
                             child: Container(
@@ -804,12 +851,28 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
-                            _buildCaptureButton(
-                              context,
-                              icon: Icons.camera_alt,
-                              label: 'Capture Selfie',
-                              onPressed: _captureFromCamera,
-                              isPrimary: true,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildCaptureButton(
+                                    context,
+                                    icon: Icons.camera_alt,
+                                    label: 'Camera',
+                                    onPressed: _captureFromCamera,
+                                    isPrimary: true,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildCaptureButton(
+                                    context,
+                                    icon: Icons.photo_library,
+                                    label: 'Gallery',
+                                    onPressed: _selectFromGallery,
+                                    isPrimary: false,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -894,13 +957,17 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: ElevatedButton.icon(
           onPressed: onPressed,
-          icon: Icon(icon, color: colorScheme.onPrimary),
+          icon: Icon(icon, color: colorScheme.onPrimary, size: 28),
           label: Text(
             label,
-            style: TextStyle(color: colorScheme.onPrimary, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              color: colorScheme.onPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
           ),
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 18),
+            padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 24),
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
           ),
@@ -960,4 +1027,3 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     );
   }
 }
-

@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../widgets/premium_card.dart';
@@ -13,16 +14,30 @@ class ApplicationsScreen extends StatefulWidget {
   State<ApplicationsScreen> createState() => _ApplicationsScreenState();
 }
 
-class _ApplicationsScreenState extends State<ApplicationsScreen> {
+class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTickerProviderStateMixin {
   final LoanApplicationService _applicationService = LoanApplicationService();
   List<LoanApplication> _applications = [];
   bool _isLoading = true;
   String? _error;
+  late TabController _tabController;
+  int _selectedTabIndex = 0; // 0: Applied, 1: Approved, 2: Incomplete
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      setState(() {
+        _selectedTabIndex = _tabController.index;
+      });
+    });
     _loadApplications();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadApplications() async {
@@ -71,45 +86,62 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
           child: Column(
             children: [
               // Header
-              Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Row(
+              Container(
+                color: colorScheme.primary,
+                padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 0),
+                child: Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.folder,
+                            color: Colors.white,
+                            size: 28,
+                          ),
                         ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.folder,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Text(
                             'My Applications',
                             style: theme.textTheme.headlineMedium?.copyWith(
                               fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'View and manage your applications',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // Tabs
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                      ),
+                      child: TabBar(
+                        controller: _tabController,
+                        indicatorColor: colorScheme.primary,
+                        labelColor: colorScheme.primary,
+                        unselectedLabelColor: colorScheme.onSurfaceVariant,
+                        labelStyle: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        unselectedLabelStyle: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                        tabs: const [
+                          Tab(text: 'Applied'),
+                          Tab(text: 'Approved'),
+                          Tab(text: 'Incomplete'),
                         ],
                       ),
                     ),
@@ -128,7 +160,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
                       )
                     : _error != null
                         ? ListView(
-                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            padding: const EdgeInsets.all(24),
                             children: [
                               PremiumCard(
                                 gradientColors: [
@@ -169,53 +201,26 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
                               ),
                             ],
                           )
-                        : _applications.isEmpty
-                            ? ListView(
-                                padding: const EdgeInsets.symmetric(horizontal: 24),
-                                children: [
-                                  // Empty State
-                                  PremiumCard(
-                                    child: Column(
-                                      children: [
-                                        Icon(
-                                          Icons.inbox_outlined,
-                                          size: 64,
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                        const SizedBox(height: 16),
-                                        Text(
-                                          'No Applications Yet',
-                                          style: theme.textTheme.titleLarge?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          'Your submitted loan applications will appear here',
-                                          style: theme.textTheme.bodyMedium?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : RefreshIndicator(
-                                onRefresh: _loadApplications,
-                                child: ListView.builder(
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  itemCount: _applications.length,
-                                  itemBuilder: (context, index) {
-                                    final application = _applications[index];
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 16),
-                                      child: _buildApplicationCard(context, application),
-                                    );
-                                  },
-                                ),
+                        : TabBarView(
+                            controller: _tabController,
+                            children: [
+                              // Applied Tab (Submitted/In Progress)
+                              _buildApplicationsList(
+                                context,
+                                _getAppliedApplications(),
                               ),
+                              // Approved Tab
+                              _buildApplicationsList(
+                                context,
+                                _getApprovedApplications(),
+                              ),
+                              // Incomplete Tab (Draft)
+                              _buildApplicationsList(
+                                context,
+                                _getIncompleteApplications(),
+                              ),
+                            ],
+                          ),
               ),
             ],
           ),
@@ -232,210 +237,357 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
     final colorScheme = theme.colorScheme;
     final dateFormat = DateFormat('dd MMM yyyy');
 
-    // Get icon based on loan type
+    // Get icon and color based on loan type
     IconData loanIcon;
+    Color loanColor;
     switch (application.loanType) {
       case 'Personal Loan':
         loanIcon = Icons.person;
+        loanColor = colorScheme.primary;
         break;
       case 'Car Loan':
         loanIcon = Icons.directions_car;
+        loanColor = AppTheme.infoColor;
         break;
       case 'Home Loan':
         loanIcon = Icons.home;
+        loanColor = AppTheme.successColor;
         break;
       case 'Business Loan':
         loanIcon = Icons.business;
+        loanColor = AppTheme.warningColor;
         break;
       case 'Education Loan':
         loanIcon = Icons.school;
+        loanColor = colorScheme.secondary;
+        break;
+      case 'Mortgage Loan':
+        loanIcon = Icons.home_work;
+        loanColor = const Color(0xFF7C3AED);
+        break;
+      case 'Loan Against Property':
+        loanIcon = Icons.business_center;
+        loanColor = const Color(0xFF14B8A6);
+        break;
+      case 'Emergency Loan':
+        loanIcon = Icons.emergency;
+        loanColor = const Color(0xFFDC2626);
         break;
       default:
         loanIcon = Icons.account_balance_wallet;
+        loanColor = colorScheme.primary;
     }
 
-    // Get status color and text
+    // Get status information
     Color statusColor;
-    String statusText;
     IconData statusIcon;
+    String statusDescription;
 
-    switch (application.status) {
-      case 'approved':
-        statusColor = AppTheme.successColor;
-        statusText = 'Approved';
-        statusIcon = Icons.check_circle;
-        break;
-      case 'rejected':
-        statusColor = AppTheme.errorColor;
-        statusText = 'Rejected';
-        statusIcon = Icons.cancel;
-        break;
-      case 'submitted':
-        statusColor = AppTheme.warningColor;
-        statusText = 'Verification Pending';
-        statusIcon = Icons.verified_user;
-        break;
-      case 'in_progress':
-        statusColor = AppTheme.infoColor;
-        statusText = 'In Progress';
-        statusIcon = Icons.hourglass_empty;
-        break;
-      case 'paused':
-        statusColor = AppTheme.warningColor;
-        statusText = 'Paused';
-        statusIcon = Icons.pause_circle;
-        break;
-      case 'draft':
-      default:
-        statusColor = colorScheme.onSurfaceVariant;
-        statusText = 'Draft';
-        statusIcon = Icons.edit;
-        break;
+    if (application.isApproved) {
+      statusColor = AppTheme.successColor;
+      statusIcon = Icons.check_circle;
+      statusDescription = 'Repayment Scheduled';
+    } else if (application.isSubmitted) {
+      statusColor = AppTheme.warningColor;
+      statusIcon = Icons.pending_actions;
+      statusDescription = 'Under Review';
+    } else if (application.isDraft) {
+      statusColor = colorScheme.onSurfaceVariant;
+      statusIcon = Icons.edit;
+      statusDescription = 'Incomplete Application';
+    } else if (application.isPaused) {
+      statusColor = AppTheme.warningColor;
+      statusIcon = Icons.pause_circle;
+      statusDescription = 'Continue where you left off';
+    } else {
+      statusColor = AppTheme.infoColor;
+      statusIcon = Icons.hourglass_empty;
+      statusDescription = 'In Progress';
     }
 
     return PremiumCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Status Badge Row
           Row(
             children: [
+              // Status Icon Badge
               Container(
-                padding: const EdgeInsets.all(12),
+                width: 40,
+                height: 40,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      colorScheme.primary,
-                      colorScheme.secondary,
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
+                  color: statusColor.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  loanIcon,
-                  color: Colors.white,
+                  statusIcon,
+                  color: statusColor,
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
+              // Status Text
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      application.loanType,
+                      statusDescription,
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      application.applicationId,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                    if (application.isApproved && application.submittedAt != null)
+                      Text(
+                        'Next installment on ${dateFormat.format(application.submittedAt!.add(const Duration(days: 30)))}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    else if (application.submittedAt != null)
+                      Text(
+                        'Submitted on ${dateFormat.format(application.submittedAt!)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      )
+                    else
+                      Text(
+                        'Created on ${dateFormat.format(application.createdAt)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
+              // Loan Type Icon
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: statusColor.withValues(alpha: 0.3),
-                    width: 1,
+                  gradient: LinearGradient(
+                    colors: [loanColor, loanColor.withValues(alpha: 0.7)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(loanIcon, color: Colors.white, size: 24),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          
+          // Loan Type Name
+          Text(
+            application.loanType,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          
+          // Loan Details Grid
+          if (application.loanAmount != null || application.isApproved)
+            Row(
+              children: [
+                if (application.loanAmount != null)
+                  Expanded(
+                    child: _buildDetailItem(
+                      context,
+                      label: 'Loan Amount',
+                      value: '₹${_formatAmount(application.loanAmount!)}',
+                    ),
+                  ),
+                if (application.loanAmount != null && application.isApproved)
+                  const SizedBox(width: 12),
+                if (application.isApproved)
+                  Expanded(
+                    child: _buildDetailItem(
+                      context,
+                      label: 'Interest',
+                      value: '12.5%', // Default or from API
+                    ),
+                  ),
+              ],
+            ),
+          if (application.loanAmount != null && application.isApproved) const SizedBox(height: 12),
+          if (application.isApproved)
+            Row(
+              children: [
+                Expanded(
+                  child: _buildDetailItem(
+                    context,
+                    label: 'Tenure',
+                    value: '60 month', // Default or from API
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      statusIcon,
-                      color: statusColor,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      statusText,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDetailItem(
+                    context,
+                    label: 'EMI',
+                    value: application.loanAmount != null
+                        ? '₹${_calculateEMI(application.loanAmount!, 12.5, 60)}'
+                        : 'N/A',
+                  ),
+                ),
+              ],
+            ),
+          if (!application.isApproved && !application.isDraft) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: loanColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: loanColor, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Last saved: ${_getStepName(application.currentStep)}',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w600,
+                        color: loanColor,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildInfoItem(
-                  context,
-                  icon: Icons.currency_rupee,
-                  label: 'Loan Amount',
-                  value: application.loanAmount != null
-                      ? '₹${_formatAmount(application.loanAmount!)}'
-                      : 'Not specified',
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildInfoItem(
-                  context,
-                  icon: Icons.calendar_today,
-                  label: application.submittedAt != null ? 'Submitted' : 'Created',
-                  value: dateFormat.format(
-                    application.submittedAt ?? application.createdAt,
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildInfoItem(
+  String _getStepName(int step) {
+    switch (step) {
+      case 1:
+        return 'Step 1: Selfie';
+      case 2:
+        return 'Step 2: Aadhaar Card';
+      case 3:
+        return 'Step 3: PAN Card';
+      case 4:
+        return 'Step 4: Bank Statement';
+      case 5:
+        return 'Step 5: Personal Data';
+      case 6:
+        return 'Step 6: Preview';
+      default:
+        return 'Start Application';
+    }
+  }
+
+  String _calculateEMI(double principal, double rate, int months) {
+    if (rate == 0) return principal.toStringAsFixed(0);
+    final monthlyRate = rate / 12 / 100;
+    final emi = principal * monthlyRate * pow(1 + monthlyRate, months) / 
+                (pow(1 + monthlyRate, months) - 1);
+    return emi.toStringAsFixed(0);
+  }
+
+  Widget _buildDetailItem(
     BuildContext context, {
-    required IconData icon,
     required String label,
     required String value,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-            ),
-          ],
+        Text(
+          label,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           value,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ],
+    );
+  }
+
+  List<LoanApplication> _getAppliedApplications() {
+    return _applications.where((app) {
+      return app.isSubmitted || app.isInProgress || app.isPaused;
+    }).toList();
+  }
+
+  List<LoanApplication> _getApprovedApplications() {
+    return _applications.where((app) => app.isApproved).toList();
+  }
+
+  List<LoanApplication> _getIncompleteApplications() {
+    return _applications.where((app) => app.isDraft).toList();
+  }
+
+  Widget _buildApplicationsList(BuildContext context, List<LoanApplication> applications) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    if (applications.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          PremiumCard(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.inbox_outlined,
+                  size: 64,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No Applications',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _selectedTabIndex == 0
+                      ? 'Your submitted and in-progress applications will appear here'
+                      : _selectedTabIndex == 1
+                          ? 'Your approved applications will appear here'
+                          : 'Your incomplete draft applications will appear here',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadApplications,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(24),
+        itemCount: applications.length,
+        itemBuilder: (context, index) {
+          final application = applications[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _buildApplicationCard(context, application),
+          );
+        },
+      ),
     );
   }
 
