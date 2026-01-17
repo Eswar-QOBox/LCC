@@ -7,13 +7,18 @@ import '../utils/auth_errors.dart';
 class AuthService {
   final ApiClient _apiClient = ApiClient();
 
-  /// Login with email and password
+  /// Login with email/phone and password
   /// Returns a map with 'access_token', 'refresh_token', and 'user'
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String identifier, String password) async {
     try {
+      // Determine if identifier is phone (all digits) or email
+      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
+      
       final response = await _apiClient.post(
         '/api/v1/auth/login',
-        data: {'email': email, 'password': password},
+        data: isPhone 
+            ? {'identifier': identifier.trim(), 'password': password}
+            : {'email': identifier.trim(), 'password': password},
       );
 
       if (response.statusCode == 200) {
