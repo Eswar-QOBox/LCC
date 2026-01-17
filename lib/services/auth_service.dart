@@ -378,12 +378,18 @@ class AuthService {
   }
 
   /// Request password reset (forgot password)
+  /// Accepts email or phone number as identifier
   /// Returns a message and optionally a temporary password
-  Future<Map<String, dynamic>> forgotPassword(String email) async {
+  Future<Map<String, dynamic>> forgotPassword(String identifier) async {
     try {
+      // Determine if identifier looks like a phone number (all digits)
+      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
+      
       final response = await _apiClient.post(
         '/api/v1/auth/forgot-password',
-        data: {'email': email},
+        data: isPhone 
+            ? {'identifier': identifier.trim()}
+            : {'email': identifier.trim()},
       );
 
       if (response.statusCode == 200) {
