@@ -190,6 +190,30 @@ class SettingsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
 
+                    // Experimental Features
+                    PremiumCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Experimental',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildSettingItem(
+                            context,
+                            icon: Icons.text_fields,
+                            title: 'Aadhaar OCR Experiment',
+                            subtitle: 'Test ML Kit OCR for Aadhaar cards',
+                            onTap: () => context.go(AppRoutes.aadhaarOCRExperiment),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Account
                     PremiumCard(
                       child: Column(

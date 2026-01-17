@@ -21,6 +21,7 @@ import 'screens/step5_personal_data_screen.dart';
 import 'screens/step5_1_salary_slips_screen.dart';
 import 'screens/step6_preview_screen.dart';
 import 'screens/submission_success_screen.dart';
+import 'screens/aadhaar_ocr_experiment_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -57,7 +58,7 @@ class MyApp extends StatelessWidget {
 }
 
 final GoRouter _router = GoRouter(
-  initialLocation: AppRoutes.splash,
+  initialLocation: AppRoutes.aadhaarOCRExperiment, // Temporarily set to OCR experiment for testing
   routes: [
     GoRoute(
       path: AppRoutes.splash,
@@ -121,6 +122,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.submissionSuccess,
       builder: (context, state) => const SubmissionSuccessScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.aadhaarOCRExperiment,
+      builder: (context, state) => const AadhaarOCRExperimentScreen(),
     ),
   ],
 );

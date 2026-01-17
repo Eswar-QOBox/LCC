@@ -21,4 +21,7 @@ class AppRoutes {
   
   // After Submission
   static const String submissionSuccess = '/submission-success';
+  
+  // Experimental/Testing
+  static const String aadhaarOCRExperiment = '/aadhaar-ocr-experiment';
 }

@@ -59,6 +59,9 @@ dependencies:
   # Face Detection
   google_mlkit_face_detection: ^0.10.0
   
+  # Text Recognition (OCR)
+  google_mlkit_text_recognition: ^0.13.0
+  
   # HTTP Requests
   http: ^1.2.1
   dio: ^5.4.0
