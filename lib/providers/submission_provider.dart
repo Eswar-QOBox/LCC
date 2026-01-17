@@ -76,18 +76,39 @@ class SubmissionProvider with ChangeNotifier {
   // Salary Slips
   void setSalarySlips(List<String> slips, {bool isPdf = false}) {
     _submission.salarySlips ??= SalarySlips(isPdf: isPdf);
-    _submission.salarySlips!.slips = slips;
+    // Convert list of paths to SalarySlipItem list
+    _submission.salarySlips!.slipItems = slips.map((path) => SalarySlipItem(path: path)).toList();
     _submission.salarySlips!.isPdf = isPdf;
     notifyListeners();
   }
 
-  void addSalarySlip(String path) {
+  void addSalarySlip(String path, {DateTime? slipDate}) {
     _submission.salarySlips ??= SalarySlips();
-    _submission.salarySlips!.slips = [
-      ..._submission.salarySlips!.slips,
-      path,
-    ];
+    _submission.salarySlips!.slipItems.add(
+      SalarySlipItem(path: path, slipDate: slipDate),
+    );
     notifyListeners();
+  }
+
+  void updateSalarySlipDate(int index, DateTime? slipDate) {
+    if (_submission.salarySlips != null && 
+        index >= 0 && 
+        index < _submission.salarySlips!.slipItems.length) {
+      _submission.salarySlips!.slipItems[index].slipDate = slipDate;
+      notifyListeners();
+    }
+  }
+
+  void removeSalarySlip(int index) {
+    if (_submission.salarySlips != null && 
+        index >= 0 && 
+        index < _submission.salarySlips!.slipItems.length) {
+      _submission.salarySlips!.slipItems.removeAt(index);
+      if (_submission.salarySlips!.slipItems.isEmpty) {
+        _submission.salarySlips = null;
+      }
+      notifyListeners();
+    }
   }
 
   void setSalarySlipsPassword(String password) {
@@ -285,20 +306,20 @@ class SubmissionProvider with ChangeNotifier {
     }
 
     // Validate Salary Slips
-    if (_submission.salarySlips != null && _submission.salarySlips!.slips.isNotEmpty) {
-      final validSlips = <String>[];
-      for (final slipPath in _submission.salarySlips!.slips) {
-        final file = io.File(slipPath);
+    if (_submission.salarySlips != null && _submission.salarySlips!.slipItems.isNotEmpty) {
+      final validSlipItems = <SalarySlipItem>[];
+      for (final slipItem in _submission.salarySlips!.slipItems) {
+        final file = io.File(slipItem.path);
         if (await file.exists()) {
-          validSlips.add(slipPath);
+          validSlipItems.add(slipItem);
         } else {
-          debugPrint('⚠️ Salary slip file not found: $slipPath');
+          debugPrint('⚠️ Salary slip file not found: ${slipItem.path}');
           hasInvalidFiles = true;
         }
       }
-      _submission.salarySlips!.slips = validSlips;
+      _submission.salarySlips!.slipItems = validSlipItems;
       // If no valid slips, clear the salary slips
-      if (_submission.salarySlips!.slips.isEmpty) {
+      if (_submission.salarySlips!.slipItems.isEmpty) {
         _submission.salarySlips = null;
       }
     }
@@ -376,6 +397,8 @@ class SubmissionProvider with ChangeNotifier {
               'annualIncome': submission.personalData!.annualIncome,
               'totalWorkExperience': submission.personalData!.totalWorkExperience,
               'currentCompanyExperience': submission.personalData!.currentCompanyExperience,
+              'loanAmount': submission.personalData!.loanAmount,
+              'loanTenure': submission.personalData!.loanTenure,
               'loanAmountTenure': submission.personalData!.loanAmountTenure,
               'maritalStatus': submission.personalData!.maritalStatus,
               'spouseName': submission.personalData!.spouseName,
@@ -391,7 +414,11 @@ class SubmissionProvider with ChangeNotifier {
           : null,
       'salarySlips': submission.salarySlips != null
           ? {
-              'slips': submission.salarySlips!.slips,
+              'slipItems': submission.salarySlips!.slipItems.map((item) => {
+                'path': item.path,
+                'slipDate': item.slipDate?.toIso8601String(),
+              }).toList(),
+              'slips': submission.salarySlips!.slips, // Legacy support
               'pdfPassword': submission.salarySlips!.pdfPassword,
               'isPdf': submission.salarySlips!.isPdf,
             }
@@ -462,6 +489,8 @@ class SubmissionProvider with ChangeNotifier {
         annualIncome: personalData['annualIncome'] as String?,
         totalWorkExperience: personalData['totalWorkExperience'] as String?,
         currentCompanyExperience: personalData['currentCompanyExperience'] as String?,
+        loanAmount: personalData['loanAmount'] as String?,
+        loanTenure: personalData['loanTenure'] as String?,
         loanAmountTenure: personalData['loanAmountTenure'] as String?,
         maritalStatus: personalData['maritalStatus'] as String?,
         spouseName: personalData['spouseName'] as String?,
@@ -478,8 +507,28 @@ class SubmissionProvider with ChangeNotifier {
 
     if (json['salarySlips'] != null) {
       final salaryData = json['salarySlips'] as Map<String, dynamic>;
+      
+      // Try to load from new format with dates
+      List<SalarySlipItem> slipItems = [];
+      if (salaryData['slipItems'] != null) {
+        final items = salaryData['slipItems'] as List<dynamic>;
+        slipItems = items.map((item) {
+          final itemMap = item as Map<String, dynamic>;
+          return SalarySlipItem(
+            path: itemMap['path'] as String,
+            slipDate: itemMap['slipDate'] != null 
+                ? DateTime.tryParse(itemMap['slipDate'] as String)
+                : null,
+          );
+        }).toList();
+      } else if (salaryData['slips'] != null) {
+        // Legacy format - convert to new format
+        final slips = (salaryData['slips'] as List<dynamic>?)?.cast<String>() ?? [];
+        slipItems = slips.map((path) => SalarySlipItem(path: path)).toList();
+      }
+      
       submission.salarySlips = SalarySlips(
-        slips: (salaryData['slips'] as List<dynamic>?)?.cast<String>() ?? [],
+        slipItems: slipItems,
         pdfPassword: salaryData['pdfPassword'] as String?,
         isPdf: salaryData['isPdf'] as bool? ?? false,
       );
