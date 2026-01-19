@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
+import '../providers/submission_provider.dart';
 import '../services/document_service.dart';
 import '../services/file_upload_service.dart';
 import '../models/document_submission.dart';
@@ -13,6 +16,7 @@ import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
+import '../services/storage_service.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
   const Step1SelfieScreen({super.key});
@@ -287,6 +291,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         },
       );
 
+      // Also update local submission state so preview step sees selfie as completed
+      final submissionProvider = context.read<SubmissionProvider>();
+      submissionProvider.setSelfie(_imagePath!);
+
       if (mounted) {
         PremiumToast.showSuccess(
           context,
@@ -338,33 +346,95 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
   Future<void> _loadExistingData() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication) return;
+    if (!appProvider.hasApplication) {
+      debugPrint('📷 Selfie Screen: No application in provider');
+      return;
+    }
+
+    // Refresh application data from backend to get the latest saved data
+    try {
+      await appProvider.refreshApplication();
+      debugPrint('📷 Selfie Screen: Refreshed application from backend');
+    } catch (e) {
+      debugPrint('📷 Selfie Screen: Failed to refresh application: $e');
+    }
 
     final application = appProvider.currentApplication!;
-    // When resuming a pending application (currentStep > 1), always require a fresh selfie
-    // Only load existing selfie if we're on step 1 and it's a new/ongoing application
-    // For resumed applications, we want to ensure a fresh selfie is captured each time
-    if (application.currentStep == 1 && application.step1Selfie != null) {
+    debugPrint('📷 Selfie Screen: step1Selfie = ${application.step1Selfie}');
+    
+    // Always load existing selfie if it exists in backend
+    if (application.step1Selfie != null) {
       final stepData = application.step1Selfie as Map<String, dynamic>;
-      if (stepData['imagePath'] != null) {
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final imagePath = stepData['imagePath'] as String?;
+      
+      debugPrint('📷 Selfie Screen: uploadedFile = $uploadedFile');
+      debugPrint('📷 Selfie Screen: imagePath = $imagePath');
+      
+      // Prefer uploaded file URL over local blob path (blob URLs don't persist on web refresh)
+      String? effectivePath;
+      if (uploadedFile != null && uploadedFile['url'] != null) {
+        final relativeUrl = uploadedFile['url'] as String;
+        debugPrint('📷 Selfie Screen: relativeUrl = $relativeUrl');
+        // Build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
+        if (relativeUrl.startsWith('http')) {
+          effectivePath = relativeUrl;
+        } else {
+          // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
+          String apiPath = relativeUrl;
+          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
+            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+          } else if (!apiPath.startsWith('/api/')) {
+            apiPath = '/api/v1$apiPath';
+          }
+          effectivePath = 'http://localhost:5000$apiPath';
+        }
+        debugPrint('📷 Selfie Screen: effectivePath = $effectivePath');
+      } else {
+        effectivePath = imagePath;
+        debugPrint('📷 Selfie Screen: Using imagePath as effectivePath = $effectivePath');
+      }
+      
+      if (effectivePath != null && effectivePath.isNotEmpty) {
         setState(() {
-          _imagePath = stepData['imagePath'] as String;
+          _imagePath = effectivePath;
+          // Mark as already validated since it was saved
+          _validationResult = SelfieValidationResult(isValid: true, errors: []);
         });
-        // Also load image bytes if available
+        
+        // Try to load image bytes from URL for display
         try {
-          final imageFile = XFile(_imagePath!);
-          _imageBytes = await imageFile.readAsBytes();
+          if (effectivePath.startsWith('http')) {
+            // Get access token for authenticated request
+            final storage = StorageService.instance;
+            final accessToken = await storage.getAccessToken();
+            final headers = <String, String>{};
+            if (accessToken != null) {
+              headers['Authorization'] = 'Bearer $accessToken';
+            }
+            final response = await http.get(Uri.parse(effectivePath), headers: headers);
+            if (response.statusCode == 200 && mounted) {
+              setState(() {
+                _imageBytes = response.bodyBytes;
+              });
+            } else {
+              debugPrint('Failed to load selfie: ${response.statusCode}');
+            }
+          } else {
+            // Try to load from local path
+            final imageFile = XFile(effectivePath);
+            final bytes = await imageFile.readAsBytes();
+            if (mounted) {
+              setState(() {
+                _imageBytes = bytes;
+              });
+            }
+          }
         } catch (e) {
-          // If we can't load the bytes, that's okay - we'll just show the path
+          // If we can't load the bytes, that's okay - PlatformImage will handle it
+          debugPrint('Could not load selfie image bytes: $e');
         }
       }
-    } else if (application.currentStep > 1) {
-      // When resuming, clear any existing selfie to force fresh capture
-      setState(() {
-        _imagePath = null;
-        _imageBytes = null;
-        _validationResult = null;
-      });
     }
   }
 
