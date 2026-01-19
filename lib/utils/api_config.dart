@@ -5,7 +5,8 @@ class ApiConfig {
   // If your backend serves API at /api/v1, use 'http://localhost:8081/api/v1'
   //static const String baseUrl = 'http://localhost:5000';
   //static const String baseUrl = 'http://localhost:5000';
-  static const String baseUrl = 'http://localhost:5000';
+  static const String baseUrl =
+      'https://ai-lazycallagent.qualityoutsidethebox.org';
   // API endpoints (these are appended to baseUrl)
   // If baseUrl includes /api/v1, use '/auth/login'
   // If baseUrl doesn't include /api/v1, use '/api/v1/auth/login'
