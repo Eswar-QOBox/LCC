@@ -7,13 +7,18 @@ import '../utils/auth_errors.dart';
 class AuthService {
   final ApiClient _apiClient = ApiClient();
 
-  /// Login with email and password
+  /// Login with email/phone and password
   /// Returns a map with 'access_token', 'refresh_token', and 'user'
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String identifier, String password) async {
     try {
+      // Determine if identifier is phone (all digits) or email
+      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
+      
       final response = await _apiClient.post(
         '/api/v1/auth/login',
-        data: {'email': email, 'password': password},
+        data: isPhone 
+            ? {'identifier': identifier.trim(), 'password': password}
+            : {'email': identifier.trim(), 'password': password},
       );
 
       if (response.statusCode == 200) {
@@ -378,12 +383,18 @@ class AuthService {
   }
 
   /// Request password reset (forgot password)
+  /// Accepts email or phone number as identifier
   /// Returns a message and optionally a temporary password
-  Future<Map<String, dynamic>> forgotPassword(String email) async {
+  Future<Map<String, dynamic>> forgotPassword(String identifier) async {
     try {
+      // Determine if identifier looks like a phone number (all digits)
+      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
+      
       final response = await _apiClient.post(
         '/api/v1/auth/forgot-password',
-        data: {'email': email},
+        data: isPhone 
+            ? {'identifier': identifier.trim()}
+            : {'email': identifier.trim()},
       );
 
       if (response.statusCode == 200) {

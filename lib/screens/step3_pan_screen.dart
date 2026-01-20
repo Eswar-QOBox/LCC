@@ -54,15 +54,44 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
 
+    // Refresh application data from backend to get the latest saved data
+    try {
+      await appProvider.refreshApplication();
+    } catch (e) {
+      debugPrint('PAN Screen: Failed to refresh application: $e');
+    }
+
     final application = appProvider.currentApplication!;
     if (application.step3Pan != null) {
       final stepData = application.step3Pan as Map<String, dynamic>;
-      if (stepData['frontPath'] != null) {
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final frontPath = stepData['frontPath'] as String?;
+      
+      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
+      String? buildFullUrl(String? relativeUrl) {
+        if (relativeUrl == null || relativeUrl.isEmpty) return null;
+        if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
+        // Convert /uploads/pan/... to /api/v1/uploads/files/pan/...
+        String apiPath = relativeUrl;
+        if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
+          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+        } else if (!apiPath.startsWith('/api/')) {
+          apiPath = '/api/v1$apiPath';
+        }
+        return 'http://localhost:5000$apiPath';
+      }
+      
+      // Prefer uploaded file URL over local blob path
+      final effectiveFront = buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
+      
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
-          _frontPath = stepData['frontPath'] as String;
+          _frontPath = effectiveFront;
           _isPdf = stepData['isPdf'] as bool? ?? false;
           _pdfPassword = stepData['pdfPassword'] as String?;
         });
+        // Also update SubmissionProvider
+        context.read<SubmissionProvider>().setPanFront(effectiveFront);
       }
     }
   }

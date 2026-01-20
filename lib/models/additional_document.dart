@@ -51,8 +51,9 @@ class DocumentRequirement {
         label = id;
       }
     } else {
-      // Predefined document
+      // Predefined document labels
       final predefinedLabels = {
+        // Applicant documents
         'applicant_aadhaar': 'Aadhaar Card',
         'applicant_pan': 'PAN Card',
         'applicant_bank_statement': 'Bank Statement',
@@ -63,6 +64,7 @@ class DocumentRequirement {
         'applicant_address_proof': 'Address Proof',
         'applicant_photo': 'Passport Photo',
         'applicant_other': 'Other Document',
+        // Spouse documents
         'spouse_aadhaar': 'Spouse Aadhaar Card',
         'spouse_pan': 'Spouse PAN Card',
         'spouse_bank_statement': 'Spouse Bank Statement',
@@ -71,12 +73,33 @@ class DocumentRequirement {
         'spouse_form16': 'Spouse Form 16',
         'spouse_it_return': 'Spouse IT Return',
         'spouse_other': 'Spouse Other Document',
+        // Regular documents (default to applicant)
+        'selfies': 'Selfie',
+        'selfie': 'Selfie',
+        'aadhaar': 'Aadhaar Card',
+        'pan': 'PAN Card',
+        'bank_statements': 'Bank Statement',
+        'bank_statement': 'Bank Statement',
+        'salary_slips': 'Salary Slip',
+        'salary_slip': 'Salary Slip',
       };
 
-      label = predefinedLabels[id] ?? id;
-      category = id.startsWith('applicant_') 
-          ? DocumentCategory.applicant 
-          : DocumentCategory.spouse;
+      // Determine label
+      label = predefinedLabels[id] ?? id.replaceAll('_', ' ').split(' ').map((word) {
+        if (word.isEmpty) return word;
+        return word[0].toUpperCase() + word.substring(1);
+      }).join(' ');
+
+      // Determine category based on document ID
+      if (id.startsWith('spouse_')) {
+        category = DocumentCategory.spouse;
+      } else if (id.startsWith('applicant_')) {
+        category = DocumentCategory.applicant;
+      } else {
+        // Regular documents (selfies, aadhaar, pan, etc.) default to applicant
+        // Only explicitly spouse documents go to spouse category
+        category = DocumentCategory.applicant;
+      }
     }
 
     // Check if uploaded
@@ -101,6 +124,7 @@ class UploadedDocument {
   final DateTime uploadedAt;
   final String? url;
   final DocumentStatus status;
+  final String? rejectionReason;
 
   UploadedDocument({
     required this.id,
@@ -110,6 +134,7 @@ class UploadedDocument {
     required this.uploadedAt,
     this.url,
     this.status = DocumentStatus.uploaded,
+    this.rejectionReason,
   });
 
   factory UploadedDocument.fromJson(Map<String, dynamic> json) {
@@ -123,6 +148,7 @@ class UploadedDocument {
           : DateTime.now(),
       url: json['url'] as String?,
       status: _parseStatus(json['status'] as String?),
+      rejectionReason: json['rejectionReason'] as String?,
     );
   }
 

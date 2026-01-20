@@ -141,14 +141,14 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Request password reset (forgot password)
-  Future<Map<String, dynamic>?> forgotPassword(String email) async {
+  /// Request password reset (forgot password) - accepts email or phone
+  Future<Map<String, dynamic>?> forgotPassword(String identifier) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final result = await _authService.forgotPassword(email);
+      final result = await _authService.forgotPassword(identifier);
       _isLoading = false;
       notifyListeners();
       return result;

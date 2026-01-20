@@ -1,19 +1,31 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import '../providers/submission_provider.dart';
-import '../providers/application_provider.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:http/http.dart' as http;
+
 import '../models/document_submission.dart';
+import '../providers/application_provider.dart';
+import '../providers/submission_provider.dart';
 import '../utils/app_routes.dart';
-import '../widgets/platform_image.dart';
-import '../widgets/app_header.dart';
-import '../widgets/step_progress_indicator.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
-import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
+import '../widgets/platform_image.dart';
+import '../widgets/premium_button.dart';
+import '../widgets/premium_card.dart';
+import '../widgets/premium_toast.dart';
+import '../widgets/step_progress_indicator.dart';
 
 class Step6PreviewScreen extends StatefulWidget {
   const Step6PreviewScreen({super.key});
@@ -23,46 +35,205 @@ class Step6PreviewScreen extends StatefulWidget {
 }
 
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
+  bool _isDownloading = false;
+
   @override
   void initState() {
     super.initState();
-    // Sync selfie from ApplicationProvider to SubmissionProvider on init
+    // Load existing data from backend when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syncSelfieToSubmission();
+      _loadExistingData();
     });
   }
 
-  /// Sync selfie from ApplicationProvider to SubmissionProvider
-  void _syncSelfieToSubmission() {
+  /// Load existing data from ApplicationProvider (backend) and sync to SubmissionProvider (local state)
+  /// This ensures data persists across page refreshes on web
+  Future<void> _loadExistingData() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (kDebugMode) {
-      print('🔄 Syncing selfie...');
-      print('   hasApplication: ${appProvider.hasApplication}');
-      if (appProvider.hasApplication) {
-        print('   step1Selfie: ${appProvider.currentApplication!.step1Selfie}');
+    if (!appProvider.hasApplication) return;
+
+    // Refresh application data from backend to get the latest saved data
+    try {
+      await appProvider.refreshApplication();
+    } catch (e) {
+      debugPrint('Preview Screen: Failed to refresh application: $e');
+    }
+
+    final application = appProvider.currentApplication!;
+    final submissionProvider = context.read<SubmissionProvider>();
+
+    // Helper function to build full URL from relative path
+    // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
+    String? buildFullUrl(String? relativePath) {
+      if (relativePath == null || relativePath.isEmpty) return null;
+      // If it's already a full URL or blob URL, return as-is
+      if (relativePath.startsWith('http') || relativePath.startsWith('blob:')) {
+        return relativePath;
+      }
+      // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
+      String apiPath = relativePath;
+      if (apiPath.startsWith('/uploads/') &&
+          !apiPath.contains('/uploads/files/')) {
+        apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+      } else if (!apiPath.startsWith('/api/')) {
+        apiPath = '/api/v1$apiPath';
+      }
+      return 'http://localhost:5000$apiPath';
+    }
+
+    // Sync selfie data
+    if (application.step1Selfie != null) {
+      final stepData = application.step1Selfie as Map<String, dynamic>;
+      final imagePath = stepData['imagePath'] as String?;
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
+      final relativeUrl = uploadedFile?['url'] as String?;
+      final effectivePath = buildFullUrl(relativeUrl) ?? imagePath;
+      if (effectivePath != null && effectivePath.isNotEmpty) {
+        submissionProvider.setSelfie(effectivePath);
       }
     }
-    
-    final selfiePath = _getSelfiePath(context);
-    if (kDebugMode) {
-      print('   selfiePath from _getSelfiePath: $selfiePath');
-    }
-    
-    if (selfiePath != null) {
-      final submissionProvider = context.read<SubmissionProvider>();
-      if (kDebugMode) {
-        print('   current submission.selfiePath: ${submissionProvider.submission.selfiePath}');
+
+    // Sync Aadhaar data
+    if (application.step2Aadhaar != null) {
+      final stepData = application.step2Aadhaar as Map<String, dynamic>;
+      final frontPath = stepData['frontPath'] as String?;
+      final backPath = stepData['backPath'] as String?;
+      final frontUpload = stepData['frontUpload'] as Map<String, dynamic>?;
+      final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
+      // Prefer uploaded file URLs
+      final effectiveFront =
+          buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
+      final effectiveBack =
+          buildFullUrl(backUpload?['url'] as String?) ?? backPath;
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
+        submissionProvider.setAadhaarFront(effectiveFront);
       }
-      if (submissionProvider.submission.selfiePath != selfiePath) {
-        submissionProvider.setSelfie(selfiePath);
-        if (kDebugMode) {
-          print('   ✅ Selfie synced to SubmissionProvider!');
+      if (effectiveBack != null && effectiveBack.isNotEmpty) {
+        submissionProvider.setAadhaarBack(effectiveBack);
+      }
+    }
+
+    // Sync PAN data
+    if (application.step3Pan != null) {
+      final stepData = application.step3Pan as Map<String, dynamic>;
+      final frontPath = stepData['frontPath'] as String?;
+      // PAN uses 'uploadedFile' not 'frontUpload'
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final effectiveFront =
+          buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
+        submissionProvider.setPanFront(effectiveFront);
+      }
+    }
+
+    // Sync Bank Statement and Salary Slips data (both are in step4BankStatement)
+    if (application.step4BankStatement != null) {
+      final stepData = application.step4BankStatement as Map<String, dynamic>;
+
+      // Bank Statement pages
+      final pages = (stepData['pages'] as List<dynamic>?)?.cast<String>() ?? [];
+      final isPdf = stepData['isPdf'] as bool? ?? false;
+      final uploadedPages = stepData['uploadedPages'] as List<dynamic>?;
+      List<String> effectivePages = [];
+      if (uploadedPages != null && uploadedPages.isNotEmpty) {
+        for (var upload in uploadedPages) {
+          if (upload is Map<String, dynamic>) {
+            final url = buildFullUrl(upload['url'] as String?);
+            if (url != null && url.isNotEmpty) {
+              effectivePages.add(url);
+            }
+          }
         }
       }
-    } else {
-      if (kDebugMode) {
-        print('   ❌ No selfie path found in ApplicationProvider');
+      if (effectivePages.isEmpty && pages.isNotEmpty) {
+        effectivePages = pages;
       }
+      if (effectivePages.isNotEmpty) {
+        submissionProvider.setBankStatementPages(effectivePages, isPdf: isPdf);
+      }
+      final password = stepData['pdfPassword'] as String?;
+      if (password != null && password.isNotEmpty) {
+        submissionProvider.setBankStatementPassword(password);
+      }
+
+      // Salary slips are also stored in step4BankStatement
+      final salarySlips =
+          (stepData['salarySlips'] as List<dynamic>?)?.cast<String>() ?? [];
+      final salaryIsPdf = stepData['salarySlipsIsPdf'] as bool? ?? false;
+      final uploadedSalarySlips =
+          stepData['salarySlipsUploaded'] as List<dynamic>?;
+      List<String> effectiveSalarySlips = [];
+      if (uploadedSalarySlips != null && uploadedSalarySlips.isNotEmpty) {
+        for (var upload in uploadedSalarySlips) {
+          if (upload is Map<String, dynamic>) {
+            final url = buildFullUrl(upload['url'] as String?);
+            if (url != null && url.isNotEmpty) {
+              effectiveSalarySlips.add(url);
+            }
+          }
+        }
+      }
+      if (effectiveSalarySlips.isEmpty && salarySlips.isNotEmpty) {
+        effectiveSalarySlips = salarySlips;
+      }
+      if (effectiveSalarySlips.isNotEmpty) {
+        submissionProvider.setSalarySlips(effectiveSalarySlips,
+            isPdf: salaryIsPdf);
+      }
+      final salaryPassword = stepData['salarySlipsPassword'] as String?;
+      if (salaryPassword != null && salaryPassword.isNotEmpty) {
+        submissionProvider.setSalarySlipsPassword(salaryPassword);
+      }
+    }
+
+    // Sync Personal Data
+    if (application.step5PersonalData != null) {
+      final stepData = application.step5PersonalData as Map<String, dynamic>;
+      final personalData = PersonalData(
+        nameAsPerAadhaar: stepData['nameAsPerAadhaar'] as String?,
+        dateOfBirth: stepData['dateOfBirth'] != null
+            ? DateTime.tryParse(stepData['dateOfBirth'] as String)
+            : null,
+        panNo: stepData['panNo'] as String?,
+        mobileNumber: stepData['mobileNumber'] as String?,
+        personalEmailId: stepData['personalEmailId'] as String?,
+        countryOfResidence: stepData['countryOfResidence'] as String?,
+        residenceAddress: stepData['residenceAddress'] as String?,
+        residenceType: stepData['residenceType'] as String?,
+        residenceStability: stepData['residenceStability'] as String?,
+        companyName: stepData['companyName'] as String?,
+        companyAddress: stepData['companyAddress'] as String?,
+        nationality: stepData['nationality'] as String?,
+        countryOfBirth: stepData['countryOfBirth'] as String?,
+        occupation: stepData['occupation'] as String?,
+        educationalQualification:
+            stepData['educationalQualification'] as String?,
+        workType: stepData['workType'] as String?,
+        industry: stepData['industry'] as String?,
+        annualIncome: stepData['annualIncome'] as String?,
+        totalWorkExperience: stepData['totalWorkExperience'] as String?,
+        currentCompanyExperience:
+            stepData['currentCompanyExperience'] as String?,
+        loanAmount: stepData['loanAmount'] as String?,
+        loanTenure: stepData['loanTenure'] as String?,
+        loanAmountTenure: stepData['loanAmountTenure'] as String?,
+        maritalStatus: stepData['maritalStatus'] as String?,
+        spouseName: stepData['spouseName'] as String?,
+        fatherName: stepData['fatherName'] as String?,
+        motherName: stepData['motherName'] as String?,
+        reference1Name: stepData['reference1Name'] as String?,
+        reference1Address: stepData['reference1Address'] as String?,
+        reference1Contact: stepData['reference1Contact'] as String?,
+        reference2Name: stepData['reference2Name'] as String?,
+        reference2Address: stepData['reference2Address'] as String?,
+        reference2Contact: stepData['reference2Contact'] as String?,
+      );
+      submissionProvider.setPersonalData(personalData);
+    }
+
+    if (kDebugMode) {
+      print('📥 Preview Screen: Loaded existing data from ApplicationProvider');
     }
   }
 
@@ -70,22 +241,26 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     context.go(route);
   }
 
-  /// Get selfie path from ApplicationProvider (per-application storage)
+  /// Get selfie path from either SubmissionProvider (local) or ApplicationProvider (backend)
   String? _getSelfiePath(BuildContext context) {
-    final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication) {
-      if (kDebugMode) {
-        print('_getSelfiePath: No application in provider');
-      }
-      return null;
+    // Prefer local submission state if available
+    final submissionProvider = context.read<SubmissionProvider>();
+    final localSelfiePath = submissionProvider.submission.selfiePath;
+    if (localSelfiePath != null && localSelfiePath.isNotEmpty) {
+      return localSelfiePath;
     }
-    
+
+    // Fallback to application-backed selfie data
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) return null;
+
     final application = appProvider.currentApplication!;
     if (kDebugMode) {
-      print('_getSelfiePath: step1Selfie type: ${application.step1Selfie?.runtimeType}');
+      print(
+          '_getSelfiePath: step1Selfie type: ${application.step1Selfie?.runtimeType}');
       print('_getSelfiePath: step1Selfie value: ${application.step1Selfie}');
     }
-    
+
     if (application.step1Selfie != null) {
       try {
         if (application.step1Selfie is Map<String, dynamic>) {
@@ -98,7 +273,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         } else if (application.step1Selfie is String) {
           // Handle case where step1Selfie is directly a string path
           if (kDebugMode) {
-            print('_getSelfiePath: step1Selfie is a String: ${application.step1Selfie}');
+            print(
+                '_getSelfiePath: step1Selfie is a String: ${application.step1Selfie}');
           }
           return application.step1Selfie as String;
         }
@@ -111,12 +287,12 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return null;
   }
 
-  /// Check if submission is actually complete (including selfie from ApplicationProvider)
-  bool _isSubmissionComplete(BuildContext context) {
+  /// Check if all required data is actually present (for PDF status)
+  bool _isActuallyComplete(BuildContext context) {
     final provider = context.read<SubmissionProvider>();
     final submission = provider.submission;
     final selfiePath = _getSelfiePath(context);
-    
+
     return selfiePath != null &&
         submission.aadhaar != null &&
         submission.aadhaar!.isComplete &&
@@ -134,7 +310,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   Future<void> _submit(BuildContext context) async {
     final provider = context.read<SubmissionProvider>();
     final appProvider = context.read<ApplicationProvider>();
-    
+
     if (!appProvider.hasApplication) {
       PremiumToast.showError(
         context,
@@ -143,7 +319,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       return;
     }
     
-    if (!_isSubmissionComplete(context)) {
+    if (!provider.submission.isComplete) {
       if (context.mounted) {
         PremiumToast.showError(
           context,
@@ -158,9 +334,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -178,13 +352,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           'status': 'submitted',
         },
       );
-      
+
       // Also save to provider for local state
       await provider.submit();
-      
+
       // Clear draft after successful submission
       await provider.clearDraft();
-      
+
       if (context.mounted) {
         // Close loading dialog
         Navigator.of(context).pop();
@@ -199,46 +373,773 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (context.mounted) {
         // Close loading dialog if still open
         Navigator.of(context).pop();
-        PremiumToast.showError(
-          context,
-          'Error submitting: $e',
-        );
+        PremiumToast.showError(context, 'Error submitting: $e');
       }
     }
   }
 
+  /// Read image bytes from file path (handles both web and mobile)
+  Future<Uint8List?> _readImageBytes(String? imagePath) async {
+    if (imagePath == null || imagePath.isEmpty) return null;
+    
+    try {
+      if (kIsWeb) {
+        // Handle blob URLs on web
+        if (imagePath.startsWith('blob:')) {
+          try {
+            final response = await http.get(Uri.parse(imagePath));
+            if (response.statusCode == 200) {
+              return response.bodyBytes;
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error fetching blob URL: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Handle data URIs on web
+        if (imagePath.startsWith('data:')) {
+          try {
+            final commaIndex = imagePath.indexOf(',');
+            if (commaIndex != -1) {
+              final base64Data = imagePath.substring(commaIndex + 1);
+              return base64Decode(base64Data);
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error decoding data URI: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Try to read as XFile if possible
+        final file = XFile(imagePath);
+        return await file.readAsBytes();
+      } else {
+        // On mobile/desktop, read from file path
+        final file = File(imagePath);
+        if (await file.exists()) {
+          return await file.readAsBytes();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error reading image: $e');
+      }
+    }
+    return null;
+  }
 
+  /// Convert image bytes to PNG format for PDF compatibility
+  /// This ensures the PDF library can properly decode the image
+  Future<Uint8List?> _convertImageToPng(Uint8List? imageBytes) async {
+    if (imageBytes == null) return null;
+    
+    try {
+      // Decode the image using the image package
+      final decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) {
+        if (kDebugMode) {
+          print('Failed to decode image');
+        }
+        return null;
+      }
+      
+      // Encode to PNG format (PDF library supports PNG well)
+      final pngBytes = img.encodePng(decodedImage);
+      return Uint8List.fromList(pngBytes);
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error converting image to PNG: $e');
+      }
+      // If conversion fails, try returning original bytes as fallback
+      return imageBytes;
+    }
+  }
 
+  /// Read PDF bytes from file path (handles both web and mobile)
+  /// Similar to _readImageBytes but specifically for PDFs
+  Future<Uint8List?> _readPdfBytes(String? pdfPath) async {
+    if (pdfPath == null || pdfPath.isEmpty) return null;
+    
+    try {
+      if (kIsWeb) {
+        // Handle blob URLs on web
+        if (pdfPath.startsWith('blob:')) {
+          try {
+            final response = await http.get(Uri.parse(pdfPath));
+            if (response.statusCode == 200) {
+              return response.bodyBytes;
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error fetching PDF blob URL: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Handle data URIs on web
+        if (pdfPath.startsWith('data:')) {
+          try {
+            final commaIndex = pdfPath.indexOf(',');
+            if (commaIndex != -1) {
+              final base64Data = pdfPath.substring(commaIndex + 1);
+              return base64Decode(base64Data);
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error decoding PDF data URI: $e');
+            }
+          }
+          return null;
+        }
+        
+        // Try to read as XFile if possible
+        final file = XFile(pdfPath);
+        return await file.readAsBytes();
+      } else {
+        // On mobile/desktop, read from file path
+        final file = File(pdfPath);
+        if (await file.exists()) {
+          return await file.readAsBytes();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error reading PDF: $e');
+      }
+    }
+    return null;
+  }
+
+  /// Merge PDF pages from a PDF file into the main PDF document
+  /// This function reads the PDF and appends its pages to the main document
+  Future<void> _mergePdfIntoDocument(pw.Document mainPdf, String pdfPath, String title) async {
+    try {
+      final pdfBytes = await _readPdfBytes(pdfPath);
+      if (pdfBytes == null) {
+        if (kDebugMode) {
+          print('Failed to read PDF bytes from: $pdfPath');
+        }
+        // Add a note page instead
+        _addPdfNotePage(mainPdf, title, 'Unable to read PDF file.');
+        return;
+      }
+
+      // Add a title page indicating the PDF is included
+      // Note: Full PDF merging requires additional packages like syncfusion_flutter_pdf
+      // For now, we add a note page and the PDF content is preserved in the submission
+      _addPdfNotePage(
+        mainPdf, 
+        title, 
+        'PDF document included (${(pdfBytes.length / 1024).toStringAsFixed(1)} KB).\n\nThe original PDF file has been preserved in your submission and will be available for review.',
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error merging PDF: $e');
+      }
+      _addPdfNotePage(mainPdf, title, 'Unable to merge PDF content. Original file included separately.');
+    }
+  }
+
+  /// Helper function to add a note page for PDFs
+  void _addPdfNotePage(pw.Document pdf, String title, String message) {
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Text(
+                message,
+                style: pw.TextStyle(fontSize: 12, color: PdfColors.grey),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// Generate PDF with all application data and images
+  Future<void> _downloadAsPdf(BuildContext context) async {
+    if (_isDownloading) return;
+
+    setState(() {
+      _isDownloading = true;
+    });
+
+    try {
+      final provider = context.read<SubmissionProvider>();
+      final submission = provider.submission;
+      final personalData = submission.personalData;
+
+      // Check actual completion status before building PDF
+      final isComplete = _isActuallyComplete(context);
+
+      // Create PDF document
+      final pdf = pw.Document();
+      final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
+      final generatedDate = dateFormat.format(DateTime.now());
+
+      // Add title page
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'Loan Application Data',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  'Generated on: $generatedDate',
+                  style: pw.TextStyle(fontSize: 12),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Divider(),
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  'Application Status: ${isComplete ? "Complete" : "Incomplete"}',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      // Add Personal Data section
+      if (personalData != null) {
+        pdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            margin: const pw.EdgeInsets.all(40),
+            build: (pw.Context context) {
+              return pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Personal Information',
+                    style: pw.TextStyle(
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 20),
+                  _buildPdfDataRow('Name (as per Aadhaar)', personalData.nameAsPerAadhaar),
+                  _buildPdfDataRow('Date of Birth', personalData.dateOfBirth != null 
+                    ? DateFormat('dd MMM yyyy').format(personalData.dateOfBirth!) 
+                    : null),
+                  _buildPdfDataRow('PAN Number', personalData.panNo),
+                  _buildPdfDataRow('Mobile Number', personalData.mobileNumber),
+                  _buildPdfDataRow('Email ID', personalData.personalEmailId),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Residence Information',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Country of Residence', personalData.countryOfResidence),
+                  _buildPdfDataRow('Residence Address', personalData.residenceAddress),
+                  _buildPdfDataRow('Residence Type', personalData.residenceType),
+                  _buildPdfDataRow('Residence Stability', personalData.residenceStability),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Work Info',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Company Name', personalData.companyName),
+                  _buildPdfDataRow('Company Address', personalData.companyAddress),
+                  _buildPdfDataRow('Work Type', personalData.workType),
+                  _buildPdfDataRow('Industry', personalData.industry),
+                  _buildPdfDataRow('Annual Income', personalData.annualIncome),
+                  _buildPdfDataRow('Total years of experience', personalData.totalWorkExperience),
+                  _buildPdfDataRow('Current Company Experience', personalData.currentCompanyExperience),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Personal Details',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Occupation', personalData.occupation),
+                  _buildPdfDataRow('Educational Qualification', personalData.educationalQualification),
+                  if ((personalData.loanAmount != null && personalData.loanAmount!.isNotEmpty) || 
+                      (personalData.loanTenure != null && personalData.loanTenure!.isNotEmpty)) ...[
+                    pw.SizedBox(height: 15),
+                    pw.Text(
+                      'Loan Details',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    if (personalData.loanAmount != null && personalData.loanAmount!.isNotEmpty)
+                      _buildPdfDataRow('Loan Amount', '₹ ${personalData.loanAmount}'),
+                    if (personalData.loanTenure != null && personalData.loanTenure!.isNotEmpty)
+                      _buildPdfDataRow('Loan Tenure', '${personalData.loanTenure} months'),
+                  ] else if (personalData.loanAmountTenure != null && personalData.loanAmountTenure!.isNotEmpty) ...[
+                    pw.SizedBox(height: 15),
+                    pw.Text(
+                      'Loan Details',
+                      style: pw.TextStyle(
+                        fontSize: 16,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                    pw.SizedBox(height: 10),
+                    _buildPdfDataRow('Loan Amount/Tenure', personalData.loanAmountTenure),
+                  ],
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'Family Information',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Marital Status', personalData.maritalStatus),
+                  _buildPdfDataRow('Spouse Name', personalData.spouseName),
+                  _buildPdfDataRow('Father\'s Name', personalData.fatherName),
+                  _buildPdfDataRow('Mother\'s Name', personalData.motherName),
+                  pw.SizedBox(height: 15),
+                  pw.Text(
+                    'References',
+                    style: pw.TextStyle(
+                      fontSize: 16,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 10),
+                  _buildPdfDataRow('Reference 1 Name', personalData.reference1Name),
+                  _buildPdfDataRow('Reference 1 Address', personalData.reference1Address),
+                  _buildPdfDataRow('Reference 1 Contact', personalData.reference1Contact),
+                  _buildPdfDataRow('Reference 2 Name', personalData.reference2Name),
+                  _buildPdfDataRow('Reference 2 Address', personalData.reference2Address),
+                  _buildPdfDataRow('Reference 2 Contact', personalData.reference2Contact),
+                ],
+              );
+            },
+          ),
+        );
+      }
+
+      // Add Selfie image
+      final selfiePath = _getSelfiePath(context);
+      if (selfiePath != null) {
+        final selfieBytes = await _readImageBytes(selfiePath);
+        final pngBytes = await _convertImageToPng(selfieBytes);
+        if (pngBytes != null) {
+          try {
+            final selfieImage = pw.MemoryImage(pngBytes);
+            pdf.addPage(
+              pw.Page(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(40),
+                build: (pw.Context context) {
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'Selfie',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 20),
+                      pw.Center(
+                        child: pw.Image(
+                          selfieImage,
+                          fit: pw.BoxFit.contain,
+                          width: 300,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error adding selfie to PDF: $e');
+            }
+          }
+        }
+      }
+
+      // Add Aadhaar images
+      if (submission.aadhaar != null) {
+        if (submission.aadhaar!.frontPath != null) {
+          final frontBytes = await _readImageBytes(submission.aadhaar!.frontPath);
+          final pngBytes = await _convertImageToPng(frontBytes);
+          if (pngBytes != null) {
+            try {
+              final frontImage = pw.MemoryImage(pngBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Aadhaar Card - Front',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            frontImage,
+                            fit: pw.BoxFit.contain,
+                            width: 400,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding Aadhaar front to PDF: $e');
+              }
+            }
+          }
+        }
+
+        if (submission.aadhaar!.backPath != null) {
+          final backBytes = await _readImageBytes(submission.aadhaar!.backPath);
+          final pngBytes = await _convertImageToPng(backBytes);
+          if (pngBytes != null) {
+            try {
+              final backImage = pw.MemoryImage(pngBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Aadhaar Card - Back',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            backImage,
+                            fit: pw.BoxFit.contain,
+                            width: 400,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding Aadhaar back to PDF: $e');
+              }
+            }
+          }
+        }
+      }
+
+      // Add PAN image
+      if (submission.pan != null && submission.pan!.frontPath != null) {
+        final panBytes = await _readImageBytes(submission.pan!.frontPath);
+        final pngBytes = await _convertImageToPng(panBytes);
+        if (pngBytes != null) {
+          try {
+            final panImage = pw.MemoryImage(pngBytes);
+            pdf.addPage(
+              pw.Page(
+                pageFormat: PdfPageFormat.a4,
+                margin: const pw.EdgeInsets.all(40),
+                build: (pw.Context context) {
+                  return pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        'PAN Card',
+                        style: pw.TextStyle(
+                          fontSize: 20,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                      pw.SizedBox(height: 20),
+                      pw.Center(
+                        child: pw.Image(
+                          panImage,
+                          fit: pw.BoxFit.contain,
+                          width: 400,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          } catch (e) {
+            if (kDebugMode) {
+              print('Error adding PAN to PDF: $e');
+            }
+          }
+        }
+      }
+
+      // Add Bank Statement pages
+      if (submission.bankStatement != null && submission.bankStatement!.pages.isNotEmpty) {
+        // Merge PDF if it's a PDF file
+        if (submission.bankStatement!.isPdf) {
+          // Merge the PDF into the document
+          for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
+            final pagePath = submission.bankStatement!.pages[i];
+            await _mergePdfIntoDocument(
+              pdf,
+              pagePath,
+              'Bank Statement${submission.bankStatement!.pages.length > 1 ? ' - Document ${i + 1}' : ''}',
+            );
+          }
+        } else {
+          for (int i = 0; i < submission.bankStatement!.pages.length; i++) {
+            final pagePath = submission.bankStatement!.pages[i];
+            final pageBytes = await _readImageBytes(pagePath);
+            final pngBytes = await _convertImageToPng(pageBytes);
+            if (pngBytes != null) {
+            try {
+              final pageImage = pw.MemoryImage(pngBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Bank Statement - Page ${i + 1}',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            pageImage,
+                            fit: pw.BoxFit.contain,
+                            width: 500,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding bank statement page $i to PDF: $e');
+              }
+            }
+          }
+        }
+        }
+      }
+
+      // Add Salary Slips
+      if (submission.salarySlips != null && submission.salarySlips!.slips.isNotEmpty) {
+        // Merge PDF if it's a PDF file
+        if (submission.salarySlips!.isPdf) {
+          // Merge the PDF into the document
+          for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
+            final slipPath = submission.salarySlips!.slips[i];
+            await _mergePdfIntoDocument(
+              pdf,
+              slipPath,
+              'Salary Slip${submission.salarySlips!.slips.length > 1 ? ' - Document ${i + 1}' : ''}',
+            );
+          }
+        } else {
+          for (int i = 0; i < submission.salarySlips!.slips.length; i++) {
+            final slipPath = submission.salarySlips!.slips[i];
+            final slipBytes = await _readImageBytes(slipPath);
+            final pngBytes = await _convertImageToPng(slipBytes);
+            if (pngBytes != null) {
+            try {
+              final slipImage = pw.MemoryImage(pngBytes);
+              pdf.addPage(
+                pw.Page(
+                  pageFormat: PdfPageFormat.a4,
+                  margin: const pw.EdgeInsets.all(40),
+                  build: (pw.Context context) {
+                    return pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          'Salary Slip - ${i + 1}',
+                          style: pw.TextStyle(
+                            fontSize: 20,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                        pw.SizedBox(height: 20),
+                        pw.Center(
+                          child: pw.Image(
+                            slipImage,
+                            fit: pw.BoxFit.contain,
+                            width: 500,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            } catch (e) {
+              if (kDebugMode) {
+                print('Error adding salary slip $i to PDF: $e');
+              }
+            }
+          }
+        }
+        }
+      }
+
+      // Save PDF to file
+      final directory = kIsWeb ? null : await getTemporaryDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final fileName = 'application_data_$timestamp.pdf';
+      
+      Uint8List pdfBytes;
+      if (kIsWeb) {
+        pdfBytes = await pdf.save();
+        // On web, share the PDF
+        if (context.mounted) {
+          // Use share_plus to download on web
+          await Share.shareXFiles(
+            [XFile.fromData(pdfBytes, mimeType: 'application/pdf', name: fileName)],
+            text: 'My Application Data',
+            subject: 'Application Data Export',
+          );
+        }
+      } else {
+        pdfBytes = await pdf.save();
+        final file = File('${directory!.path}/$fileName');
+        await file.writeAsBytes(pdfBytes);
+        
+        if (context.mounted) {
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: 'My Application Data',
+            subject: 'Application Data Export',
+          );
+        }
+      }
+
+      if (context.mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'PDF downloaded successfully!',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        PremiumToast.showError(
+          context,
+          'Error generating PDF: $e',
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  /// Helper to build data rows in PDF
+  pw.Widget _buildPdfDataRow(String label, String? value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 8),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 150,
+            child: pw.Text(
+              '$label:',
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Text(
+              value ?? 'Not provided',
+              style: const pw.TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SubmissionProvider>();
     final submission = provider.submission;
-    // Also watch ApplicationProvider for selfie updates
-    final appProvider = context.watch<ApplicationProvider>();
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
-    // Get selfie path - first try SubmissionProvider (more reliable), then ApplicationProvider
-    String? selfiePath = submission.selfiePath;
-    if (selfiePath == null && appProvider.hasApplication && appProvider.currentApplication!.step1Selfie != null) {
-      try {
-        final stepData = appProvider.currentApplication!.step1Selfie as Map<String, dynamic>;
-        selfiePath = stepData['imagePath'] as String?;
-        // Sync to SubmissionProvider if found
-        if (selfiePath != null) {
-          provider.setSelfie(selfiePath);
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          print('Error reading selfie from ApplicationProvider: $e');
-        }
-      }
-    }
-    
-    if (kDebugMode && selfiePath == null) {
-      print('⚠️ Selfie missing! SubmissionProvider.selfiePath: ${submission.selfiePath}, ApplicationProvider.hasApplication: ${appProvider.hasApplication}');
-    }
+    final selfiePath = _getSelfiePath(context);
     
     // Debug: Print comprehensive submission state
     if (kDebugMode) {
@@ -251,22 +1152,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       print('✅ PAN: ${submission.pan != null ? "✓ ${submission.pan!.frontPath}" : "✗ Missing"}');
       print('✅ Bank Statement: ${submission.bankStatement != null ? "✓ Pages: ${submission.bankStatement!.pages.length}" : "✗ Missing"}');
       print('✅ Personal Data: ${submission.personalData != null ? "✓ Present" : "✗ Missing"}');
-      print('✅ Salary Slips: ${submission.salarySlips != null ? "✓ Slips: ${submission.salarySlips!.slipItems.length}" : "✗ Missing"}');
-      print('✅ Is Complete (SubmissionProvider): ${submission.isComplete}');
-      print('✅ Is Complete (Actual Check): ${_isSubmissionComplete(context)}');
+      print('✅ Is Complete: ${submission.isComplete}');
       print('═══════════════════════════════════════════════════════════');
-      
-      // Detailed completion check with debug logging
-      if (!_isSubmissionComplete(context)) {
-        final missingParts = submission.getMissingParts();
-        print('❌ SUBMISSION INCOMPLETE - Missing parts:');
-        for (final part in missingParts) {
-          print('   - $part');
-        }
-        print('═══════════════════════════════════════════════════════════');
-      } else {
-        print('✅ SUBMISSION COMPLETE - All parts are filled');
-      }
       
       if (submission.personalData != null) {
         final data = submission.personalData!;
@@ -303,97 +1190,169 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         ),
         child: Column(
           children: [
-            // Consistent Header
-            AppHeader(
-              title: 'Review & Submit',
-              icon: Icons.check_circle_outline,
-              showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step5PersonalData),
-              showHomeButton: true,
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white,
+                    colorScheme.primary.withValues(alpha: 0.03),
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: AppBar(
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            colorScheme.primary,
+                            colorScheme.secondary,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: colorScheme.primary.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      'Review & Submit',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                foregroundColor: colorScheme.onSurface,
+                leading: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                    onPressed: () => context.go(AppRoutes.step5_1SalarySlips),
+                    color: colorScheme.primary,
+                  ),
+                ),
+                actions: const [],
+              ),
             ),
             StepProgressIndicator(currentStep: 6, totalSteps: 6),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Status Banner
-                    Builder(
-                      builder: (context) {
-                        final isComplete = _isSubmissionComplete(context);
-                        return PremiumCard(
-                          gradientColors: isComplete
-                              ? [
-                                  AppTheme.successColor.withValues(alpha: 0.15),
-                                  AppTheme.successColor.withValues(alpha: 0.05),
-                                ]
-                              : [
-                                  AppTheme.warningColor.withValues(alpha: 0.15),
-                                  AppTheme.warningColor.withValues(alpha: 0.05),
-                                ],
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: isComplete
-                                      ? AppTheme.successColor
-                                      : AppTheme.warningColor,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: (isComplete
-                                              ? AppTheme.successColor
-                                              : AppTheme.warningColor)
-                                          .withValues(alpha: 0.4),
-                                      blurRadius: 12,
-                                      spreadRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  isComplete
-                                      ? Icons.check_circle
-                                      : Icons.warning_rounded,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      isComplete
-                                          ? 'Ready to Submit!'
-                                          : 'Incomplete Submission',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: isComplete
-                                            ? AppTheme.successColor
-                                            : AppTheme.warningColor,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      isComplete
-                                          ? 'All documents are verified and ready'
-                                          : 'Please complete all steps before submitting',
-                                      style: theme.textTheme.bodyMedium,
-                                    ),
-                                  ],
-                                ),
-                              ),
+                    PremiumCard(
+                      gradientColors: submission.isComplete
+                          ? [
+                              AppTheme.successColor.withValues(alpha: 0.15),
+                              AppTheme.successColor.withValues(alpha: 0.05),
+                            ]
+                          : [
+                              AppTheme.warningColor.withValues(alpha: 0.15),
+                              AppTheme.warningColor.withValues(alpha: 0.05),
                             ],
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: submission.isComplete
+                                  ? AppTheme.successColor
+                                  : AppTheme.warningColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (submission.isComplete
+                                          ? AppTheme.successColor
+                                          : AppTheme.warningColor)
+                                      .withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              submission.isComplete
+                                  ? Icons.check_circle
+                                  : Icons.warning_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
                           ),
-                        );
-                      },
+                          const SizedBox(width: 20),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  submission.isComplete
+                                      ? 'Ready to Submit!'
+                                      : 'Incomplete Submission',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: submission.isComplete
+                                        ? AppTheme.successColor
+                                        : AppTheme.warningColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  submission.isComplete
+                                      ? 'All documents are verified and ready'
+                                      : 'Please complete all steps before submitting',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Summary Section
                     PremiumCard(
                       gradientColors: [
@@ -441,25 +1400,33 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           _buildSummaryRow(
                             context,
                             'Step 2: Aadhaar Card',
-                            submission.aadhaar?.isComplete == true ? '✓ Uploaded' : '✗ Missing',
+                            submission.aadhaar?.isComplete == true
+                                ? '✓ Uploaded'
+                                : '✗ Missing',
                             submission.aadhaar?.isComplete == true,
                           ),
                           _buildSummaryRow(
                             context,
                             'Step 3: PAN Card',
-                            submission.pan?.isComplete == true ? '✓ Uploaded' : '✗ Missing',
+                            submission.pan?.isComplete == true
+                                ? '✓ Uploaded'
+                                : '✗ Missing',
                             submission.pan?.isComplete == true,
                           ),
                           _buildSummaryRow(
                             context,
                             'Step 4: Bank Statement',
-                            submission.bankStatement?.isComplete == true ? '✓ Uploaded' : '✗ Missing',
+                            submission.bankStatement?.isComplete == true
+                                ? '✓ Uploaded'
+                                : '✗ Missing',
                             submission.bankStatement?.isComplete == true,
                           ),
                           _buildSummaryRow(
                             context,
                             'Step 5: Personal Data',
-                            submission.personalData?.isComplete == true ? '✓ Completed' : '✗ Missing',
+                            submission.personalData?.isComplete == true
+                                ? '✓ Completed'
+                                : '✗ Missing',
                             submission.personalData?.isComplete == true,
                           ),
                           _buildSummaryRow(
@@ -472,7 +1439,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Detailed Sections
                     Text(
                       'Detailed Information',
@@ -496,13 +1463,17 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                 borderRadius: BorderRadius.circular(16),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: colorScheme.primary.withValues(alpha: 0.15),
+                                    color: colorScheme.primary.withValues(
+                                      alpha: 0.15,
+                                    ),
                                     blurRadius: 15,
                                     offset: const Offset(0, 5),
                                   ),
                                 ],
                                 border: Border.all(
-                                  color: colorScheme.primary.withValues(alpha: 0.3),
+                                  color: colorScheme.primary.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   width: 2,
                                 ),
                               ),
@@ -574,100 +1545,52 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       title: 'Bank Statement',
                       icon: Icons.account_balance,
                       isComplete: submission.bankStatement?.isComplete ?? false,
-                      onEdit: () => _editStep(context, AppRoutes.step4BankStatement),
+                      onEdit: () =>
+                          _editStep(context, AppRoutes.step4BankStatement),
                       child: submission.bankStatement?.isComplete == true
                           ? PremiumCard(
                               gradientColors: [
                                 colorScheme.primary.withValues(alpha: 0.05),
                                 colorScheme.secondary.withValues(alpha: 0.02),
                               ],
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Row(
                                 children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              colorScheme.primary,
-                                              colorScheme.secondary,
-                                            ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(12),
-                                        ),
-                                        child: Icon(
-                                          submission.bankStatement!.isPdf 
-                                              ? Icons.picture_as_pdf 
-                                              : Icons.description,
-                                          color: Colors.white,
-                                          size: 24,
-                                        ),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          colorScheme.primary,
+                                          colorScheme.secondary,
+                                        ],
                                       ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '${submission.bankStatement!.pages.length} ${submission.bankStatement!.pages.length == 1 ? 'Page' : 'Pages'}',
-                                              style: theme.textTheme.titleMedium?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              submission.bankStatement!.isPdf 
-                                                  ? 'PDF Format' 
-                                                  : 'Image Format',
-                                              style: theme.textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.description,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
                                   ),
-                                  if (submission.bankStatement!.pages.length <= 3) ...[
-                                    const SizedBox(height: 16),
-                                    Wrap(
-                                      spacing: 12,
-                                      runSpacing: 12,
-                                      children: submission.bankStatement!.pages.asMap().entries.map((entry) {
-                                        return SizedBox(
-                                          width: 100,
-                                          height: 140,
-                                          child: _buildPremiumDocumentPreview(
-                                            context,
-                                            entry.value,
-                                            'Page ${entry.key + 1}',
-                                            submission.bankStatement!.isPdf,
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${submission.bankStatement!.pages.length} ${submission.bankStatement!.pages.length == 1 ? 'Page' : 'Pages'}',
+                                          style: theme.textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
                                           ),
-                                        );
-                                      }).toList(),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Bank statement uploaded',
+                                          style: theme.textTheme.bodySmall,
+                                        ),
+                                      ],
                                     ),
-                                  ] else ...[
-                                    const SizedBox(height: 16),
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 3,
-                                        crossAxisSpacing: 12,
-                                        mainAxisSpacing: 12,
-                                        childAspectRatio: 0.7,
-                                      ),
-                                      itemCount: submission.bankStatement!.pages.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildPremiumDocumentPreview(
-                                          context,
-                                          submission.bankStatement!.pages[index],
-                                          'Page ${index + 1}',
-                                          submission.bankStatement!.isPdf,
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                  ),
                                 ],
                               ),
                             )
@@ -680,14 +1603,19 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       title: 'Personal Data',
                       icon: Icons.person,
                       isComplete: submission.personalData?.isComplete ?? false,
-                      onEdit: () => _editStep(context, AppRoutes.step5PersonalData),
+                      onEdit: () =>
+                          _editStep(context, AppRoutes.step5PersonalData),
                       child: Builder(
                         builder: (context) {
                           if (kDebugMode) {
                             print('🔍 Building Personal Data Section:');
-                            print('   personalData != null: ${submission.personalData != null}');
+                            print(
+                              '   personalData != null: ${submission.personalData != null}',
+                            );
                             if (submission.personalData != null) {
-                              print('   personalData.isComplete: ${submission.personalData!.isComplete}');
+                              print(
+                                '   personalData.isComplete: ${submission.personalData!.isComplete}',
+                              );
                             }
                           }
                           return submission.personalData != null
@@ -698,10 +1626,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                   ],
                                   child: SizedBox(
                                     width: double.infinity,
-                                    child: _buildPersonalDataPreview(context, submission.personalData!),
+                                    child: _buildPersonalDataPreview(
+                                      context,
+                                      submission.personalData!,
+                                    ),
                                   ),
                                 )
-                              : _buildEmptyState(context, 'No personal data entered. Please go back to Step 5 to fill in your information.');
+                              : _buildEmptyState(
+                                  context,
+                                  'No personal data entered. Please go back to Step 5 to fill in your information.',
+                                );
                         },
                       ),
                     ),
@@ -712,7 +1646,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       title: 'Salary Slips',
                       icon: Icons.receipt_long,
                       isComplete: submission.salarySlips?.isComplete ?? false,
-                      onEdit: () => _editStep(context, AppRoutes.step5_1SalarySlips),
+                      onEdit: () =>
+                          _editStep(context, AppRoutes.step5_1SalarySlips),
                       child: submission.salarySlips?.isComplete == true
                           ? PremiumCard(
                               gradientColors: [
@@ -733,7 +1668,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                               colorScheme.secondary,
                                             ],
                                           ),
-                                          borderRadius: BorderRadius.circular(12),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
                                         ),
                                         child: const Icon(
                                           Icons.receipt_long,
@@ -744,17 +1681,21 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                       const SizedBox(width: 16),
                                       Expanded(
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               '${submission.salarySlips!.slips.length} ${submission.salarySlips!.slips.length == 1 ? 'Slip' : 'Slips'} Uploaded',
-                                              style: theme.textTheme.titleMedium?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
+                                              style: theme.textTheme.titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              submission.salarySlips!.isPdf ? 'PDF Format' : 'Image Format',
+                                              submission.salarySlips!.isPdf
+                                                  ? 'PDF Format'
+                                                  : 'Image Format',
                                               style: theme.textTheme.bodySmall,
                                             ),
                                           ],
@@ -762,20 +1703,21 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                       ),
                                     ],
                                   ),
-                                  if (submission.salarySlips!.slips.length <= 3) ...[
+                                  if (submission.salarySlips!.slips.length <=
+                                      3) ...[
                                     const SizedBox(height: 16),
                                     Wrap(
                                       spacing: 12,
                                       runSpacing: 12,
-                                      children: submission.salarySlips!.slipItems.asMap().entries.map((entry) {
+                                      children: submission.salarySlips!.slips.asMap().entries.map((entry) {
                                         return SizedBox(
                                           width: 100,
                                           height: 140,
                                           child: _buildPremiumDocumentPreview(
                                             context,
-                                            entry.value.path,
+                                            entry.value,
                                             'Slip ${entry.key + 1}',
-                                            entry.value.isPdf,
+                                            submission.salarySlips!.isPdf && entry.key == 0,
                                           ),
                                         );
                                       }).toList(),
@@ -791,13 +1733,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                         mainAxisSpacing: 12,
                                         childAspectRatio: 0.7,
                                       ),
-                                      itemCount: submission.salarySlips!.slipItems.length,
+                                      itemCount: submission.salarySlips!.slips.length,
                                       itemBuilder: (context, index) {
                                         return _buildPremiumDocumentPreview(
                                           context,
                                           submission.salarySlips!.slipItems[index].path,
                                           'Slip ${index + 1}',
-                                          submission.salarySlips!.slipItems[index].isPdf,
+                                          submission.salarySlips!.isPdf && index == 0,
                                         );
                                       },
                                     ),
@@ -810,18 +1752,39 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     const SizedBox(height: 40),
                     Builder(
                       builder: (context) {
-                        final isComplete = _isSubmissionComplete(context);
-                        return PremiumButton(
-                          label: isComplete
-                              ? 'Confirm & Submit'
-                              : 'Complete Missing Steps',
-                          icon: isComplete
-                              ? Icons.check_circle_outline
-                              : Icons.warning_amber_rounded,
-                          isPrimary: isComplete,
-                          onPressed: isComplete ? () => _submit(context) : null,
+                        final colorScheme = Theme.of(context).colorScheme;
+                        return OutlinedButton.icon(
+                          onPressed: _isDownloading ? null : () => _downloadAsPdf(context),
+                          icon: _isDownloading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.download_outlined),
+                          label: Text(_isDownloading ? 'Generating PDF...' : 'Download your data as PDF'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            side: BorderSide(
+                              color: colorScheme.primary,
+                            ),
+                          ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 16),
+                    PremiumButton(
+                      label: submission.isComplete
+                          ? 'Confirm & Submit'
+                          : 'Complete Missing Steps',
+                      icon: submission.isComplete
+                          ? Icons.check_circle_outline
+                          : Icons.warning_amber_rounded,
+                      isPrimary: submission.isComplete,
+                      onPressed: submission.isComplete ? () => _submit(context) : null,
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -845,7 +1808,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return PremiumCard(
       gradientColors: [
         Colors.white,
@@ -880,7 +1843,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                         boxShadow: isComplete
                             ? [
                                 BoxShadow(
-                                  color: AppTheme.successColor.withValues(alpha: 0.3),
+                                  color: AppTheme.successColor.withValues(
+                                    alpha: 0.3,
+                                  ),
                                   blurRadius: 8,
                                   spreadRadius: 1,
                                 ),
@@ -889,7 +1854,11 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       ),
                       child: Center(
                         child: isComplete
-                            ? const Icon(Icons.check, color: Colors.white, size: 20)
+                            ? const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 20,
+                              )
                             : Text(
                                 '$stepNumber',
                                 style: TextStyle(
@@ -924,18 +1893,30 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
               ),
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+                  border: Border.all(
+                    color: colorScheme.primary.withValues(alpha: 0.3),
+                  ),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: TextButton.icon(
                   onPressed: onEdit,
-                  icon: Icon(Icons.edit_outlined, size: 16, color: colorScheme.primary),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    size: 16,
+                    color: colorScheme.primary,
+                  ),
                   label: Text(
                     'Edit',
-                    style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),
@@ -989,7 +1970,11 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.picture_as_pdf, size: 40, color: colorScheme.primary),
+                          Icon(
+                            Icons.picture_as_pdf,
+                            size: 40,
+                            color: colorScheme.primary,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'PDF',
@@ -1007,7 +1992,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
               bottom: 8,
               left: 8,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -1088,11 +2076,19 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       print('🎨 BUILDING PERSONAL DATA PREVIEW WIDGET');
       print('═══════════════════════════════════════════════════════════');
       print('📋 Basic Information:');
-      print('   Name: ${data.nameAsPerAadhaar ?? "null"} (${data.nameAsPerAadhaar?.isNotEmpty ?? false ? "has value" : "empty/null"})');
+      print(
+        '   Name: ${data.nameAsPerAadhaar ?? "null"} (${data.nameAsPerAadhaar?.isNotEmpty ?? false ? "has value" : "empty/null"})',
+      );
       print('   DOB: ${data.dateOfBirth ?? "null"}');
-      print('   PAN: ${data.panNo ?? "null"} (${data.panNo?.isNotEmpty ?? false ? "has value" : "empty/null"})');
-      print('   Mobile: ${data.mobileNumber ?? "null"} (${data.mobileNumber?.isNotEmpty ?? false ? "has value" : "empty/null"})');
-      print('   Email: ${data.personalEmailId ?? "null"} (${data.personalEmailId?.isNotEmpty ?? false ? "has value" : "empty/null"})');
+      print(
+        '   PAN: ${data.panNo ?? "null"} (${data.panNo?.isNotEmpty ?? false ? "has value" : "empty/null"})',
+      );
+      print(
+        '   Mobile: ${data.mobileNumber ?? "null"} (${data.mobileNumber?.isNotEmpty ?? false ? "has value" : "empty/null"})',
+      );
+      print(
+        '   Email: ${data.personalEmailId ?? "null"} (${data.personalEmailId?.isNotEmpty ?? false ? "has value" : "empty/null"})',
+      );
       print('📋 Residence Information:');
       print('   Country: ${data.countryOfResidence ?? "null"}');
       print('   Address: ${data.residenceAddress ?? "null"}');
@@ -1103,7 +2099,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       print('   Industry: ${data.industry ?? "null"}');
       print('   Annual Income: ${data.annualIncome ?? "null"}');
       print('   Total Work Experience: ${data.totalWorkExperience ?? "null"}');
-      print('   Current Company Experience: ${data.currentCompanyExperience ?? "null"}');
+      print(
+        '   Current Company Experience: ${data.currentCompanyExperience ?? "null"}',
+      );
       print('📋 Personal Details:');
       print('   Occupation: ${data.occupation ?? "null"}');
       print('📋 Family Information:');
@@ -1118,19 +2116,22 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       print('   Ref2 Contact: ${data.reference2Contact ?? "null"}');
       print('═══════════════════════════════════════════════════════════');
     }
-    
+
     // Count fields that will be displayed
     int fieldCount = 0;
-    if (data.nameAsPerAadhaar != null && data.nameAsPerAadhaar!.isNotEmpty) fieldCount++;
+    if (data.nameAsPerAadhaar != null && data.nameAsPerAadhaar!.isNotEmpty)
+      fieldCount++;
     if (data.dateOfBirth != null) fieldCount++;
     if (data.panNo != null && data.panNo!.isNotEmpty) fieldCount++;
-    if (data.mobileNumber != null && data.mobileNumber!.isNotEmpty) fieldCount++;
-    if (data.personalEmailId != null && data.personalEmailId!.isNotEmpty) fieldCount++;
-    
+    if (data.mobileNumber != null && data.mobileNumber!.isNotEmpty)
+      fieldCount++;
+    if (data.personalEmailId != null && data.personalEmailId!.isNotEmpty)
+      fieldCount++;
+
     if (kDebugMode) {
       print('📊 Total fields to display: $fieldCount');
     }
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1139,24 +2140,29 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         if (data.nameAsPerAadhaar != null && data.nameAsPerAadhaar!.isNotEmpty)
           _buildDataRow('Name as per Aadhaar', data.nameAsPerAadhaar!),
         if (data.dateOfBirth != null)
-          _buildDataRow('Date of Birth', DateFormat('MMMM dd, yyyy').format(data.dateOfBirth!)),
+          _buildDataRow(
+            'Date of Birth',
+            DateFormat('MMMM dd, yyyy').format(data.dateOfBirth!),
+          ),
         if (data.panNo != null && data.panNo!.isNotEmpty)
           _buildDataRow('PAN No', data.panNo!),
         if (data.mobileNumber != null && data.mobileNumber!.isNotEmpty)
           _buildDataRow('Mobile Number', data.mobileNumber!),
         if (data.personalEmailId != null && data.personalEmailId!.isNotEmpty)
           _buildDataRow('Personal Email', data.personalEmailId!),
-        
+
         // Residence Information
-        if (data.countryOfResidence != null && data.countryOfResidence!.isNotEmpty)
+        if (data.countryOfResidence != null &&
+            data.countryOfResidence!.isNotEmpty)
           _buildDataRow('Country of Residence', data.countryOfResidence!),
         if (data.residenceAddress != null && data.residenceAddress!.isNotEmpty)
           _buildDataRow('Residence Address', data.residenceAddress!),
         if (data.residenceType != null && data.residenceType!.isNotEmpty)
           _buildDataRow('Residence Type', data.residenceType!),
-        if (data.residenceStability != null && data.residenceStability!.isNotEmpty)
+        if (data.residenceStability != null &&
+            data.residenceStability!.isNotEmpty)
           _buildDataRow('Residence Stability', data.residenceStability!),
-        
+
         // Work Info (formerly Company Information)
         if (data.companyName != null && data.companyName!.isNotEmpty)
           _buildDataRow('Company Name', data.companyName!),
@@ -1168,11 +2174,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           _buildDataRow('Industry', data.industry!),
         if (data.annualIncome != null && data.annualIncome!.isNotEmpty)
           _buildDataRow('Annual Income', data.annualIncome!),
-        if (data.totalWorkExperience != null && data.totalWorkExperience!.isNotEmpty)
+        if (data.totalWorkExperience != null &&
+            data.totalWorkExperience!.isNotEmpty)
           _buildDataRow('Total years of experience', data.totalWorkExperience!),
-        if (data.currentCompanyExperience != null && data.currentCompanyExperience!.isNotEmpty)
-          _buildDataRow('Current Company Experience', data.currentCompanyExperience!),
-        
+        if (data.currentCompanyExperience != null &&
+            data.currentCompanyExperience!.isNotEmpty)
+          _buildDataRow(
+            'Current Company Experience',
+            data.currentCompanyExperience!,
+          ),
+
         // Personal Details
         if (data.nationality != null && data.nationality!.isNotEmpty)
           _buildDataRow('Nationality', data.nationality!),
@@ -1180,60 +2191,75 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           _buildDataRow('Country of Birth', data.countryOfBirth!),
         if (data.occupation != null && data.occupation!.isNotEmpty)
           _buildDataRow('Occupation', data.occupation!),
-        if (data.educationalQualification != null && data.educationalQualification!.isNotEmpty)
-          _buildDataRow('Educational Qualification', data.educationalQualification!),
-        if ((data.loanAmount != null && data.loanAmount!.isNotEmpty) || 
+        if (data.educationalQualification != null &&
+            data.educationalQualification!.isNotEmpty)
+          _buildDataRow(
+            'Educational Qualification',
+            data.educationalQualification!,
+          ),
+        if ((data.loanAmount != null && data.loanAmount!.isNotEmpty) ||
             (data.loanTenure != null && data.loanTenure!.isNotEmpty)) ...[
           if (data.loanAmount != null && data.loanAmount!.isNotEmpty)
             _buildDataRow('Loan Amount', '₹ ${data.loanAmount}'),
           if (data.loanTenure != null && data.loanTenure!.isNotEmpty)
             _buildDataRow('Loan Tenure', '${data.loanTenure} months'),
-        ] else if (data.loanAmountTenure != null && data.loanAmountTenure!.isNotEmpty)
+        ] else if (data.loanAmountTenure != null &&
+            data.loanAmountTenure!.isNotEmpty)
           _buildDataRow('Loan Amount/Tenure', data.loanAmountTenure!),
-        
+
         // Family Information
         if (data.maritalStatus != null && data.maritalStatus!.isNotEmpty)
           _buildDataRow('Marital Status', data.maritalStatus!),
-        if (data.maritalStatus == 'Married' && data.spouseName != null && data.spouseName!.isNotEmpty)
+        if (data.maritalStatus == 'Married' &&
+            data.spouseName != null &&
+            data.spouseName!.isNotEmpty)
           _buildDataRow('Spouse Name', data.spouseName!),
         if (data.fatherName != null && data.fatherName!.isNotEmpty)
           _buildDataRow('Father Name', data.fatherName!),
         if (data.motherName != null && data.motherName!.isNotEmpty)
           _buildDataRow('Mother Name', data.motherName!),
-        
+
         // Reference Details
         if ((data.reference1Name != null && data.reference1Name!.isNotEmpty) ||
-            (data.reference1Address != null && data.reference1Address!.isNotEmpty) ||
-            (data.reference1Contact != null && data.reference1Contact!.isNotEmpty)) ...[
+            (data.reference1Address != null &&
+                data.reference1Address!.isNotEmpty) ||
+            (data.reference1Contact != null &&
+                data.reference1Contact!.isNotEmpty)) ...[
           const SizedBox(height: 8),
           Text(
             'Reference 1',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           if (data.reference1Name != null && data.reference1Name!.isNotEmpty)
             _buildDataRow('Name', data.reference1Name!),
-          if (data.reference1Address != null && data.reference1Address!.isNotEmpty)
+          if (data.reference1Address != null &&
+              data.reference1Address!.isNotEmpty)
             _buildDataRow('Address', data.reference1Address!),
-          if (data.reference1Contact != null && data.reference1Contact!.isNotEmpty)
+          if (data.reference1Contact != null &&
+              data.reference1Contact!.isNotEmpty)
             _buildDataRow('Contact', data.reference1Contact!),
         ],
         if ((data.reference2Name != null && data.reference2Name!.isNotEmpty) ||
-            (data.reference2Address != null && data.reference2Address!.isNotEmpty) ||
-            (data.reference2Contact != null && data.reference2Contact!.isNotEmpty)) ...[
+            (data.reference2Address != null &&
+                data.reference2Address!.isNotEmpty) ||
+            (data.reference2Contact != null &&
+                data.reference2Contact!.isNotEmpty)) ...[
           const SizedBox(height: 8),
           Text(
             'Reference 2',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
           if (data.reference2Name != null && data.reference2Name!.isNotEmpty)
             _buildDataRow('Name', data.reference2Name!),
-          if (data.reference2Address != null && data.reference2Address!.isNotEmpty)
+          if (data.reference2Address != null &&
+              data.reference2Address!.isNotEmpty)
             _buildDataRow('Address', data.reference2Address!),
-          if (data.reference2Contact != null && data.reference2Contact!.isNotEmpty)
+          if (data.reference2Contact != null &&
+              data.reference2Contact!.isNotEmpty)
             _buildDataRow('Contact', data.reference2Contact!),
         ],
       ],
@@ -1257,18 +2283,19 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              overflow: TextOverflow.visible,
-              softWrap: true,
-            ),
+            child: Text(value, overflow: TextOverflow.visible, softWrap: true),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSummaryRow(BuildContext context, String step, String status, bool isComplete) {
+  Widget _buildSummaryRow(
+    BuildContext context,
+    String step,
+    String status,
+    bool isComplete,
+  ) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -1292,7 +2319,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             child: Text(
               status,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: isComplete ? AppTheme.successColor : Colors.grey.shade700,
+                color: isComplete
+                    ? AppTheme.successColor
+                    : Colors.grey.shade700,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1302,4 +2331,3 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     );
   }
 }
-

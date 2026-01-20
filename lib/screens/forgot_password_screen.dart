@@ -124,7 +124,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Enter your email address and we\'ll send you a temporary password',
+                        'Enter your email address or phone number and we\'ll generate a temporary password',
                         style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -133,19 +133,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       const SizedBox(height: 48),
                       TextFormField(
                         controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
+                        keyboardType: TextInputType.text,
                         decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: Icon(Icons.email_outlined),
+                          labelText: 'Email or Phone',
+                          hintText: 'Enter email or phone number',
+                          prefixIcon: Icon(Icons.person_outlined),
                           border: OutlineInputBorder(),
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Please enter your email';
+                            return 'Please enter your email or phone';
                           }
-                          // Basic email validation
-                          if (!value.contains('@') || !value.contains('.')) {
-                            return 'Please enter a valid email';
+                          // Basic validation - either email format or phone (digits only)
+                          final isEmail = value.contains('@') && value.contains('.');
+                          final isPhone = RegExp(r'^\d{10,}$').hasMatch(value);
+                          if (!isEmail && !isPhone) {
+                            return 'Please enter a valid email or phone number';
                           }
                           return null;
                         },

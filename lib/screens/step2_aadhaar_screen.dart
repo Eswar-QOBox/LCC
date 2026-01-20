@@ -59,20 +59,66 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
 
+    // Refresh application data from backend to get the latest saved data
+    try {
+      await appProvider.refreshApplication();
+    } catch (e) {
+      debugPrint('Aadhaar Screen: Failed to refresh application: $e');
+    }
+
     final application = appProvider.currentApplication!;
     if (application.step2Aadhaar != null) {
       final stepData = application.step2Aadhaar as Map<String, dynamic>;
-      if (stepData['frontPath'] != null) {
-        setState(() {
-          _frontPath = stepData['frontPath'] as String;
-          _frontIsPdf = stepData['frontIsPdf'] as bool? ?? false;
-        });
+      final frontUpload = stepData['frontUpload'] as Map<String, dynamic>?;
+      final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
+      final frontPath = stepData['frontPath'] as String?;
+      final backPath = stepData['backPath'] as String?;
+      final frontIsPdf = stepData['frontIsPdf'] as bool? ?? false;
+      final backIsPdf = stepData['backIsPdf'] as bool? ?? false;
+      final frontPdfPassword = stepData['frontPdfPassword'] as String?;
+      final backPdfPassword = stepData['backPdfPassword'] as String?;
+
+      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
+      String? buildFullUrl(String? relativeUrl) {
+        if (relativeUrl == null || relativeUrl.isEmpty) return null;
+        if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) {
+          return relativeUrl;
+        }
+        // Convert /uploads/aadhaar/... to /api/v1/uploads/files/aadhaar/...
+        String apiPath = relativeUrl;
+        if (apiPath.startsWith('/uploads/') &&
+            !apiPath.contains('/uploads/files/')) {
+          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+        } else if (!apiPath.startsWith('/api/')) {
+          apiPath = '/api/v1$apiPath';
+        }
+        return 'http://localhost:5000$apiPath';
       }
-      if (stepData['backPath'] != null) {
+      
+      // Prefer uploaded file URL over local blob path
+      final effectiveFront = buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
+      final effectiveBack = buildFullUrl(backUpload?['url'] as String?) ?? backPath;
+      
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
-          _backPath = stepData['backPath'] as String;
-          _backIsPdf = stepData['backIsPdf'] as bool? ?? false;
+          _frontPath = effectiveFront;
+          _frontIsPdf = frontIsPdf;
+          _frontPdfPassword = frontPdfPassword;
         });
+        // Also update SubmissionProvider
+        context
+            .read<SubmissionProvider>()
+            .setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
+      }
+      if (effectiveBack != null && effectiveBack.isNotEmpty) {
+        setState(() {
+          _backPath = effectiveBack;
+          _backIsPdf = backIsPdf;
+          _backPdfPassword = backPdfPassword;
+        });
+        context
+            .read<SubmissionProvider>()
+            .setAadhaarBack(effectiveBack, isPdf: backIsPdf);
       }
     }
   }

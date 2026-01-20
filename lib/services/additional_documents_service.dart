@@ -77,34 +77,85 @@ class AdditionalDocumentsService {
     try {
       final response = await _apiClient.get('/api/v1/uploads/user/$userId');
 
+      print('=== getUserDocuments API Response ===');
+      print('Status Code: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = response.data;
+        print('Response success: ${data['success']}');
+        print('Has documents: ${data['data']?['documents'] != null}');
+        
         if (data['success'] == true && data['data']?['documents'] != null) {
           final documents = data['data']['documents'] as List;
+          print('Total documents from API: ${documents.length}');
           
-          // Filter for additional documents
+          // Debug: Print all documents before filtering
+          for (var doc in documents) {
+            print('Raw doc - folder: ${doc['folder']}, category: ${doc['category']}, status: ${doc['status']}, name: ${doc['name']}');
+          }
+          
+          // Filter for additional documents AND regular documents (selfies, aadhaar, pan, etc.)
           // Documents uploaded to additional_documents/{doc_type} will have folder = doc_type
-          // The folder field contains the document type ID (e.g., 'applicant_aadhaar', 'spouse_pan')
+          // Regular documents are in folders like: selfies, aadhaar, pan, bank_statements, salary_slips
+          // The folder field contains the document type ID (e.g., 'applicant_aadhaar', 'spouse_pan', 'selfies')
+          // IMPORTANT: Always include rejected documents, even if they don't match the filter
           final additionalDocs = documents.where((doc) {
             final folder = doc['folder'] as String? ?? '';
             final category = doc['category'] as String? ?? '';
-            // Check if it matches document type patterns (applicant_*, spouse_*, custom_*)
-            // or if category indicates it's an additional document
-            return folder.startsWith('applicant_') ||
+            final status = (doc['status'] as String? ?? '').toLowerCase();
+            
+            // Always include rejected documents (they need to be shown for re-upload)
+            if (status == 'rejected') {
+              print('Including rejected document - folder: $folder, category: $category, status: $status');
+              return true;
+            }
+            
+            // Regular document folders (selfies, aadhaar, pan, etc.)
+            final regularDocFolders = ['selfies', 'aadhaar', 'pan', 'bank_statements', 'salary_slips'];
+            if (regularDocFolders.contains(folder.toLowerCase())) {
+              print('Including regular document - folder: $folder');
+              return true;
+            }
+            
+            // For other documents, check if they match additional document patterns
+            final matches = folder.startsWith('applicant_') ||
                    folder.startsWith('spouse_') ||
                    folder.startsWith('custom_') ||
                    category.toLowerCase().contains('additional') ||
                    category.toLowerCase().contains('applicant') ||
                    category.toLowerCase().contains('spouse');
+            if (matches) {
+              print('Document matches filter - folder: $folder, category: $category');
+            }
+            return matches;
           }).toList();
 
-          return additionalDocs
-              .map((doc) => UploadedDocument.fromJson(doc as Map<String, dynamic>))
+          print('Filtered additional documents: ${additionalDocs.length}');
+
+          final result = additionalDocs
+              .map((doc) {
+                try {
+                  return UploadedDocument.fromJson(doc as Map<String, dynamic>);
+                } catch (e) {
+                  print('Error parsing document: $e, doc: $doc');
+                  return null;
+                }
+              })
+              .whereType<UploadedDocument>()
               .toList();
+          
+          print('Final parsed documents: ${result.length}');
+          for (var doc in result) {
+            print('Parsed doc - type: ${doc.documentType}, status: ${doc.status}, file: ${doc.fileName}');
+          }
+          
+          return result;
         }
       }
+      print('No documents returned from API');
       return [];
     } catch (e) {
+      print('Error in getUserDocuments: $e');
       throw Exception('Failed to get documents: $e');
     }
   }
