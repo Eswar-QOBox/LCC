@@ -41,8 +41,27 @@ class PlatformImage extends StatelessWidget {
           width: width,
           height: height,
           errorBuilder: (context, error, stackTrace) {
-            return const Center(
-              child: Icon(Icons.error, color: Colors.red),
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Image not available',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         );
@@ -68,8 +87,27 @@ class PlatformImage extends StatelessWidget {
         width: width,
         height: height,
         errorBuilder: (context, error, stackTrace) {
-          return const Center(
-            child: Icon(Icons.error, color: Colors.red),
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Image not available',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       );

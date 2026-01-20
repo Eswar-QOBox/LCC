@@ -21,4 +21,24 @@ class AppRoutes {
   
   // After Submission
   static const String submissionSuccess = '/submission-success';
+
+  /// Get the route for a specific step number
+  static String getStepRoute(int step) {
+    switch (step) {
+      case 1:
+        return step1Selfie;
+      case 2:
+        return step2Aadhaar;
+      case 3:
+        return step3Pan;
+      case 4:
+        return step4BankStatement;
+      case 5:
+        return step5PersonalData;
+      case 6:
+        return step6Preview;
+      default:
+        return step1Selfie;
+    }
+  }
 }

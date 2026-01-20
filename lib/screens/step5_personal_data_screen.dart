@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +12,7 @@ import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 
 void main() {
@@ -315,8 +317,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         setState(() {
           _dateOfBirth = picked;
         });
-        // Validate the form field after date selection
-        _formKey.currentState?.validate();
+        // Don't validate all fields - just update the state
+        // Validation will happen when user submits the form
       }
     } catch (e) {
       if (mounted) {
@@ -361,42 +363,116 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
 
     try {
       final personalData = PersonalData(
-        nameAsPerAadhaar: _nameAsPerAadhaarController.text.trim(),
+        nameAsPerAadhaar: _nameAsPerAadhaarController.text.trim().isEmpty 
+            ? null 
+            : _nameAsPerAadhaarController.text.trim(),
         dateOfBirth: _dateOfBirth,
-        panNo: _panNoController.text.trim().toUpperCase(),
-        mobileNumber: _mobileNumberController.text.trim(),
-        personalEmailId: _personalEmailIdController.text.trim().toLowerCase(),
-        countryOfResidence: _countryOfResidenceController.text.trim(),
-        residenceAddress: _residenceAddressController.text.trim(),
-        residenceType: _residenceTypeController.text.trim(),
-        residenceStability: _residenceStabilityController.text.trim(),
-        companyName: _companyNameController.text.trim(),
-        companyAddress: _companyAddressController.text.trim(),
-        nationality: _nationalityController.text.trim(),
-        countryOfBirth: _countryOfBirthController.text.trim(),
-        occupation: _occupationController.text.trim(),
-        educationalQualification: _educationalQualificationController.text.trim(),
-        workType: _workTypeController.text.trim(),
-        industry: _industryController.text.trim(),
-        annualIncome: _annualIncomeController.text.trim(),
-        totalWorkExperience: _totalWorkExperienceController.text.trim(),
-        currentCompanyExperience: _currentCompanyExperienceController.text.trim(),
+        panNo: _panNoController.text.trim().isEmpty 
+            ? null 
+            : _panNoController.text.trim().toUpperCase(),
+        mobileNumber: _mobileNumberController.text.trim().isEmpty 
+            ? null 
+            : _mobileNumberController.text.trim(),
+        personalEmailId: _personalEmailIdController.text.trim().isEmpty 
+            ? null 
+            : _personalEmailIdController.text.trim().toLowerCase(),
+        countryOfResidence: _countryOfResidenceController.text.trim().isEmpty 
+            ? null 
+            : _countryOfResidenceController.text.trim(),
+        residenceAddress: _residenceAddressController.text.trim().isEmpty 
+            ? null 
+            : _residenceAddressController.text.trim(),
+        residenceType: _residenceTypeController.text.trim().isEmpty 
+            ? null 
+            : _residenceTypeController.text.trim(),
+        residenceStability: _residenceStabilityController.text.trim().isEmpty 
+            ? null 
+            : _residenceStabilityController.text.trim(),
+        companyName: _companyNameController.text.trim().isEmpty 
+            ? null 
+            : _companyNameController.text.trim(),
+        companyAddress: _companyAddressController.text.trim().isEmpty 
+            ? null 
+            : _companyAddressController.text.trim(),
+        nationality: _nationalityController.text.trim().isEmpty 
+            ? null 
+            : _nationalityController.text.trim(),
+        countryOfBirth: _countryOfBirthController.text.trim().isEmpty 
+            ? null 
+            : _countryOfBirthController.text.trim(),
+        occupation: _occupationController.text.trim().isEmpty 
+            ? null 
+            : _occupationController.text.trim(),
+        educationalQualification: _educationalQualificationController.text.trim().isEmpty 
+            ? null 
+            : _educationalQualificationController.text.trim(),
+        workType: _workTypeController.text.trim().isEmpty 
+            ? null 
+            : _workTypeController.text.trim(),
+        industry: _industryController.text.trim().isEmpty 
+            ? null 
+            : _industryController.text.trim(),
+        annualIncome: _annualIncomeController.text.trim().isEmpty 
+            ? null 
+            : _annualIncomeController.text.trim(),
+        totalWorkExperience: _totalWorkExperienceController.text.trim().isEmpty 
+            ? null 
+            : _totalWorkExperienceController.text.trim(),
+        currentCompanyExperience: _currentCompanyExperienceController.text.trim().isEmpty 
+            ? null 
+            : _currentCompanyExperienceController.text.trim(),
         loanAmount: _loanAmountController.text.trim().isEmpty ? null : _loanAmountController.text.trim(),
         loanTenure: _loanTenureController.text.trim().isEmpty ? null : _loanTenureController.text.trim(),
         loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
             ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
             : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
         maritalStatus: _maritalStatus,
-        spouseName: _spouseNameController.text.trim(),
-        fatherName: _fatherNameController.text.trim(),
-        motherName: _motherNameController.text.trim(),
-        reference1Name: _reference1NameController.text.trim(),
-        reference1Address: _reference1AddressController.text.trim(),
-        reference1Contact: _reference1ContactController.text.trim(),
-        reference2Name: _reference2NameController.text.trim(),
-        reference2Address: _reference2AddressController.text.trim(),
-        reference2Contact: _reference2ContactController.text.trim(),
+        spouseName: _spouseNameController.text.trim().isEmpty 
+            ? null 
+            : _spouseNameController.text.trim(),
+        fatherName: _fatherNameController.text.trim().isEmpty 
+            ? null 
+            : _fatherNameController.text.trim(),
+        motherName: _motherNameController.text.trim().isEmpty 
+            ? null 
+            : _motherNameController.text.trim(),
+        reference1Name: _reference1NameController.text.trim().isEmpty 
+            ? null 
+            : _reference1NameController.text.trim(),
+        reference1Address: _reference1AddressController.text.trim().isEmpty 
+            ? null 
+            : _reference1AddressController.text.trim(),
+        reference1Contact: _reference1ContactController.text.trim().isEmpty 
+            ? null 
+            : _reference1ContactController.text.trim(),
+        reference2Name: _reference2NameController.text.trim().isEmpty 
+            ? null 
+            : _reference2NameController.text.trim(),
+        reference2Address: _reference2AddressController.text.trim().isEmpty 
+            ? null 
+            : _reference2AddressController.text.trim(),
+        reference2Contact: _reference2ContactController.text.trim().isEmpty 
+            ? null 
+            : _reference2ContactController.text.trim(),
       );
+
+      // Debug: Check completeness and log missing fields
+      if (!personalData.isComplete) {
+        final missingFields = personalData.getMissingFields();
+        debugPrint('❌ PERSONAL DATA INCOMPLETE - Missing fields:');
+        for (final field in missingFields) {
+          debugPrint('   - $field');
+        }
+        debugPrint('📝 Current values:');
+        debugPrint('   Name: "${personalData.nameAsPerAadhaar ?? "null"}"');
+        debugPrint('   DOB: ${personalData.dateOfBirth ?? "null"}');
+        debugPrint('   PAN: "${personalData.panNo ?? "null"}"');
+        debugPrint('   Mobile: "${personalData.mobileNumber ?? "null"}"');
+        debugPrint('   Email: "${personalData.personalEmailId ?? "null"}"');
+        debugPrint('   Address: "${personalData.residenceAddress ?? "null"}"');
+      } else {
+        debugPrint('✅ PERSONAL DATA COMPLETE');
+      }
 
       // Save to provider
       if (mounted) {
@@ -485,8 +561,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
 
     final provider = context.read<SubmissionProvider>();
     
-    // Save current form data to provider (even if incomplete - it's a draft)
+      // Save current form data to provider (even if incomplete - it's a draft)
     try {
+      debugPrint('💾 SAVING DRAFT - Personal Data');
+      debugPrint('   Name: "${_nameAsPerAadhaarController.text.trim()}"');
+      debugPrint('   DOB: ${_dateOfBirth ?? "null"}');
+      debugPrint('   PAN: "${_panNoController.text.trim()}"');
+      debugPrint('   Mobile: "${_mobileNumberController.text.trim()}"');
+      debugPrint('   Email: "${_personalEmailIdController.text.trim()}"');
+      debugPrint('   Address: "${_residenceAddressController.text.trim()}"');
+      
       final personalData = PersonalData(
         nameAsPerAadhaar: _nameAsPerAadhaarController.text.trim().isEmpty 
             ? null 
@@ -588,6 +672,14 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       // Save to provider
       if (mounted) {
         provider.setPersonalData(personalData);
+        
+        // Debug: Check completeness after saving
+        debugPrint('📊 DRAFT SAVED - Completeness check:');
+        debugPrint('   Is Complete: ${personalData.isComplete}');
+        if (!personalData.isComplete) {
+          final missingFields = personalData.getMissingFields();
+          debugPrint('   Missing Fields: ${missingFields.join(", ")}');
+        }
       }
 
       final success = await provider.saveDraft();
@@ -689,76 +781,22 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     ),
                   ],
                 ),
-                child: AppBar(
-                  title: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              colorScheme.primary,
-                              colorScheme.secondary,
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [
-                            BoxShadow(
-                              color: colorScheme.primary.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.person,
-                          color: colorScheme.onPrimary,
-                          size: 20,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text(
-                        'Personal Information',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 20,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  leading: Container(
-                    margin: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.surface,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: colorScheme.shadow.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                      onPressed: _isSaving ? null : () {
-                        if (mounted && context.mounted) {
-                          try {
-                            context.go(AppRoutes.step4BankStatement);
-                          } catch (e) {
-                            if (Navigator.canPop(context)) {
-                              Navigator.pop(context);
-                            }
-                          }
+                child: AppHeader(
+                  title: 'Personal Information',
+                  icon: Icons.person,
+                  showBackButton: true,
+                  onBackPressed: _isSaving ? null : () {
+                    if (mounted && context.mounted) {
+                      try {
+                        context.go(AppRoutes.step5_1SalarySlips);
+                      } catch (e) {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
                         }
-                      },
-                      color: colorScheme.primary,
-                    ),
-                  ),
+                      }
+                    }
+                  },
+                  showHomeButton: true,
                 ),
               ),
             StepProgressIndicator(currentStep: 5, totalSteps: 6),
@@ -1122,40 +1160,31 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               isRequired: false,
                             ),
                             const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: _buildPremiumTextField(
-                                    context,
-                                    controller: _loanAmountController,
-                                    label: 'Loan Amount',
-                                    icon: Icons.account_balance_wallet,
-                                    isRequired: false,
-                                    keyboardType: TextInputType.number,
-                                    hintText: 'e.g., 500000',
-                                    prefixText: '₹ ',
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildPremiumTextField(
-                                    context,
-                                    controller: _loanTenureController,
-                                    label: 'Tenure',
-                                    icon: Icons.calendar_today,
-                                    isRequired: false,
-                                    keyboardType: TextInputType.number,
-                                    hintText: 'Months',
-                                    suffixText: ' months',
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                  ),
-                                ),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _loanAmountController,
+                              label: 'Loan Amount',
+                              icon: Icons.account_balance_wallet,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'e.g., 500000',
+                              prefixText: '₹ ',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _loanTenureController,
+                              label: 'Tenure',
+                              icon: Icons.calendar_today,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'Months',
+                              suffixText: ' months',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
                               ],
                             ),
                           ],

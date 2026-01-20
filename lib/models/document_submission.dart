@@ -32,15 +32,48 @@ class DocumentSubmission {
         salarySlips != null &&
         salarySlips!.isComplete;
   }
+
+  /// Debug method to check which parts are missing
+  List<String> getMissingParts() {
+    final missing = <String>[];
+    if (selfiePath == null) {
+      missing.add('Selfie');
+    }
+    if (aadhaar == null || !aadhaar!.isComplete) {
+      missing.add('Aadhaar (${aadhaar == null ? "not uploaded" : "incomplete"})');
+    }
+    if (pan == null || !pan!.isComplete) {
+      missing.add('PAN (${pan == null ? "not uploaded" : "incomplete"})');
+    }
+    if (bankStatement == null || !bankStatement!.isComplete) {
+      missing.add('Bank Statement (${bankStatement == null ? "not uploaded" : "incomplete"})');
+    }
+    if (personalData == null || !personalData!.isComplete) {
+      if (personalData == null) {
+        missing.add('Personal Data (not filled)');
+      } else {
+        final missingFields = personalData!.getMissingFields();
+        missing.add('Personal Data - Missing: ${missingFields.join(", ")}');
+      }
+    }
+    if (salarySlips == null || !salarySlips!.isComplete) {
+      missing.add('Salary Slips (${salarySlips == null ? "not uploaded" : "incomplete"})');
+    }
+    return missing;
+  }
 }
 
 class AadhaarDocument {
   String? frontPath;
   String? backPath;
+  bool frontIsPdf;
+  bool backIsPdf;
 
   AadhaarDocument({
     this.frontPath,
     this.backPath,
+    this.frontIsPdf = false,
+    this.backIsPdf = false,
   });
 
   bool get isComplete => frontPath != null && backPath != null;
@@ -48,9 +81,11 @@ class AadhaarDocument {
 
 class PanDocument {
   String? frontPath;
+  bool isPdf;
 
   PanDocument({
     this.frontPath,
+    this.isPdf = false,
   });
 
   bool get isComplete => frontPath != null;
@@ -75,10 +110,12 @@ class BankStatement {
 class SalarySlipItem {
   String path;
   DateTime? slipDate; // Date of the payslip (date, month, year)
+  bool isPdf; // Track if this item is a PDF file
 
   SalarySlipItem({
     required this.path,
     this.slipDate,
+    this.isPdf = false,
   });
 }
 
@@ -190,16 +227,40 @@ class PersonalData {
 
   bool get isComplete {
     return nameAsPerAadhaar != null &&
-        nameAsPerAadhaar!.isNotEmpty &&
+        nameAsPerAadhaar!.trim().isNotEmpty &&
         dateOfBirth != null &&
         panNo != null &&
-        panNo!.isNotEmpty &&
+        panNo!.trim().isNotEmpty &&
         mobileNumber != null &&
-        mobileNumber!.isNotEmpty &&
+        mobileNumber!.trim().isNotEmpty &&
         personalEmailId != null &&
-        personalEmailId!.isNotEmpty &&
+        personalEmailId!.trim().isNotEmpty &&
         residenceAddress != null &&
-        residenceAddress!.isNotEmpty;
+        residenceAddress!.trim().isNotEmpty;
+  }
+
+  /// Debug method to check which fields are missing
+  List<String> getMissingFields() {
+    final missing = <String>[];
+    if (nameAsPerAadhaar == null || nameAsPerAadhaar!.trim().isEmpty) {
+      missing.add('Name as per Aadhaar');
+    }
+    if (dateOfBirth == null) {
+      missing.add('Date of Birth');
+    }
+    if (panNo == null || panNo!.trim().isEmpty) {
+      missing.add('PAN No');
+    }
+    if (mobileNumber == null || mobileNumber!.trim().isEmpty) {
+      missing.add('Mobile Number');
+    }
+    if (personalEmailId == null || personalEmailId!.trim().isEmpty) {
+      missing.add('Personal Email ID');
+    }
+    if (residenceAddress == null || residenceAddress!.trim().isEmpty) {
+      missing.add('Residence Address');
+    }
+    return missing;
   }
 }
 

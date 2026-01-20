@@ -1,11 +1,15 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
+import '../utils/app_routes.dart';
+import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
+import '../widgets/premium_card.dart';
+import '../widgets/premium_button.dart';
+import '../widgets/skeleton_box.dart';
 
 class ApplicationsScreen extends StatefulWidget {
   const ApplicationsScreen({super.key});
@@ -108,7 +112,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                         const SizedBox(width: 16),
                         Expanded(
                           child: Text(
-                            'My Applications',
+                            AppStrings.applicationsTitle,
                             style: theme.textTheme.headlineMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
@@ -139,9 +143,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                           fontWeight: FontWeight.w500,
                         ),
                         tabs: const [
-                          Tab(text: 'Applied'),
-                          Tab(text: 'Approved'),
-                          Tab(text: 'Incomplete'),
+                          Tab(text: AppStrings.tabApplied),
+                          Tab(text: AppStrings.tabApproved),
+                          Tab(text: AppStrings.tabIncomplete),
                         ],
                       ),
                     ),
@@ -152,12 +156,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
               // Content
               Expanded(
                 child: _isLoading
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24.0),
-                          child: CircularProgressIndicator(),
-                        ),
-                      )
+                    ? _buildLoadingState()
                     : _error != null
                         ? ListView(
                             padding: const EdgeInsets.all(24),
@@ -176,7 +175,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
-                                      'Error Loading Applications',
+                                      AppStrings.errorLoadingApplications,
                                       style: theme.textTheme.titleLarge?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -191,7 +190,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                                     ),
                                     const SizedBox(height: 16),
                                     PremiumButton(
-                                      label: 'Retry',
+                                      label: AppStrings.retry,
                                       icon: Icons.refresh,
                                       isPrimary: false,
                                       onPressed: _loadApplications,
@@ -241,35 +240,35 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     IconData loanIcon;
     Color loanColor;
     switch (application.loanType) {
-      case 'Personal Loan':
+      case AppStrings.loanTypePersonal:
         loanIcon = Icons.person;
         loanColor = colorScheme.primary;
         break;
-      case 'Car Loan':
+      case AppStrings.loanTypeCar:
         loanIcon = Icons.directions_car;
         loanColor = AppTheme.infoColor;
         break;
-      case 'Home Loan':
+      case AppStrings.loanTypeHome:
         loanIcon = Icons.home;
         loanColor = AppTheme.successColor;
         break;
-      case 'Business Loan':
+      case AppStrings.loanTypeBusiness:
         loanIcon = Icons.business;
         loanColor = AppTheme.warningColor;
         break;
-      case 'Education Loan':
+      case AppStrings.loanTypeEducation:
         loanIcon = Icons.school;
         loanColor = colorScheme.secondary;
         break;
-      case 'Mortgage Loan':
+      case AppStrings.loanTypeMortgage:
         loanIcon = Icons.home_work;
         loanColor = const Color(0xFF7C3AED);
         break;
-      case 'Loan Against Property':
+      case AppStrings.loanTypeProperty:
         loanIcon = Icons.business_center;
         loanColor = const Color(0xFF14B8A6);
         break;
-      case 'Emergency Loan':
+      case AppStrings.loanTypeEmergency:
         loanIcon = Icons.emergency;
         loanColor = const Color(0xFFDC2626);
         break;
@@ -286,23 +285,23 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     if (application.isApproved) {
       statusColor = AppTheme.successColor;
       statusIcon = Icons.check_circle;
-      statusDescription = 'Repayment Scheduled';
+      statusDescription = AppStrings.statusRepaymentScheduled;
     } else if (application.isSubmitted) {
       statusColor = AppTheme.warningColor;
       statusIcon = Icons.pending_actions;
-      statusDescription = 'Under Review';
+      statusDescription = AppStrings.statusUnderReview;
     } else if (application.isDraft) {
       statusColor = colorScheme.onSurfaceVariant;
       statusIcon = Icons.edit;
-      statusDescription = 'Incomplete Application';
+      statusDescription = AppStrings.statusIncomplete;
     } else if (application.isPaused) {
       statusColor = AppTheme.warningColor;
       statusIcon = Icons.pause_circle;
-      statusDescription = 'Continue where you left off';
+      statusDescription = AppStrings.statusContinue;
     } else {
       statusColor = AppTheme.infoColor;
       statusIcon = Icons.hourglass_empty;
-      statusDescription = 'In Progress';
+      statusDescription = AppStrings.statusInProgress;
     }
 
     return PremiumCard(
@@ -395,7 +394,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                   Expanded(
                     child: _buildDetailItem(
                       context,
-                      label: 'Loan Amount',
+                      label: AppStrings.loanAmountLabel,
                       value: '₹${_formatAmount(application.loanAmount!)}',
                     ),
                   ),
@@ -405,7 +404,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                   Expanded(
                     child: _buildDetailItem(
                       context,
-                      label: 'Interest',
+                      label: AppStrings.interestLabel,
                       value: '12.5%', // Default or from API
                     ),
                   ),
@@ -418,7 +417,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                 Expanded(
                   child: _buildDetailItem(
                     context,
-                    label: 'Tenure',
+                    label: AppStrings.tenureLabel,
                     value: '60 month', // Default or from API
                   ),
                 ),
@@ -426,7 +425,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                 Expanded(
                   child: _buildDetailItem(
                     context,
-                    label: 'EMI',
+                    label: AppStrings.emiLabel,
                     value: application.loanAmount != null
                         ? '₹${_calculateEMI(application.loanAmount!, 12.5, 60)}'
                         : 'N/A',
@@ -465,22 +464,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
   }
 
   String _getStepName(int step) {
-    switch (step) {
-      case 1:
-        return 'Step 1: Selfie';
-      case 2:
-        return 'Step 2: Aadhaar Card';
-      case 3:
-        return 'Step 3: PAN Card';
-      case 4:
-        return 'Step 4: Bank Statement';
-      case 5:
-        return 'Step 5: Personal Data';
-      case 6:
-        return 'Step 6: Preview';
-      default:
-        return 'Start Application';
-    }
+    return AppStrings.stepName(step);
   }
 
   String _calculateEMI(double principal, double rate, int months) {
@@ -551,22 +535,34 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'No Applications',
+                  AppStrings.noApplications,
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  _selectedTabIndex == 0
-                      ? 'Your submitted and in-progress applications will appear here'
-                      : _selectedTabIndex == 1
-                          ? 'Your approved applications will appear here'
-                          : 'Your incomplete draft applications will appear here',
+                  AppStrings.applicationsEmptyMessage(_selectedTabIndex),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                PremiumButton(
+                  label: AppStrings.startApplication,
+                  icon: Icons.add_circle_outline,
+                  isPrimary: true,
+                  onPressed: () => context.go(
+                    '${AppRoutes.instructions}?loanType=${AppStrings.loanTypePersonal}',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                PremiumButton(
+                  label: AppStrings.refresh,
+                  icon: Icons.refresh,
+                  isPrimary: false,
+                  onPressed: _loadApplications,
                 ),
               ],
             ),
@@ -600,5 +596,51 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       return '${(amount / 1000).toStringAsFixed(1)}K';
     }
     return amount.toStringAsFixed(0);
+  }
+
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: List.generate(
+        4,
+        (index) => Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: PremiumCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Row(
+                  children: [
+                    SkeletonBox(width: 40, height: 40),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SkeletonBox(height: 14),
+                          SizedBox(height: 8),
+                          SkeletonBox(width: 140, height: 12),
+                        ],
+                      ),
+                    ),
+                    SkeletonBox(width: 48, height: 48),
+                  ],
+                ),
+                SizedBox(height: 16),
+                SkeletonBox(width: 160, height: 16),
+                SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: SkeletonBox(height: 36)),
+                    SizedBox(width: 12),
+                    Expanded(child: SkeletonBox(height: 36)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

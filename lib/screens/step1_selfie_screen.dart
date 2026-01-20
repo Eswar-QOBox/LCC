@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
+import '../providers/submission_provider.dart';
 import '../services/document_service.dart';
 import '../services/file_upload_service.dart';
 import '../models/document_submission.dart';
@@ -12,6 +13,7 @@ import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
@@ -145,6 +147,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         setState(() {
           _imagePath = imageFile.path;
           _imageBytes = bytes;
+          // Reset validation when image changes - this will revert border to original color
           _validationResult = null;
         });
       }
@@ -287,6 +290,12 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         },
       );
 
+      // Also save to SubmissionProvider for consistency
+      if (mounted) {
+        final submissionProvider = context.read<SubmissionProvider>();
+        submissionProvider.setSelfie(_imagePath!);
+      }
+
       if (mounted) {
         PremiumToast.showSuccess(
           context,
@@ -347,9 +356,13 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     if (application.currentStep == 1 && application.step1Selfie != null) {
       final stepData = application.step1Selfie as Map<String, dynamic>;
       if (stepData['imagePath'] != null) {
+        final path = stepData['imagePath'] as String;
         setState(() {
-          _imagePath = stepData['imagePath'] as String;
+          _imagePath = path;
         });
+        // Also sync to SubmissionProvider
+        final submissionProvider = context.read<SubmissionProvider>();
+        submissionProvider.setSelfie(path);
         // Also load image bytes if available
         try {
           final imageFile = XFile(_imagePath!);
@@ -388,86 +401,13 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
         child: Column(
           children: [
-            // Premium AppBar
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                            colors: [
-                              colorScheme.surface,
-                              colorScheme.primary.withValues(alpha: 0.03),
-                            ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.face,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Identity Verification',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.home),
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
+            // Consistent Header
+            AppHeader(
+              title: 'Identity Verification',
+              icon: Icons.face,
+              showBackButton: true,
+              onBackPressed: () => context.go(AppRoutes.home),
+              showHomeButton: true,
             ),
             
             // Progress Indicator (below AppBar)
@@ -565,8 +505,8 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                           border: Border.all(
                             color: _validationResult?.isValid == true
                                 ? AppTheme.successColor
-                                : colorScheme.primary,
-                            width: 3,
+                                : colorScheme.primary.withValues(alpha: 0.5),
+                            width: _validationResult?.isValid == true ? 3 : 2,
                           ),
                         ),
                         child: ClipRRect(
@@ -718,9 +658,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                         const SizedBox(height: 20),
                       ],
                       // Action Buttons
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: double.infinity,
                             child: Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
@@ -739,8 +680,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
                             child: Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
@@ -759,42 +701,61 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
                             child: Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.secondary,
-                                  ],
-                                ),
+                                gradient: _validationResult?.isValid == true
+                                    ? LinearGradient(
+                                        colors: [
+                                          AppTheme.successColor,
+                                          AppTheme.successColor.withValues(alpha: 0.8),
+                                        ],
+                                      )
+                                    : LinearGradient(
+                                        colors: [
+                                          colorScheme.primary,
+                                          colorScheme.secondary,
+                                        ],
+                                      ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: colorScheme.primary.withValues(alpha: 0.4),
+                                    color: (_validationResult?.isValid == true
+                                            ? AppTheme.successColor
+                                            : colorScheme.primary)
+                                        .withValues(alpha: 0.4),
                                     blurRadius: 15,
                                     offset: const Offset(0, 5),
                                   ),
                                 ],
                               ),
                               child: ElevatedButton.icon(
-                                onPressed: _isValidating ? null : _validateImage,
+                                onPressed: (_isValidating || _validationResult?.isValid == true) 
+                                    ? null 
+                                    : _validateImage,
                                 icon: _isValidating
                                     ? SizedBox(
                                         width: 20,
                                         height: 20,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(colorScheme.onPrimary),
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                         ),
                                       )
-                                    : Icon(Icons.verified, color: colorScheme.onPrimary),
+                                    : Icon(
+                                        _validationResult?.isValid == true 
+                                            ? Icons.check_circle 
+                                            : Icons.verified, 
+                                        color: Colors.white,
+                                      ),
                                 label: Text(
-                                  'Validate',
+                                  _validationResult?.isValid == true 
+                                      ? 'Validated' 
+                                      : 'Validate',
                                   style: TextStyle(
-                                    color: colorScheme.onPrimary,
+                                    color: Colors.white,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -802,6 +763,8 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                                   padding: const EdgeInsets.symmetric(vertical: 16),
                                   backgroundColor: Colors.transparent,
                                   shadowColor: Colors.transparent,
+                                  disabledBackgroundColor: Colors.transparent,
+                                  disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
                                 ),
                               ),
                             ),
@@ -851,9 +814,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
-                            Row(
+                            Column(
                               children: [
-                                Expanded(
+                                SizedBox(
+                                  width: double.infinity,
                                   child: _buildCaptureButton(
                                     context,
                                     icon: Icons.camera_alt,
@@ -862,8 +826,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                                     isPrimary: true,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
                                   child: _buildCaptureButton(
                                     context,
                                     icon: Icons.photo_library,

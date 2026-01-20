@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_strings.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
+import '../models/loan_application.dart';
 import '../utils/app_theme.dart';
 
 class InstructionsScreen extends StatefulWidget {
@@ -61,47 +64,10 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   ),
                 ],
               ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).colorScheme.primary,
-                            Theme.of(context).colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.info_outline,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Application Guide',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
+              child: AppHeader(
+                title: 'Application Guide',
+                icon: Icons.info_outline,
+                showBackButton: true,
               ),
             ),
             Expanded(
@@ -163,6 +129,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             style: theme.textTheme.bodyLarge?.copyWith(
                               height: 1.6,
                             ),
+                            textAlign: TextAlign.justify,
                           ),
                         ],
                       ),
@@ -318,21 +285,23 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   onTap: () {
                                     context.push(AppRoutes.termsAndConditions);
                                   },
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        'I accept the ',
-                                        style: theme.textTheme.bodyLarge,
-                                      ),
-                                      Text(
-                                        'Terms & Conditions',
-                                        style: theme.textTheme.bodyLarge?.copyWith(
-                                          color: colorScheme.primary,
-                                          fontWeight: FontWeight.w600,
-                                          decoration: TextDecoration.underline,
+                                  child: RichText(
+                                    text: TextSpan(
+                                      style: theme.textTheme.bodyLarge,
+                                      children: [
+                                        const TextSpan(
+                                          text: 'I accept the ',
                                         ),
-                                      ),
-                                    ],
+                                        TextSpan(
+                                          text: 'Terms & Conditions',
+                                          style: theme.textTheme.bodyLarge?.copyWith(
+                                            color: colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                            decoration: TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -355,6 +324,31 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           isPrimary: termsAccepted && !_isCreatingApplication,
                           onPressed: (termsAccepted && !_isCreatingApplication)
                               ? () async {
+                                  // Check for in-progress applications first
+                                  try {
+                                    final applications = await _applicationService.getApplications(
+                                      status: 'all',
+                                      limit: 100,
+                                    );
+                                    
+                                    // Check if there's an in-progress application
+                                    final inProgressApps = applications.where(
+                                      (app) => app.isDraft || 
+                                              app.isInProgress || 
+                                              app.isPaused || 
+                                              app.isSubmitted,
+                                    ).toList();
+
+                                    // If we found an in-progress application, show dialog
+                                    if (inProgressApps.isNotEmpty && mounted) {
+                                      _showInProgressDialog(context, inProgressApps.first);
+                                      return;
+                                    }
+                                  } catch (e) {
+                                    // Error fetching applications, continue with creating new one
+                                    debugPrint('Error checking for in-progress applications: $e');
+                                  }
+
                                   // If loan type is provided, create application first
                                   if (widget.loanType != null) {
                                     setState(() {
@@ -362,6 +356,12 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     });
 
                                     try {
+                                      // Clear old draft data before creating new application
+                                      final submissionProvider = context.read<SubmissionProvider>();
+                                      await submissionProvider.clearDraft();
+                                      // Reset submission provider state
+                                      submissionProvider.resetSubmission();
+
                                       // Create new application with selected loan type
                                       final application = await _applicationService.createApplication(
                                         loanType: widget.loanType!,
@@ -418,7 +418,6 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         );
                       },
                     ),
-                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -426,6 +425,129 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showInProgressDialog(BuildContext context, LoanApplication application) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icon
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningColor.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.info_outline,
+                    color: AppTheme.warningColor,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Title
+                Text(
+                  AppStrings.applicationInProgressTitle,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                // Message
+                Text(
+                  AppStrings.applicationInProgressMessage,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                // Application details
+                PremiumCard(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.description,
+                        color: colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Loan Type: ${application.loanType}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              AppStrings.stepName(application.currentStep),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(AppStrings.cancel),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: PremiumButton(
+                        label: AppStrings.viewExistingApplication,
+                        icon: Icons.arrow_forward,
+                        isPrimary: true,
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          // Load application and navigate to the appropriate step
+                          final appProvider = context.read<ApplicationProvider>();
+                          appProvider.setApplication(application);
+                          context.go(AppRoutes.getStepRoute(application.currentStep));
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
