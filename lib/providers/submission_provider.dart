@@ -31,15 +31,17 @@ class SubmissionProvider with ChangeNotifier {
   }
 
   // Aadhaar
-  void setAadhaarFront(String path) {
+  void setAadhaarFront(String path, {bool isPdf = false}) {
     _submission.aadhaar ??= AadhaarDocument();
     _submission.aadhaar!.frontPath = path;
+    _submission.aadhaar!.frontIsPdf = isPdf;
     notifyListeners();
   }
 
-  void setAadhaarBack(String path) {
+  void setAadhaarBack(String path, {bool isPdf = false}) {
     _submission.aadhaar ??= AadhaarDocument();
     _submission.aadhaar!.backPath = path;
+    _submission.aadhaar!.backIsPdf = isPdf;
     notifyListeners();
   }
 
@@ -77,15 +79,15 @@ class SubmissionProvider with ChangeNotifier {
   void setSalarySlips(List<String> slips, {bool isPdf = false}) {
     _submission.salarySlips ??= SalarySlips(isPdf: isPdf);
     // Convert list of paths to SalarySlipItem list
-    _submission.salarySlips!.slipItems = slips.map((path) => SalarySlipItem(path: path)).toList();
+    _submission.salarySlips!.slipItems = slips.map((path) => SalarySlipItem(path: path, isPdf: isPdf)).toList();
     _submission.salarySlips!.isPdf = isPdf;
     notifyListeners();
   }
 
-  void addSalarySlip(String path, {DateTime? slipDate}) {
+  void addSalarySlip(String path, {DateTime? slipDate, bool isPdf = false}) {
     _submission.salarySlips ??= SalarySlips();
     _submission.salarySlips!.slipItems.add(
-      SalarySlipItem(path: path, slipDate: slipDate),
+      SalarySlipItem(path: path, slipDate: slipDate, isPdf: isPdf),
     );
     notifyListeners();
   }
@@ -352,6 +354,14 @@ class SubmissionProvider with ChangeNotifier {
     }
   }
 
+  /// Reset submission state (clear in-memory data)
+  void resetSubmission() {
+    _submission = DocumentSubmission();
+    _termsAccepted = false;
+    notifyListeners();
+    debugPrint('✅ Submission state reset');
+  }
+
   // JSON serialization helpers
   Map<String, dynamic> _submissionToJson(DocumentSubmission submission) {
     return {
@@ -360,6 +370,8 @@ class SubmissionProvider with ChangeNotifier {
           ? {
               'frontPath': submission.aadhaar!.frontPath,
               'backPath': submission.aadhaar!.backPath,
+              'frontIsPdf': submission.aadhaar!.frontIsPdf,
+              'backIsPdf': submission.aadhaar!.backIsPdf,
             }
           : null,
       'pan': submission.pan != null
@@ -417,6 +429,7 @@ class SubmissionProvider with ChangeNotifier {
               'slipItems': submission.salarySlips!.slipItems.map((item) => {
                 'path': item.path,
                 'slipDate': item.slipDate?.toIso8601String(),
+                'isPdf': item.isPdf, // Include isPdf for each item
               }).toList(),
               'slips': submission.salarySlips!.slips, // Legacy support
               'pdfPassword': submission.salarySlips!.pdfPassword,
@@ -442,6 +455,8 @@ class SubmissionProvider with ChangeNotifier {
       submission.aadhaar = AadhaarDocument(
         frontPath: aadhaarData['frontPath'] as String?,
         backPath: aadhaarData['backPath'] as String?,
+        frontIsPdf: aadhaarData['frontIsPdf'] as bool? ?? false,
+        backIsPdf: aadhaarData['backIsPdf'] as bool? ?? false,
       );
     }
 
@@ -510,6 +525,7 @@ class SubmissionProvider with ChangeNotifier {
       
       // Try to load from new format with dates
       List<SalarySlipItem> slipItems = [];
+      final isPdf = salaryData['isPdf'] as bool? ?? false;
       if (salaryData['slipItems'] != null) {
         final items = salaryData['slipItems'] as List<dynamic>;
         slipItems = items.map((item) {
@@ -519,12 +535,13 @@ class SubmissionProvider with ChangeNotifier {
             slipDate: itemMap['slipDate'] != null 
                 ? DateTime.tryParse(itemMap['slipDate'] as String)
                 : null,
+            isPdf: itemMap['isPdf'] as bool? ?? isPdf, // Use item-level isPdf or fallback to global
           );
         }).toList();
       } else if (salaryData['slips'] != null) {
         // Legacy format - convert to new format
         final slips = (salaryData['slips'] as List<dynamic>?)?.cast<String>() ?? [];
-        slipItems = slips.map((path) => SalarySlipItem(path: path)).toList();
+        slipItems = slips.map((path) => SalarySlipItem(path: path, isPdf: isPdf)).toList();
       }
       
       submission.salarySlips = SalarySlips(

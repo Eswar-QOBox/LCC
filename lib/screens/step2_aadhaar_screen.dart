@@ -17,6 +17,7 @@ import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
@@ -72,14 +73,21 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
       final frontPath = stepData['frontPath'] as String?;
       final backPath = stepData['backPath'] as String?;
-      
+      final frontIsPdf = stepData['frontIsPdf'] as bool? ?? false;
+      final backIsPdf = stepData['backIsPdf'] as bool? ?? false;
+      final frontPdfPassword = stepData['frontPdfPassword'] as String?;
+      final backPdfPassword = stepData['backPdfPassword'] as String?;
+
       // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
         if (relativeUrl == null || relativeUrl.isEmpty) return null;
-        if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
+        if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) {
+          return relativeUrl;
+        }
         // Convert /uploads/aadhaar/... to /api/v1/uploads/files/aadhaar/...
         String apiPath = relativeUrl;
-        if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
+        if (apiPath.startsWith('/uploads/') &&
+            !apiPath.contains('/uploads/files/')) {
           apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
         } else if (!apiPath.startsWith('/api/')) {
           apiPath = '/api/v1$apiPath';
@@ -94,15 +102,23 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
           _frontPath = effectiveFront;
+          _frontIsPdf = frontIsPdf;
+          _frontPdfPassword = frontPdfPassword;
         });
         // Also update SubmissionProvider
-        context.read<SubmissionProvider>().setAadhaarFront(effectiveFront);
+        context
+            .read<SubmissionProvider>()
+            .setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
       if (effectiveBack != null && effectiveBack.isNotEmpty) {
         setState(() {
           _backPath = effectiveBack;
+          _backIsPdf = backIsPdf;
+          _backPdfPassword = backPdfPassword;
         });
-        context.read<SubmissionProvider>().setAadhaarBack(effectiveBack);
+        context
+            .read<SubmissionProvider>()
+            .setAadhaarBack(effectiveBack, isPdf: backIsPdf);
       }
     }
   }
@@ -115,6 +131,65 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
+  void _removePdf() {
+    setState(() {
+      _frontPath = null;
+      _backPath = null;
+      _frontIsPdf = false;
+      _backIsPdf = false;
+      _frontPdfPassword = null;
+      _backPdfPassword = null;
+      _frontRotation = 0.0;
+      _backRotation = 0.0;
+      _resetDraftState();
+    });
+    // Clear Aadhaar data from provider by resetting to empty state
+    // The provider will be updated when user uploads new files
+    final provider = context.read<SubmissionProvider>();
+    // Reset Aadhaar in provider - we'll set it again when new files are uploaded
+    if (provider.submission.aadhaar != null) {
+      provider.submission.aadhaar = null;
+    }
+  }
+
+  void _removeFrontImage() {
+    setState(() {
+      _frontPath = null;
+      _frontIsPdf = false;
+      _frontRotation = 0.0;
+      _frontPdfPassword = null;
+      _resetDraftState();
+    });
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.aadhaar != null) {
+      provider.submission.aadhaar!.frontPath = null;
+      provider.submission.aadhaar!.frontIsPdf = false;
+      if (provider.submission.aadhaar!.frontPath == null && 
+          provider.submission.aadhaar!.backPath == null) {
+        provider.submission.aadhaar = null;
+      }
+    }
+  }
+
+  void _removeBackImage() {
+    setState(() {
+      _backPath = null;
+      _backIsPdf = false;
+      _backRotation = 0.0;
+      _backPdfPassword = null;
+      _resetDraftState();
+    });
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.aadhaar != null) {
+      provider.submission.aadhaar!.backPath = null;
+      provider.submission.aadhaar!.backIsPdf = false;
+      if (provider.submission.aadhaar!.frontPath == null && 
+          provider.submission.aadhaar!.backPath == null) {
+        provider.submission.aadhaar = null;
+      }
+    }
+  }
+
   Future<void> _captureFront() async {
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
@@ -124,7 +199,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _frontRotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setAadhaarFront(image.path);
+      context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
     }
   }
 
@@ -137,7 +212,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _frontRotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setAadhaarFront(image.path);
+      context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
     }
   }
 
@@ -150,7 +225,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _backRotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setAadhaarBack(image.path);
+      context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
     }
   }
 
@@ -163,11 +238,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _backRotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setAadhaarBack(image.path);
+      context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
     }
   }
 
-  Future<void> _uploadFrontPdf() async {
+  Future<void> _uploadPdf() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
@@ -197,54 +272,19 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       
       if (mounted) {
         setState(() {
+          // Set both front and back to the same PDF
           _frontPath = path;
-          _frontIsPdf = true;
-          _frontRotation = 0.0;
-          _resetDraftState();
-        });
-        context.read<SubmissionProvider>().setAadhaarFront(path);
-        _showPasswordDialogIfNeeded('front');
-      }
-    }
-  }
-
-  Future<void> _uploadBackPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
-
-    if (result != null && result.files.isNotEmpty) {
-      String path;
-      
-      if (kIsWeb) {
-        final bytes = result.files.single.bytes;
-        if (bytes == null) {
-          if (mounted) {
-            PremiumToast.showError(context, 'Unable to read PDF file');
-          }
-          return;
-        }
-        path = createBlobUrl(bytes, mimeType: 'application/pdf');
-      } else {
-        if (result.files.single.path == null) {
-          if (mounted) {
-            PremiumToast.showError(context, 'Unable to access file');
-          }
-          return;
-        }
-        path = result.files.single.path!;
-      }
-      
-      if (mounted) {
-        setState(() {
           _backPath = path;
+          _frontIsPdf = true;
           _backIsPdf = true;
+          _frontRotation = 0.0;
           _backRotation = 0.0;
           _resetDraftState();
         });
-        context.read<SubmissionProvider>().setAadhaarBack(path);
-        _showPasswordDialogIfNeeded('back');
+        final provider = context.read<SubmissionProvider>();
+        provider.setAadhaarFront(path, isPdf: true);
+        provider.setAadhaarBack(path, isPdf: true);
+        _showPasswordDialogIfNeeded('both');
       }
     }
   }
@@ -258,7 +298,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Is this PDF password protected? (${side == 'front' ? 'Front' : 'Back'} side)'),
+            Text('Is this PDF password protected?${side == 'both' ? '' : ' (${side == 'front' ? 'Front' : 'Back'} side)'}'),
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
@@ -282,7 +322,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 setState(() {
                   if (side == 'front') {
                     _frontPdfPassword = password.isNotEmpty ? password : null;
-                  } else {
+                  } else if (side == 'back') {
+                    _backPdfPassword = password.isNotEmpty ? password : null;
+                  } else if (side == 'both') {
+                    // For single PDF covering both sides, set same password for both
+                    _frontPdfPassword = password.isNotEmpty ? password : null;
                     _backPdfPassword = password.isNotEmpty ? password : null;
                   }
                 });
@@ -331,7 +375,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               _frontPath = tempFile.path;
               _resetDraftState();
             });
-            context.read<SubmissionProvider>().setAadhaarFront(tempFile.path);
+            context.read<SubmissionProvider>().setAadhaarFront(tempFile.path, isPdf: false);
             PremiumToast.showSuccess(context, 'Image rotated');
           }
         }
@@ -358,7 +402,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               _backPath = tempFile.path;
               _resetDraftState();
             });
-            context.read<SubmissionProvider>().setAadhaarBack(tempFile.path);
+            context.read<SubmissionProvider>().setAadhaarBack(tempFile.path, isPdf: false);
             PremiumToast.showSuccess(context, 'Image rotated');
           }
         }
@@ -460,10 +504,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     
     // Save current state to provider
     if (_frontPath != null) {
-      provider.setAadhaarFront(_frontPath!);
+      provider.setAadhaarFront(_frontPath!, isPdf: _frontIsPdf);
     }
     if (_backPath != null) {
-      provider.setAadhaarBack(_backPath!);
+      provider.setAadhaarBack(_backPath!, isPdf: _backIsPdf);
     }
 
     try {
@@ -523,85 +567,13 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         ),
         child: Column(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white,
-                    colorScheme.primary.withValues(alpha: 0.03),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.credit_card,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Aadhaar Card',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step1Selfie),
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
+            // Consistent Header
+            AppHeader(
+              title: 'Aadhaar Card',
+              icon: Icons.credit_card,
+              showBackButton: true,
+              onBackPressed: () => context.go(AppRoutes.step1Selfie),
+              showHomeButton: true,
             ),
             StepProgressIndicator(currentStep: 2, totalSteps: 6),
             Expanded(
@@ -677,9 +649,19 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    // Front & Back Side Preview
-                    if (_frontPath != null && _backPath != null) ...[
-                      // Use LayoutBuilder to handle overflow on small screens
+                    // Check if PDF is uploaded (single PDF for both sides)
+                    if (_frontIsPdf && _backIsPdf && _frontPath != null) ...[
+                      // Single PDF preview
+                      _buildSidePreview(
+                        context,
+                        'Aadhaar PDF',
+                        _frontPath!,
+                        onTap: _uploadPdf,
+                        onRemove: _removePdf,
+                        isPdf: true,
+                      ),
+                    ] else if (_frontPath != null && _backPath != null) ...[
+                      // Both images uploaded - show side by side
                       LayoutBuilder(
                         builder: (context, constraints) {
                           // On small screens, stack vertically; on larger screens, show side by side
@@ -691,6 +673,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   'Front',
                                   _frontPath!,
                                   onTap: _captureFront,
+                                  isPdf: _frontIsPdf,
+                                  onRetake: _captureFront,
+                                  onGallery: _selectFrontFromGallery,
+                                  onRemoveImage: _removeFrontImage,
                                 ),
                                 const SizedBox(height: 16),
                                 _buildSidePreview(
@@ -698,6 +684,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   'Back',
                                   _backPath!,
                                   onTap: _captureBack,
+                                  isPdf: _backIsPdf,
+                                  onRetake: _captureBack,
+                                  onGallery: _selectBackFromGallery,
+                                  onRemoveImage: _removeBackImage,
                                 ),
                               ],
                             );
@@ -710,6 +700,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     'Front',
                                     _frontPath!,
                                     onTap: _captureFront,
+                                    isPdf: _frontIsPdf,
+                                    onRetake: _captureFront,
+                                    onGallery: _selectFrontFromGallery,
+                                    onRemoveImage: _removeFrontImage,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
@@ -719,6 +713,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     'Back',
                                     _backPath!,
                                     onTap: _captureBack,
+                                    isPdf: _backIsPdf,
+                                    onRetake: _captureBack,
+                                    onGallery: _selectBackFromGallery,
+                                    onRemoveImage: _removeBackImage,
                                   ),
                                 ),
                               ],
@@ -727,6 +725,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                         },
                       ),
                     ] else ...[
+                      // Single PDF upload button (for both front and back)
+                      if (_frontPath == null && _backPath == null) ...[
+                        PremiumButton(
+                          label: 'Add PDF',
+                          icon: Icons.picture_as_pdf,
+                          isPrimary: false,
+                          onPressed: _uploadPdf,
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                       // Front Side
                       Text(
                         'Front Side',
@@ -737,7 +745,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_frontPath != null)
-                        _buildSidePreview(context, 'Front', _frontPath!, onTap: _captureFront)
+                        _buildSidePreview(
+                          context, 
+                          'Front', 
+                          _frontPath!, 
+                          onTap: _captureFront,
+                          isPdf: _frontIsPdf,
+                          onRetake: _captureFront,
+                          onGallery: _selectFrontFromGallery,
+                          onRemoveImage: _removeFrontImage,
+                        )
                       else
                         _buildUploadCard(
                           context,
@@ -745,7 +762,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           Icons.credit_card,
                           onCamera: _captureFront,
                           onGallery: _selectFrontFromGallery,
-                          onPdf: _uploadFrontPdf,
                         ),
                       const SizedBox(height: 24),
                       // Back Side
@@ -758,7 +774,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ),
                       const SizedBox(height: 16),
                       if (_backPath != null)
-                        _buildSidePreview(context, 'Back', _backPath!, onTap: _captureBack)
+                        _buildSidePreview(
+                          context, 
+                          'Back', 
+                          _backPath!, 
+                          onTap: _captureBack,
+                          isPdf: _backIsPdf,
+                          onRetake: _captureBack,
+                          onGallery: _selectBackFromGallery,
+                          onRemoveImage: _removeBackImage,
+                        )
                       else
                         _buildUploadCard(
                           context,
@@ -766,7 +791,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           Icons.credit_card,
                           onCamera: _captureBack,
                           onGallery: _selectBackFromGallery,
-                          onPdf: _uploadBackPdf,
                         ),
                     ],
                     const SizedBox(height: 40),
@@ -850,169 +874,220 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   Widget _buildSidePreview(
     BuildContext context,
     String label,
-    String path,
-    {required VoidCallback onTap}
-  ) {
+    String path, {
+    required VoidCallback onTap,
+    VoidCallback? onRemove,
+    bool isPdf = false,
+    VoidCallback? onRetake,
+    VoidCallback? onGallery,
+    VoidCallback? onRemoveImage,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 280,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.15),
-              blurRadius: 20,
-              spreadRadius: 1,
-              offset: const Offset(0, 8),
-            ),
-          ],
-          border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.3),
-            width: 2,
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Stack(
-            children: [
-              _frontIsPdf && label == 'Front'
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.picture_as_pdf,
-                            size: 60,
-                            color: colorScheme.primary,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'PDF',
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : _backIsPdf && label == 'Back'
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.picture_as_pdf,
-                                size: 60,
-                                color: colorScheme.primary,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'PDF',
-                                style: theme.textTheme.bodyLarge?.copyWith(
-                                  color: colorScheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Transform.rotate(
-                          angle: (label == 'Front' ? _frontRotation : _backRotation) * 3.14159 / 180,
-                          child: PlatformImage(imagePath: path, fit: BoxFit.cover),
-                        ),
-              Positioned(
-                top: 12,
-                left: 12,
-                right: 60, // Reserve space for camera button to prevent overflow
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  constraints: const BoxConstraints(
-                    maxWidth: double.infinity,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    label,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
+    final isFront = label == 'Front' || label == 'Aadhaar PDF';
+    final showPdf = (isFront && _frontIsPdf) || (!isFront && _backIsPdf);
+    
+    return Column(
+      children: [
+        Container(
+          height: 280,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.primary.withValues(alpha: 0.15),
+                blurRadius: 20,
+                spreadRadius: 1,
+                offset: const Offset(0, 8),
               ),
-              // Action buttons overlay
-              Positioned(
-                bottom: 12,
-                right: 12,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!((label == 'Front' && _frontIsPdf) || (label == 'Back' && _backIsPdf))) ...[
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+            ],
+            border: Border.all(
+              color: colorScheme.primary.withValues(alpha: 0.3),
+              width: 2,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                showPdf
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.picture_as_pdf,
+                              size: 60,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'PDF',
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
-                        child: IconButton(
-                          icon: const Icon(Icons.rotate_right, color: Colors.white, size: 20),
-                          onPressed: () => _rotateImage(label.toLowerCase()),
+                      )
+                    : Transform.rotate(
+                        angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
+                        child: PlatformImage(imagePath: path, fit: BoxFit.cover),
+                      ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      label,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                  ),
+                ),
+                // Remove button (X) for PDF and Images - top right
+                if ((showPdf && onRemove != null) || (!showPdf && onRemoveImage != null))
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: showPdf ? onRemove : onRemoveImage,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
                           padding: const EdgeInsets.all(10),
-                          constraints: const BoxConstraints(),
-                          tooltip: 'Rotate',
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.9),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.close, color: Colors.white, size: 20),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                    ],
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.camera_alt, color: Colors.white, size: 24),
-                        onPressed: onTap,
-                        padding: const EdgeInsets.all(12),
-                        constraints: const BoxConstraints(),
-                      ),
                     ),
-                  ],
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.1),
-                    ],
                   ),
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Action buttons below preview
+        if (!showPdf && onRetake != null && onGallery != null) ...[
+          const SizedBox(height: 16),
+          Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: PremiumButton(
+                      label: 'Retake',
+                      icon: Icons.camera_alt,
+                      isPrimary: false,
+                      onPressed: onRetake,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: PremiumButton(
+                      label: 'Re-upload from Gallery',
+                      icon: Icons.photo_library,
+                      isPrimary: false,
+                      onPressed: onGallery,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: colorScheme.primary),
+                    ),
+                    child: IconButton(
+                      onPressed: () => _rotateImage(label.toLowerCase()),
+                      icon: Icon(Icons.rotate_right, color: colorScheme.primary),
+                      tooltip: 'Rotate Image',
+                      padding: const EdgeInsets.all(16),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  label: 'Switch to PDF Upload',
+                  icon: Icons.picture_as_pdf,
+                  isPrimary: false,
+                  onPressed: () {
+                    // Remove current image(s) and trigger PDF upload
+                    if (label == 'Front') {
+                      _removeFrontImage();
+                    } else if (label == 'Back') {
+                      _removeBackImage();
+                    }
+                    // Trigger PDF upload dialog after a short delay to allow state update
+                    Future.delayed(const Duration(milliseconds: 200), () {
+                      if (mounted) {
+                        _uploadPdf();
+                      }
+                    });
+                  },
                 ),
               ),
             ],
           ),
-        ),
-      ),
+        ] else if (showPdf && onRemove != null) ...[
+          const SizedBox(height: 16),
+          Column(
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  label: 'Change PDF',
+                  icon: Icons.picture_as_pdf,
+                  isPrimary: false,
+                  onPressed: onTap,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  label: 'Switch to Photo Upload',
+                  icon: Icons.camera_alt,
+                  isPrimary: false,
+                  onPressed: () {
+                    // Remove PDF and allow photo upload
+                    onRemove();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
@@ -1022,7 +1097,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     IconData icon, {
     required VoidCallback onCamera,
     required VoidCallback onGallery,
-    VoidCallback? onPdf,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -1054,81 +1128,29 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          // Use Flexible/Expanded with proper constraints to prevent overflow
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // On very small screens, stack buttons vertically
-              if (constraints.maxWidth < 300) {
-                return Column(
-                  children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: PremiumButton(
-                        label: 'Camera',
-                        icon: Icons.camera_alt,
-                        isPrimary: false,
-                        onPressed: onCamera,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: PremiumButton(
-                        label: 'Gallery',
-                        icon: Icons.photo_library,
-                        isPrimary: false,
-                        onPressed: onGallery,
-                      ),
-                    ),
-                    if (onPdf != null) ...[
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: PremiumButton(
-                          label: 'Upload PDF',
-                          icon: Icons.picture_as_pdf,
-                          isPrimary: false,
-                          onPressed: onPdf,
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              } else {
-                return Row(
-                  children: [
-                    Expanded(
-                      child: PremiumButton(
-                        label: 'Camera',
-                        icon: Icons.camera_alt,
-                        isPrimary: false,
-                        onPressed: onCamera,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PremiumButton(
-                        label: 'Gallery',
-                        icon: Icons.photo_library,
-                        isPrimary: false,
-                        onPressed: onGallery,
-                      ),
-                    ),
-                    if (onPdf != null) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: PremiumButton(
-                          label: 'PDF',
-                          icon: Icons.picture_as_pdf,
-                          isPrimary: false,
-                          onPressed: onPdf,
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              }
-            },
+          // Stack buttons vertically for better fit
+          Column(
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  label: 'Camera',
+                  icon: Icons.camera_alt,
+                  isPrimary: false,
+                  onPressed: onCamera,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: PremiumButton(
+                  label: 'Gallery',
+                  icon: Icons.photo_library,
+                  isPrimary: false,
+                  onPressed: onGallery,
+                ),
+              ),
+            ],
           ),
         ],
       ),

@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'dart:io' as io;
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
+import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 
 class Step3PanScreen extends StatefulWidget {
@@ -27,6 +34,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   bool _isDraftSaved = false;
   bool _isSavingDraft = false;
   bool _isSaving = false;
+  bool _isPdf = false;
+  String? _pdfPassword;
+  double _rotation = 0.0;
 
   @override
   void initState() {
@@ -77,6 +87,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
           _frontPath = effectiveFront;
+          _isPdf = stepData['isPdf'] as bool? ?? false;
+          _pdfPassword = stepData['pdfPassword'] as String?;
         });
         // Also update SubmissionProvider
         context.read<SubmissionProvider>().setPanFront(effectiveFront);
@@ -95,7 +107,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     });
 
     try {
-      // Upload PAN image
+      // Upload PAN file (image or PDF)
       final panFile = XFile(_frontPath!);
       final uploadResult = await _fileUploadService.uploadPan(panFile);
 
@@ -105,6 +117,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         step3Pan: {
           'frontPath': _frontPath,
           'uploadedFile': uploadResult,
+          'isPdf': _isPdf,
+          'pdfPassword': _pdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
         },
       );
@@ -136,6 +150,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     if (image != null && mounted) {
       setState(() {
         _frontPath = image.path;
+        _isPdf = false;
+        _rotation = 0.0;
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path);
@@ -147,9 +163,140 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     if (image != null && mounted) {
       setState(() {
         _frontPath = image.path;
+        _isPdf = false;
+        _rotation = 0.0;
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path);
+    }
+  }
+
+  Future<void> _uploadPdf() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
+    );
+
+    if (result != null && result.files.isNotEmpty) {
+      String path;
+      
+      if (kIsWeb) {
+        final bytes = result.files.single.bytes;
+        if (bytes == null) {
+          if (mounted) {
+            PremiumToast.showError(context, 'Unable to read PDF file');
+          }
+          return;
+        }
+        path = createBlobUrl(bytes, mimeType: 'application/pdf');
+      } else {
+        if (result.files.single.path == null) {
+          if (mounted) {
+            PremiumToast.showError(context, 'Unable to access file');
+          }
+          return;
+        }
+        path = result.files.single.path!;
+      }
+      
+      if (mounted) {
+        setState(() {
+          _frontPath = path;
+          _isPdf = true;
+          _rotation = 0.0;
+          _resetDraftState();
+        });
+        context.read<SubmissionProvider>().setPanFront(path);
+        _showPasswordDialogIfNeeded();
+      }
+    }
+  }
+
+  void _showPasswordDialogIfNeeded() {
+    final passwordController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('PDF Password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Is this PDF password protected?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(
+                labelText: 'PDF Password (if required)',
+                hintText: 'Enter password or leave blank',
+              ),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final password = passwordController.text;
+              if (mounted) {
+                setState(() {
+                  _pdfPassword = password.isNotEmpty ? password : null;
+                });
+              }
+              Navigator.of(context).pop();
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _rotateImage() async {
+    if (kIsWeb) {
+      // On web, just update rotation angle for display
+      if (mounted) {
+        setState(() {
+          if (_frontPath != null && !_isPdf) {
+            _rotation = (_rotation + 90) % 360;
+            _resetDraftState();
+          }
+        });
+        PremiumToast.showSuccess(context, 'Image rotated');
+      }
+      return;
+    }
+
+    if (_frontPath != null && !_isPdf) {
+      try {
+        final imageBytes = await io.File(_frontPath!).readAsBytes();
+        final image = img.decodeImage(imageBytes);
+        if (image != null) {
+          final rotated = img.copyRotate(image, angle: 90);
+          final rotatedBytes = Uint8List.fromList(img.encodeJpg(rotated));
+          
+          // Save rotated image
+          final tempFile = io.File('${_frontPath!}_rotated_${DateTime.now().millisecondsSinceEpoch}.jpg');
+          await tempFile.writeAsBytes(rotatedBytes);
+          
+          if (mounted) {
+            setState(() {
+              _rotation = (_rotation + 90) % 360;
+              _frontPath = tempFile.path;
+              _resetDraftState();
+            });
+            context.read<SubmissionProvider>().setPanFront(tempFile.path);
+            PremiumToast.showSuccess(context, 'Image rotated');
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          PremiumToast.showError(context, 'Failed to rotate image: $e');
+        }
+      }
     }
   }
 
@@ -174,6 +321,39 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       setState(() {
         _isDraftSaved = false;
       });
+    }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _frontPath = null;
+      _isPdf = false;
+      _rotation = 0.0;
+      _pdfPassword = null;
+      _resetDraftState();
+    });
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.pan != null) {
+      provider.submission.pan!.frontPath = null;
+      if (provider.submission.pan!.frontPath == null) {
+        provider.submission.pan = null;
+      }
+    }
+  }
+
+  void _removePdf() {
+    setState(() {
+      _frontPath = null;
+      _isPdf = false;
+      _pdfPassword = null;
+      _resetDraftState();
+    });
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.pan != null) {
+      provider.submission.pan!.frontPath = null;
+      if (provider.submission.pan!.frontPath == null) {
+        provider.submission.pan = null;
+      }
     }
   }
 
@@ -248,86 +428,13 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         ),
         child: Column(
           children: [
-            // AppBar
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white,
-                    colorScheme.primary.withValues(alpha: 0.03),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.badge,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'PAN Card',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step2Aadhaar),
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
+            // Consistent Header
+            AppHeader(
+              title: 'PAN Card',
+              icon: Icons.badge,
+              showBackButton: true,
+              onBackPressed: () => context.go(AppRoutes.step2Aadhaar),
+              showHomeButton: true,
             ),
             // Premium Progress Indicator (below AppBar)
             StepProgressIndicator(currentStep: 3, totalSteps: 6),
@@ -446,9 +553,60 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                           borderRadius: BorderRadius.circular(22),
                           child: Stack(
                             children: [
-                              PlatformImage(
-                                imagePath: _frontPath!,
-                                fit: BoxFit.cover,
+                              _isPdf
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.picture_as_pdf,
+                                            size: 60,
+                                            color: colorScheme.primary,
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'PDF',
+                                            style: theme.textTheme.bodyLarge?.copyWith(
+                                              color: colorScheme.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : Transform.rotate(
+                                      angle: _rotation * 3.14159 / 180,
+                                      child: PlatformImage(
+                                        imagePath: _frontPath!,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                              // Remove button (X) for PDF and Images - top right
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: _isPdf ? _removePdf : _removeImage,
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withValues(alpha: 0.9),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.3),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Icon(Icons.close, color: Colors.white, size: 20),
+                                    ),
+                                  ),
+                                ),
                               ),
                               // Overlay gradient
                               Container(
@@ -472,16 +630,90 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                       const SizedBox(height: 24),
                       
                       // Action Buttons
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: PremiumButton(
-                              label: 'Change',
-                              icon: Icons.refresh,
-                              isPrimary: false,
-                              onPressed: _captureFromCamera,
+                          if (!_isPdf) ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: PremiumButton(
+                                    label: 'Retake',
+                                    icon: Icons.camera_alt,
+                                    isPrimary: false,
+                                    onPressed: _captureFromCamera,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: PremiumButton(
+                                    label: 'Re-upload from Gallery',
+                                    icon: Icons.photo_library,
+                                    isPrimary: false,
+                                    onPressed: _selectFromGallery,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: colorScheme.primary),
+                                  ),
+                                  child: IconButton(
+                                    onPressed: _rotateImage,
+                                    icon: Icon(Icons.rotate_right, color: colorScheme.primary),
+                                    tooltip: 'Rotate Image',
+                                    padding: const EdgeInsets.all(16),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: PremiumButton(
+                                label: 'Switch to PDF Upload',
+                                icon: Icons.picture_as_pdf,
+                                isPrimary: false,
+                                onPressed: () {
+                                  // Remove current image and trigger PDF upload
+                                  _removeImage();
+                                  // Trigger PDF upload dialog after a short delay to allow state update
+                                  Future.delayed(const Duration(milliseconds: 200), () {
+                                    if (mounted) {
+                                      _uploadPdf();
+                                    }
+                                  });
+                                },
+                              ),
+                            ),
+                          ] else ...[
+                            Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: PremiumButton(
+                                    label: 'Change PDF',
+                                    icon: Icons.picture_as_pdf,
+                                    isPrimary: false,
+                                    onPressed: _uploadPdf,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: PremiumButton(
+                                    label: 'Switch to Photo Upload',
+                                    icon: Icons.camera_alt,
+                                    isPrimary: false,
+                                    onPressed: () {
+                                      // Remove PDF and allow photo upload
+                                      _removePdf();
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ] else ...[
@@ -527,58 +759,39 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                               ),
                             ),
                             const SizedBox(height: 32),
-                            // Use LayoutBuilder to handle overflow on small screens
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                // On very small screens, stack buttons vertically
-                                if (constraints.maxWidth < 300) {
-                                  return Column(
-                                    children: [
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: PremiumButton(
-                                          label: 'Camera',
-                                          icon: Icons.camera_alt,
-                                          isPrimary: false,
-                                          onPressed: _captureFromCamera,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: PremiumButton(
-                                          label: 'Gallery',
-                                          icon: Icons.photo_library,
-                                          isPrimary: false,
-                                          onPressed: _selectFromGallery,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                } else {
-                                  return Row(
-                                    children: [
-                                      Expanded(
-                                        child: PremiumButton(
-                                          label: 'Camera',
-                                          icon: Icons.camera_alt,
-                                          isPrimary: false,
-                                          onPressed: _captureFromCamera,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: PremiumButton(
-                                          label: 'Gallery',
-                                          icon: Icons.photo_library,
-                                          isPrimary: false,
-                                          onPressed: _selectFromGallery,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }
-                              },
+                            // Stack buttons vertically for better fit
+                            Column(
+                              children: [
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: PremiumButton(
+                                    label: 'Camera',
+                                    icon: Icons.camera_alt,
+                                    isPrimary: false,
+                                    onPressed: _captureFromCamera,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: PremiumButton(
+                                    label: 'Gallery',
+                                    icon: Icons.photo_library,
+                                    isPrimary: false,
+                                    onPressed: _selectFromGallery,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: PremiumButton(
+                                    label: 'Upload PDF',
+                                    icon: Icons.picture_as_pdf,
+                                    isPrimary: false,
+                                    onPressed: _uploadPdf,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

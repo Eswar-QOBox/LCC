@@ -267,10 +267,18 @@ The UI/UX team will need to design screens for:
 
 ```
 lib/
-  └── main.dart          # Application entry point
-```
+  main.dart                # Application entry point + router
+  models/                  # Data models (loan, user, documents)
+  providers/               # State management (Provider)
+  screens/                 # UI screens
+  services/                # API + business logic
+  utils/                   # Routes, theme, strings, helpers
+  widgets/                 # Reusable UI components
 
-*Project structure will be expanded as development progresses.*
+assets/                    # App images and logos
+android/ ios/ web/         # Platform targets
+windows/ macos/ linux/     # Desktop targets
+```
 
 ---
 

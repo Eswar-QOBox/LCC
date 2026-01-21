@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../providers/auth_provider.dart';
 
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -57,21 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.primary.withValues(alpha: 0.03),
-              Colors.white,
-              Colors.white,
-            ],
-            stops: const [0.0, 0.3, 0.5, 1.0],
-          ),
-        ),
-        child: SafeArea(
+      body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
@@ -87,7 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 140,
                         height: 140,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
+                          shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
                               color: colorScheme.primary.withValues(alpha: 0.15),
@@ -97,42 +84,40 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
+                        child: ClipOval(
                           child: Image.asset(
                             'assets/JSEE_icon.jpg',
                             width: 140,
                             height: 140,
-                            fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: 140,
-                              height: 140,
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.rectangle,
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.secondary,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 140,
+                                height: 140,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      colorScheme.primary,
+                                      colorScheme.secondary,
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: colorScheme.primary.withValues(alpha: 0.3),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
                                   ],
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: colorScheme.primary.withValues(alpha: 0.3),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.lock_outline,
-                                size: 60,
-                                color: Colors.white,
-                              ),
-                            );
-                          },
+                                child: const Icon(
+                                  Icons.lock_outline,
+                                  size: 60,
+                                  color: Colors.white,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ),
@@ -272,6 +257,6 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
-    ));
+    );
   }
 }

@@ -14,6 +14,7 @@ import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../models/document_submission.dart';
 import 'package:intl/intl.dart';
@@ -153,60 +154,84 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf'],
+      allowMultiple: true, // Allow multiple PDF selection
     );
 
     if (result != null && result.files.isNotEmpty) {
-      String path;
+      final List<SalarySlipItem> newSlipItems = [];
       
-      if (kIsWeb) {
-        final bytes = result.files.single.bytes;
-        if (bytes == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Unable to read PDF file. Please try again.'),
-                backgroundColor: AppTheme.errorColor,
-                action: SnackBarAction(
-                  label: 'Retry',
-                  textColor: Colors.white,
-                  onPressed: _uploadPdf,
+      for (final file in result.files) {
+        String? path;
+        
+        if (kIsWeb) {
+          final bytes = file.bytes;
+          if (bytes == null) {
+            continue; // Skip this file if bytes are null
+          }
+          path = createBlobUrl(bytes, mimeType: 'application/pdf');
+        } else {
+          if (file.path == null) {
+            continue; // Skip this file if path is null
+          }
+          path = file.path!;
+        }
+        
+        // At this point, path is guaranteed to be non-null
+        // For each PDF, show date picker
+        final DateTime? pickedDate = await showDatePicker(
+          context: context,
+          initialDate: DateTime.now(),
+          firstDate: DateTime(2020),
+          lastDate: DateTime.now(),
+          helpText: 'Select Payslip Date',
+          fieldLabelText: 'Payslip Date (Date, Month, Year)',
+          fieldHintText: 'DD/MM/YYYY',
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: Theme.of(context).colorScheme.copyWith(
+                  primary: AppTheme.primaryColor,
                 ),
               ),
+              child: child!,
             );
-          }
-          return;
-        }
-        path = createBlobUrl(bytes, mimeType: 'application/pdf');
-      } else {
-        if (result.files.single.path == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Unable to access file. Please try again.'),
-                backgroundColor: AppTheme.errorColor,
-                action: SnackBarAction(
-                  label: 'Retry',
-                  textColor: Colors.white,
-                  onPressed: _uploadPdf,
-                ),
-              ),
-            );
-          }
-          return;
-        }
-        path = result.files.single.path!;
+          },
+        );
+        
+        newSlipItems.add(SalarySlipItem(
+          path: path,
+          slipDate: pickedDate,
+          isPdf: true, // Mark as PDF
+        ));
       }
       
-      if (mounted) {
+      if (mounted && newSlipItems.isNotEmpty) {
+        final provider = context.read<SubmissionProvider>();
+        
+        // Get current count before adding
+        final currentCount = _slipItems.length;
+        
         setState(() {
-          _slipItems = [SalarySlipItem(path: path)];
+          _slipItems.addAll(newSlipItems);
           _isPdf = true;
           _resetDraftState();
         });
-        context
-            .read<SubmissionProvider>()
-            .setSalarySlips([path], isPdf: true);
+        
+        // Update provider with all new slip items
+        for (int i = 0; i < newSlipItems.length; i++) {
+          final item = newSlipItems[i];
+          provider.addSalarySlip(item.path, slipDate: item.slipDate, isPdf: item.isPdf);
+          if (item.slipDate != null) {
+            provider.updateSalarySlipDate(currentCount + i, item.slipDate!);
+          }
+        }
+        
         _showPasswordDialogIfNeeded();
+        
+        PremiumToast.showSuccess(
+          context,
+          '${newSlipItems.length} PDF${newSlipItems.length > 1 ? 's' : ''} added successfully!',
+        );
       }
     }
   }
@@ -266,6 +291,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         _slipItems.add(SalarySlipItem(
           path: path,
           slipDate: pickedDate,
+          isPdf: false, // Images are not PDFs
         ));
         _isPdf = false;
         _resetDraftState();
@@ -458,85 +484,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         ),
         child: Column(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    colorScheme.surface,
-                    colorScheme.primary.withValues(alpha: 0.03),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: colorScheme.shadow.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.receipt_long,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Salary Slips',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: colorScheme.shadow.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step4BankStatement),
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-              ),
+            // Consistent Header
+            AppHeader(
+              title: 'Salary Slips',
+              icon: Icons.receipt_long,
+              showBackButton: true,
+              onBackPressed: () => context.go(AppRoutes.step4BankStatement),
+              showHomeButton: true,
             ),
             StepProgressIndicator(currentStep: 5, totalSteps: 6),
             Expanded(
@@ -682,7 +636,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: PremiumButton(
-                              label: _isPdf ? 'Change PDF' : 'Upload PDF',
+                              label: 'Add PDF',
                               icon: Icons.picture_as_pdf,
                               isPrimary: false,
                               onPressed: _uploadPdf,
@@ -923,7 +877,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               width: double.infinity,
               height: double.infinity,
               color: colorScheme.surface,
-              child: _isPdf && index == 0
+              child: slipItem.isPdf
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -944,7 +898,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                         ],
                       ),
                     )
-                  : PlatformImage(imagePath: slipItem.path, fit: BoxFit.cover),
+                  : PlatformImage(
+                      imagePath: slipItem.path,
+                      fit: BoxFit.cover,
+                    ),
             ),
             Positioned(
               top: 8,

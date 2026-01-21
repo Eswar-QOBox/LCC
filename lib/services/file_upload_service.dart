@@ -161,11 +161,18 @@ class FileUploadService {
         );
       } else {
         // On mobile/desktop, use fromFile
+        String filename = imageFile.name.isNotEmpty
+            ? imageFile.name
+            : 'pan_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        // Determine content type from filename
+        String? contentType;
+        if (filename.toLowerCase().endsWith('.pdf')) {
+          contentType = 'application/pdf';
+        }
         multipartFile = await MultipartFile.fromFile(
           imageFile.path,
-          filename: imageFile.name.isNotEmpty
-              ? imageFile.name
-              : 'pan_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          filename: filename,
+          contentType: contentType != null ? DioMediaType.parse(contentType) : null,
         );
       }
 
