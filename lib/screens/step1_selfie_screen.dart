@@ -455,31 +455,36 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                   _authToken = accessToken;
                 });
               }
-            }
-            final response = await http.get(Uri.parse(effectivePath), headers: headers);
-            if (response.statusCode == 200 && mounted) {
-              final contentType = response.headers['content-type'] ?? '';
-              final isLikelyImage = contentType.startsWith('image/');
-              final bytes = response.bodyBytes;
               
-              if (isLikelyImage && _isValidImageBytes(bytes)) {
-                setState(() {
-                  _imageBytes = bytes;
-                  _networkImageFailed = false;
-                });
+              final response = await http.get(Uri.parse(effectivePath), headers: headers);
+              if (response.statusCode == 200 && mounted) {
+                final contentType = response.headers['content-type'] ?? '';
+                final isLikelyImage = contentType.startsWith('image/');
+                final bytes = response.bodyBytes;
+                
+                if (isLikelyImage && _isValidImageBytes(bytes)) {
+                  setState(() {
+                    _imageBytes = bytes;
+                    _networkImageFailed = false;
+                  });
+                } else {
+                  debugPrint('Received invalid image data: ${response.statusCode}, type: $contentType');
+                  setState(() {
+                    _networkImageFailed = true;
+                  });
+                }
               } else {
-                debugPrint('Received invalid image data: ${response.statusCode}, type: $contentType');
-                setState(() {
-                  _networkImageFailed = true;
-                });
+                debugPrint('Failed to load selfie: ${response.statusCode}');
+                if (mounted) {
+                  setState(() {
+                    _networkImageFailed = true; // Mark as failed so we don't try Image.network
+                  });
+                }
               }
             } else {
-              debugPrint('Failed to load selfie: ${response.statusCode}');
-              if (mounted) {
-                setState(() {
-                  _networkImageFailed = true; // Mark as failed so we don't try Image.network
-                });
-              }
+               debugPrint('Skipping selfie fetch: no access token');
+               // If no token, we can't show protected image. 
+               // PlatformImage (in build) waits for _authToken != null anyway.
             }
           } else {
             // Try to load from local path

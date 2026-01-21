@@ -37,6 +37,7 @@ class Step6PreviewScreen extends StatefulWidget {
 
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   String? _authToken;
+  bool _isLoadingAuth = true;
 
   @override
   void initState() {
@@ -64,13 +65,19 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     try {
       final storage = StorageService.instance;
       final accessToken = await storage.getAccessToken();
-      if (accessToken != null && mounted) {
+      if (mounted) {
         setState(() {
           _authToken = accessToken;
+          _isLoadingAuth = false;
         });
       }
     } catch (e) {
       debugPrint('Preview Screen: Failed to get access token: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingAuth = false;
+        });
+      }
     }
 
     final application = appProvider.currentApplication!;
@@ -1327,6 +1334,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             size: 40,
             color: Colors.grey.shade400,
           ),
+        ),
+      );
+    }
+
+    // Wait for auth to be ready before showing remote images
+    if (path.startsWith('http') && _isLoadingAuth) {
+      return Container(
+        decoration: BoxDecoration(color: Colors.grey.shade50),
+        child: const Center(
+          child: CircularProgressIndicator(),
         ),
       );
     }
