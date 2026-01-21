@@ -38,7 +38,13 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadDocuments();
+    // Ensure error is null at start
+    _error = null;
+    _isLoading = true;
+    // Load documents after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDocuments();
+    });
   }
 
   @override
@@ -68,19 +74,21 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       _userId = user.id;
 
       // Get lead information - only returns lead if it matches user's email
-      Map<String, dynamic> leadData;
+      // Returns null if no lead found (valid empty state), throws only for actual errors
+      Map<String, dynamic>? leadData;
       try {
         if (kDebugMode) {
           print('Loading documents for user: ${user.email}');
         }
         leadData = await _documentsService.getLeadByEmail(user.email);
-        _leadId = leadData['id'] as String?;
+        _leadId = leadData?['id'] as String?;
 
         if (kDebugMode) {
           print('Lead ID retrieved: $_leadId');
         }
       } catch (e) {
-        // Extract error message
+        // Only actual errors reach here (network, auth, server errors)
+        // "Lead not found" returns null, not an exception
         String errorMessage = e.toString().replaceFirst('Exception: ', '');
 
         if (kDebugMode) {
@@ -88,8 +96,22 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           print('Error message: $errorMessage');
         }
 
-        // The service already provides user-friendly error messages,
-        // so we can use them directly. Only add additional context if needed.
+        // Double-check: if error message contains "not found", treat as empty state
+        if (errorMessage.toLowerCase().contains('lead not found') ||
+            errorMessage.toLowerCase().contains('not found for your email')) {
+          if (kDebugMode) {
+            print('Treating "not found" as empty state instead of error');
+          }
+          setState(() {
+            _error = null; // No error, just empty state
+            _requiredDocuments = [];
+            _uploadedDocuments = [];
+            _isLoading = false;
+          });
+          return;
+        }
+
+        // For actual errors, show error state
         if (errorMessage.isEmpty) {
           errorMessage =
               'Failed to get lead information. Please try again later.';
@@ -103,10 +125,17 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         return;
       }
 
-      if (_leadId == null) {
+      // If leadData is null or leadId is null, treat as empty state (not an error)
+      if (leadData == null || _leadId == null) {
+        if (kDebugMode) {
+          print(
+            'No lead found - showing empty state (user logged in but no lead record)',
+          );
+        }
         setState(() {
-          _error = 'Lead information not available. Please contact support.';
+          _error = null; // No error, just empty state
           _requiredDocuments = [];
+          _uploadedDocuments = [];
           _isLoading = false;
         });
         return;
@@ -154,6 +183,21 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       if (kDebugMode) {
         print('Unexpected error in _loadDocuments: $e');
         print('Error message: $errorMessage');
+      }
+
+      // Check if it's a "not found" error - treat as empty state
+      if (errorMessage.toLowerCase().contains('lead not found') ||
+          errorMessage.toLowerCase().contains('not found for your email')) {
+        if (kDebugMode) {
+          print('Treating "not found" in outer catch as empty state');
+        }
+        setState(() {
+          _error = null; // No error, just empty state
+          _requiredDocuments = [];
+          _uploadedDocuments = [];
+          _isLoading = false;
+        });
+        return;
       }
 
       // Check if it's a provider/widget tree error (shouldn't happen but handle gracefully)
