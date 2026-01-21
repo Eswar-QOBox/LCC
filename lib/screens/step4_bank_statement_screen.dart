@@ -10,6 +10,8 @@ import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
+import 'package:http/http.dart' as http;
+import 'dart:typed_data';
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
@@ -37,6 +39,18 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   DateTime? _statementEndDate;
   DateTime? _calculatedStartDate;
   String? _authToken;
+  List<bool> _pageFailures = [];
+  List<Uint8List?> _pageBytes = [];
+
+  bool _isValidImageBytes(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // Check for common image headers
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true; // JPEG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true; // PNG
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true; // GIF
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true; // WebP
+    return false;
+  }
 
   @override
   void initState() {
@@ -59,7 +73,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final application = appProvider.currentApplication!;
     if (application.step4BankStatement != null) {
       final stepData = application.step4BankStatement as Map<String, dynamic>;
-      if (stepData['pages'] != null) {
+
         
         // Helper to build full URL
         String? buildFullUrl(String? relativeUrl) {
@@ -83,10 +97,16 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           });
         }
         
+
+        
         setState(() {
           final rawPages = List<String>.from(stepData['pages'] as List);
           _pages = rawPages.map((p) => buildFullUrl(p) ?? p).toList();
           _isPdf = stepData['isPdf'] as bool? ?? false;
+          // Initialize failure/bytes lists
+          _pageFailures = List.filled(_pages.length, false);
+          _pageBytes = List.filled(_pages.length, null);
+
           _pdfPassword = stepData['pdfPassword'] as String?;
           if (stepData['statementEndDate'] != null) {
             _statementEndDate = DateTime.parse(stepData['statementEndDate'] as String);
@@ -95,6 +115,46 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             _calculatedStartDate = DateTime.parse(stepData['calculatedStartDate'] as String);
           }
         });
+
+        // Verify images asynchronously if auth token is available
+        if (accessToken != null && !_isPdf) {
+          for (int i = 0; i < _pages.length; i++) {
+            final page = _pages[i];
+            if (page.startsWith('http')) {
+              _verifyPage(page, i, accessToken);
+            }
+          }
+        }
+    }
+  }
+
+  Future<void> _verifyPage(String url, int index, String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (!mounted) return;
+      if (index >= _pageFailures.length) return; // Bounds check
+
+      if (response.statusCode == 200) {
+        final contentType = response.headers['content-type'] ?? '';
+        final isLikelyImage = contentType.startsWith('image/');
+        final bytes = response.bodyBytes;
+        if (isLikelyImage && _isValidImageBytes(bytes)) {
+          setState(() {
+            _pageBytes[index] = bytes;
+            _pageFailures[index] = false;
+          });
+        } else {
+          setState(() { _pageFailures[index] = true; });
+        }
+      } else {
+        setState(() { _pageFailures[index] = true; });
+      }
+    } catch (e) {
+      if (mounted && index < _pageFailures.length) {
+        setState(() { _pageFailures[index] = true; });
       }
     }
   }
@@ -186,7 +246,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     }
   }
 
-  Future<void> _saveToBackend() async {
+   Future<void> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _pages.isEmpty) {
       return;
@@ -197,18 +257,52 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     });
 
     try {
-      // Convert paths to XFile objects and upload
-      final files = _pages.map((path) => XFile(path)).toList();
-      final uploadResults = await _fileUploadService.uploadBankStatements(files);
+      // 1. Separate local files and remote URLs
+      final localPaths = _pages.where((p) => !p.startsWith('http')).toList();
+      final remoteUrls = _pages.where((p) => p.startsWith('http')).toList();
+
+      List<Map<String, dynamic>> finalUploadedFiles = [];
+
+      // 2. Handle remote URLs (preserve existing metadata)
+      if (remoteUrls.isNotEmpty) {
+        final currentApp = appProvider.currentApplication;
+        if (currentApp?.step4BankStatement != null) {
+          final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
+          final existingUploads = (stepData['uploadedFiles'] as List<dynamic>?)
+                  ?.cast<Map<String, dynamic>>() ?? [];
+          
+          // Filter to keep only those that are still in our _pages list
+          // We match by checking if the URL is present in our remoteUrls list
+          // Note: URLs might be relative or absolute, so we might need loose matching 
+          // but usually they will be consistent if loaded via _loadExistingData
+          
+          for (final upload in existingUploads) {
+            final url = upload['url'] as String?;
+            // Simple check: if any of our remote URLs contains the upload URL path or vice versa
+            // Realistically, the _pages list contains full URLs constructed in _loadExistingData
+            if (url != null && remoteUrls.any((r) => r.contains(url) || url.contains(r))) {
+              finalUploadedFiles.add(upload);
+            }
+          }
+        }
+      }
+
+      // 3. Upload new local files
+      if (localPaths.isNotEmpty) {
+        final files = localPaths.map((path) => XFile(path)).toList();
+        final newUploadResults = await _fileUploadService.uploadBankStatements(files);
+        finalUploadedFiles.addAll(newUploadResults);
+      }
 
       // Save step data to backend
       await appProvider.updateApplication(
         currentStep: 5, // Move to next step
         step4BankStatement: {
-          'pages': _pages,
+          'pages': _pages, // This contains mixed paths (http://... and local paths for display if any remained)
+                           // Ideally backend should rely on uploadedFiles for truth, but preserving pages logic
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,
-          'uploadedFiles': uploadResults,
+          'uploadedFiles': finalUploadedFiles,
           'statementEndDate': _statementEndDate?.toIso8601String(),
           'calculatedStartDate': _calculatedStartDate?.toIso8601String(),
           'savedAt': DateTime.now().toIso8601String(),
@@ -293,6 +387,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         setState(() {
           _pages = [path];
           _isPdf = true;
+          _pageFailures = [false];
+          _pageBytes = [null];
           _resetDraftState();
         });
         context
@@ -309,6 +405,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   void _removePage(int index) {
     setState(() {
       _pages.removeAt(index);
+      if (index < _pageFailures.length) {
+        _pageFailures.removeAt(index);
+        _pageBytes.removeAt(index);
+      }
       _resetDraftState();
     });
     context
@@ -1043,10 +1143,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       ),
                     ),
                   )
-                : ((_pages[index].startsWith('http') && _authToken == null)
-                    ? const Center(child: CircularProgressIndicator())
+                : ((_pages[index].startsWith('http') && (_authToken == null || (index < _pageFailures.length && _pageFailures[index])))
+                    ? Center(child: (index < _pageFailures.length && _pageFailures[index])
+                        ? const Icon(Icons.broken_image, color: Colors.grey)
+                        : const CircularProgressIndicator())
                     : PlatformImage(
                     imagePath: _pages[index], 
+                    imageBytes: (index < _pageBytes.length) ? _pageBytes[index] : null,
                     fit: BoxFit.cover,
                     headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                   )),

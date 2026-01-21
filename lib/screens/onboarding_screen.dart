@@ -15,32 +15,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<OnboardingPage> _pages = [
     OnboardingPage(
-      title: 'Home Loan',
-      description: 'Get your dream home with our flexible home loan options. Low interest rates and easy approval process.',
-      icon: Icons.home,
+      title: 'Upload Your Loan Documents',
+      description:
+          'JSEE helps you securely upload and share your loan documents in one simple place. No more emails, prints or paperwork.',
+      icon: Icons.upload_file,
       color: Colors.blue,
     ),
     OnboardingPage(
-      title: 'Car Loan',
-      description: 'Drive away with your favorite car. Quick approval and competitive rates for all types of vehicles.',
-      icon: Icons.directions_car,
-      color: Colors.red,
+      title: 'Safe & Organized',
+      description:
+          'Your documents are stored safely and in an organized way, so you and your loan partner always know exactly what has been shared.',
+      icon: Icons.lock_outline,
+      color: Colors.teal,
     ),
     OnboardingPage(
-      title: 'Business Loan',
-      description: 'Fuel your business growth with our business loan solutions. Flexible repayment options tailored for you.',
-      icon: Icons.business,
-      color: Colors.green,
-    ),
-    OnboardingPage(
-      title: 'Educational Loan',
-      description: 'Invest in your future with our educational loans. Support for all courses and institutions.',
-      icon: Icons.school,
+      title: 'Track Your Loan Journey',
+      description:
+          'See which documents are pending, what has been completed, and keep your loan process moving without confusion.',
+      icon: Icons.timeline,
       color: Colors.orange,
     ),
     OnboardingPage(
+      title: 'EMI Calculator Built‑In',
+      description:
+          'Use the EMI calculator to quickly check your monthly payments. Adjust loan amount, interest and tenure to find an EMI that fits you.',
+      icon: Icons.calculate_outlined,
+      color: Colors.green,
+    ),
+    OnboardingPage(
       title: 'Welcome to JSEE',
-      description: 'Your trusted partner for all loan needs. Simple, fast, and secure loan application process.',
+      description:
+          'This app is made for easy loan document upload and smart EMI planning—so you can complete your loan faster and with confidence.',
       icon: Icons.verified_user,
       color: Colors.purple,
     ),

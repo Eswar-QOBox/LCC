@@ -35,6 +35,21 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   bool _isSaving = false;
   SelfieValidationResult? _validationResult;
   String? _authToken;
+  bool _networkImageFailed = false;
+
+  bool _isValidImageBytes(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // Check for common image headers
+    // JPEG: FF D8 FF
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+    // PNG: 89 50 4E 47
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true;
+    // GIF: 47 49 46 38
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true;
+    // WebP: 52 49 46 46 ... 57 45 42 50
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true;
+    return false;
+  }
 
   Future<void> _captureFromCamera() async {
     if (!mounted) return;
@@ -279,9 +294,21 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     });
 
     try {
-      // Upload image
-      final imageFile = XFile(_imagePath!);
-      final uploadResult = await _fileUploadService.uploadSelfie(imageFile);
+      Map<String, dynamic>? uploadResult;
+      
+      // Check if image is already uploaded (remote URL)
+      if (_imagePath!.startsWith('http')) {
+        // Reuse existing upload data
+        final currentApp = appProvider.currentApplication;
+        if (currentApp?.step1Selfie != null) {
+          final stepData = currentApp!.step1Selfie as Map<String, dynamic>;
+          uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
+        }
+      } else {
+        // New local file - upload it
+        final imageFile = XFile(_imagePath!);
+        uploadResult = await _fileUploadService.uploadSelfie(imageFile);
+      }
 
       // Save step data to backend
       await appProvider.updateApplication(
@@ -431,11 +458,28 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             }
             final response = await http.get(Uri.parse(effectivePath), headers: headers);
             if (response.statusCode == 200 && mounted) {
-              setState(() {
-                _imageBytes = response.bodyBytes;
-              });
+              final contentType = response.headers['content-type'] ?? '';
+              final isLikelyImage = contentType.startsWith('image/');
+              final bytes = response.bodyBytes;
+              
+              if (isLikelyImage && _isValidImageBytes(bytes)) {
+                setState(() {
+                  _imageBytes = bytes;
+                  _networkImageFailed = false;
+                });
+              } else {
+                debugPrint('Received invalid image data: ${response.statusCode}, type: $contentType');
+                setState(() {
+                  _networkImageFailed = true;
+                });
+              }
             } else {
               debugPrint('Failed to load selfie: ${response.statusCode}');
+              if (mounted) {
+                setState(() {
+                  _networkImageFailed = true; // Mark as failed so we don't try Image.network
+                });
+              }
             }
           } else {
             // Try to load from local path
@@ -587,8 +631,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                           borderRadius: BorderRadius.circular(17),
                           child: Stack(
                             children: [
-                                ((_imagePath!.startsWith('http') && _authToken == null)
-                                    ? const Center(child: CircularProgressIndicator())
+                                ((_imagePath!.startsWith('http') && (_authToken == null || _networkImageFailed))
+                                    ? Center(child: _networkImageFailed 
+                                        ? const Icon(Icons.broken_image, color: Colors.grey) 
+                                        : const CircularProgressIndicator())
                                     : PlatformImage(
                                   imagePath: _imagePath!,
                                   imageBytes: _imageBytes,

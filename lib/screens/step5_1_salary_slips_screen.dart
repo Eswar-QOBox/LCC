@@ -19,6 +19,8 @@ import '../utils/app_theme.dart';
 import '../models/document_submission.dart';
 import 'package:intl/intl.dart';
 import '../services/storage_service.dart';
+import 'package:http/http.dart' as http;
+import 'dart:typed_data';
 
 class Step5_1SalarySlipsScreen extends StatefulWidget {
   const Step5_1SalarySlipsScreen({super.key});
@@ -39,6 +41,18 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   bool _isSaving = false;
   bool _hasSyncedWithProvider = false;
   String? _authToken;
+  List<bool> _slipFailures = [];
+  List<Uint8List?> _slipBytes = [];
+
+  bool _isValidImageBytes(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // Check for common image headers
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true; // JPEG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true; // PNG
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true; // GIF
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true; // WebP
+    return false;
+  }
 
   @override
   void initState() {
@@ -142,7 +156,21 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             _isPdf = stepData['salarySlipsIsPdf'] ?? false;
             _pdfPassword = stepData['salarySlipsPassword'];
              _hasSyncedWithProvider = true;
+             
+            // Initialize failure/bytes lists
+            _slipFailures = List.filled(_slipItems.length, false);
+            _slipBytes = List.filled(_slipItems.length, null);
           });
+          
+          // Verify images asynchronously if auth token is available
+          if (accessToken != null && !_isPdf) {
+            for (int i = 0; i < _slipItems.length; i++) {
+              final item = _slipItems[i];
+              if (item.path.startsWith('http')) {
+                _verifySlip(item.path, i, accessToken);
+              }
+            }
+          }
 
           // Update provider
           final provider = context.read<SubmissionProvider>();
@@ -163,7 +191,39 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     }
   }
 
-  Future<void> _saveToBackend() async {
+  Future<void> _verifySlip(String url, int index, String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (!mounted) return;
+      if (index >= _slipFailures.length) return; // Bounds check
+
+      if (response.statusCode == 200) {
+        final contentType = response.headers['content-type'] ?? '';
+        final isLikelyImage = contentType.startsWith('image/');
+        final bytes = response.bodyBytes;
+        if (isLikelyImage && _isValidImageBytes(bytes)) {
+          setState(() {
+            _slipBytes[index] = bytes;
+            _slipFailures[index] = false;
+          });
+        } else {
+          setState(() { _slipFailures[index] = true; });
+        }
+      } else {
+        setState(() { _slipFailures[index] = true; });
+      }
+    } catch (e) {
+      if (mounted && index < _slipFailures.length) {
+        setState(() { _slipFailures[index] = true; });
+      }
+    }
+  }
+
+
+   Future<void> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
 
@@ -174,22 +234,50 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     try {
       // Only save if slips are uploaded (this step is optional)
       if (_slipItems.isNotEmpty) {
-        final files = _slipItems.map((item) => XFile(item.path)).toList();
-        final uploadResults = await _fileUploadService.uploadSalarySlips(files);
+        // 1. Separate local files and remote URLs
+        final localItems = _slipItems.where((item) => !item.path.startsWith('http')).toList();
+        final remoteItems = _slipItems.where((item) => item.path.startsWith('http')).toList();
+
+        List<Map<String, dynamic>> finalUploadedFiles = [];
+
+        // 2. Handle remote URLs (preserve existing metadata)
+        // Note: Salary slips are stored in step4BankStatement in the backend
+        if (remoteItems.isNotEmpty) {
+          final currentApp = appProvider.currentApplication;
+          if (currentApp?.step4BankStatement != null) {
+            final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
+            final existingUploads = (stepData['salarySlipsUploaded'] as List<dynamic>?)
+                    ?.cast<Map<String, dynamic>>() ?? [];
+            
+            for (final upload in existingUploads) {
+              final url = upload['url'] as String?;
+              if (url != null && remoteItems.any((item) => item.path.contains(url) || url.contains(item.path))) {
+                finalUploadedFiles.add(upload);
+              }
+            }
+          }
+        }
+
+        // 3. Upload new local files
+        if (localItems.isNotEmpty) {
+          final files = localItems.map((item) => XFile(item.path)).toList();
+          final newUploadResults = await _fileUploadService.uploadSalarySlips(files);
+          finalUploadedFiles.addAll(newUploadResults);
+        }
 
         // Save to step4BankStatement or create a separate field
         // Since salary slips are part of step 5, we can include them in step5PersonalData
         // or keep them in step4BankStatement as additional documents
         await appProvider.updateApplication(
           step4BankStatement: {
-            'salarySlips': _slipItems.map((item) => item.path).toList(),
+            'salarySlips': _slipItems.map((item) => item.path).toList(), // Mixed paths
             'salarySlipItems': _slipItems.map((item) => {
-              'path': item.path,
+              'path': item.path, // Mixed paths
               'slipDate': item.slipDate?.toIso8601String(),
             }).toList(),
             'salarySlipsIsPdf': _isPdf,
             'salarySlipsPassword': _pdfPassword,
-            'salarySlipsUploaded': uploadResults,
+            'salarySlipsUploaded': finalUploadedFiles,
           },
         );
       }
@@ -281,6 +369,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         setState(() {
           _slipItems.addAll(newSlipItems);
           _isPdf = true;
+          // Extend fail/byte lists
+          _slipFailures.addAll(List.filled(newSlipItems.length, false));
+          _slipBytes.addAll(List.filled(newSlipItems.length, null));
           _resetDraftState();
         });
         
@@ -307,6 +398,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     context.read<SubmissionProvider>().removeSalarySlip(index);
     setState(() {
       _slipItems.removeAt(index);
+      if (index < _slipFailures.length) {
+        _slipFailures.removeAt(index);
+        _slipBytes.removeAt(index);
+      }
       _resetDraftState();
     });
   }
@@ -361,6 +456,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           isPdf: false, // Images are not PDFs
         ));
         _isPdf = false;
+        // Add to fail/byte lists
+        _slipFailures.add(false);
+        _slipBytes.add(null);
         _resetDraftState();
       });
       
@@ -965,10 +1063,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                         ],
                       ),
                     )
-                    : ((slipItem.path.startsWith('http') && _authToken == null)
-                        ? const Center(child: CircularProgressIndicator())
+                    : ((slipItem.path.startsWith('http') && (_authToken == null || (index < _slipFailures.length && _slipFailures[index])))
+                        ? Center(child: (index < _slipFailures.length && _slipFailures[index]) 
+                            ? const Icon(Icons.broken_image, color: Colors.grey) 
+                            : const CircularProgressIndicator())
                         : PlatformImage(
                         imagePath: slipItem.path,
+                        imageBytes: (index < _slipBytes.length) ? _slipBytes[index] : null,
                         fit: BoxFit.cover,
                         headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                       )),

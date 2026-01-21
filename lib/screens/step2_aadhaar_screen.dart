@@ -13,6 +13,7 @@ import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
+import 'package:http/http.dart' as http;
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
@@ -43,6 +44,20 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   double _frontRotation = 0.0;
   double _backRotation = 0.0;
   String? _authToken;
+  bool _frontImageFailed = false;
+  bool _backImageFailed = false;
+  Uint8List? _frontBytes;
+  Uint8List? _backBytes;
+
+  bool _isValidImageBytes(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // Check for common image headers
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true; // JPEG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true; // PNG
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true; // GIF
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true; // WebP
+    return false;
+  }
 
   @override
   void initState() {
@@ -121,15 +136,59 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             .read<SubmissionProvider>()
             .setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
-      if (effectiveBack != null && effectiveBack.isNotEmpty) {
-        setState(() {
-          _backPath = effectiveBack;
-          _backIsPdf = backIsPdf;
-          _backPdfPassword = backPdfPassword;
-        });
-        context
-            .read<SubmissionProvider>()
-            .setAadhaarBack(effectiveBack, isPdf: backIsPdf);
+      
+      // Fetch front image if network URL
+      if (effectiveFront != null && effectiveFront.startsWith('http') && accessToken != null) {
+        try {
+          final response = await http.get(
+            Uri.parse(effectiveFront),
+            headers: {'Authorization': 'Bearer $accessToken'},
+          );
+          if (response.statusCode == 200 && mounted) {
+            final contentType = response.headers['content-type'] ?? '';
+            final isLikelyImage = contentType.startsWith('image/');
+            final bytes = response.bodyBytes;
+            if (isLikelyImage && _isValidImageBytes(bytes)) {
+              setState(() {
+                _frontBytes = bytes;
+                _frontImageFailed = false;
+              });
+            } else {
+              setState(() { _frontImageFailed = true; });
+            }
+          } else {
+             if (mounted) setState(() { _frontImageFailed = true; });
+          }
+        } catch (e) {
+          if (mounted) setState(() { _frontImageFailed = true; });
+        }
+      }
+
+      // Fetch back image if network URL
+      if (effectiveBack != null && effectiveBack.startsWith('http') && accessToken != null) {
+         try {
+          final response = await http.get(
+            Uri.parse(effectiveBack),
+            headers: {'Authorization': 'Bearer $accessToken'},
+          );
+          if (response.statusCode == 200 && mounted) {
+            final contentType = response.headers['content-type'] ?? '';
+            final isLikelyImage = contentType.startsWith('image/');
+            final bytes = response.bodyBytes;
+            if (isLikelyImage && _isValidImageBytes(bytes)) {
+              setState(() {
+                _backBytes = bytes;
+                _backImageFailed = false;
+              });
+            } else {
+              setState(() { _backImageFailed = true; });
+            }
+          } else {
+             if (mounted) setState(() { _backImageFailed = true; });
+          }
+        } catch (e) {
+          if (mounted) setState(() { _backImageFailed = true; });
+        }
       }
     }
   }
@@ -436,19 +495,36 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     });
 
     try {
-      // Upload front image
-      final frontFile = XFile(_frontPath!);
-      final frontUpload = await _fileUploadService.uploadAadhaar(
-        frontFile,
-        side: 'front',
-      );
+      Map<String, dynamic>? frontUpload;
+      Map<String, dynamic>? backUpload;
+      
+      final currentApp = appProvider.currentApplication;
+      final existingData = currentApp?.step2Aadhaar as Map<String, dynamic>?;
 
-      // Upload back image
-      final backFile = XFile(_backPath!);
-      final backUpload = await _fileUploadService.uploadAadhaar(
-        backFile,
-        side: 'back',
-      );
+      // specific helper to check if path is remote
+      bool isRemote(String? path) => path != null && path.startsWith('http');
+
+      // Upload or reuse front image
+      if (isRemote(_frontPath)) {
+        frontUpload = existingData?['frontUpload'] as Map<String, dynamic>?;
+      } else {
+        final frontFile = XFile(_frontPath!);
+        frontUpload = await _fileUploadService.uploadAadhaar(
+          frontFile,
+          side: 'front',
+        );
+      }
+
+      // Upload or reuse back image
+      if (isRemote(_backPath)) {
+        backUpload = existingData?['backUpload'] as Map<String, dynamic>?;
+      } else {
+        final backFile = XFile(_backPath!);
+        backUpload = await _fileUploadService.uploadAadhaar(
+          backFile,
+          side: 'back',
+        );
+      }
 
       // Save step data to backend
       await appProvider.updateApplication(
@@ -688,6 +764,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   onRetake: _captureFront,
                                   onGallery: _selectFrontFromGallery,
                                   onRemoveImage: _removeFrontImage,
+                                  isFailed: _frontImageFailed,
+                                  imageBytes: _frontBytes,
                                 ),
                                 const SizedBox(height: 16),
                                 _buildSidePreview(
@@ -699,6 +777,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                   onRetake: _captureBack,
                                   onGallery: _selectBackFromGallery,
                                   onRemoveImage: _removeBackImage,
+                                  isFailed: _backImageFailed,
+                                  imageBytes: _backBytes,
                                 ),
                               ],
                             );
@@ -715,6 +795,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     onRetake: _captureFront,
                                     onGallery: _selectFrontFromGallery,
                                     onRemoveImage: _removeFrontImage,
+                                    isFailed: _frontImageFailed,
+                                    imageBytes: _frontBytes,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
@@ -728,6 +810,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                                     onRetake: _captureBack,
                                     onGallery: _selectBackFromGallery,
                                     onRemoveImage: _removeBackImage,
+                                    isFailed: _backImageFailed,
+                                    imageBytes: _backBytes,
                                   ),
                                 ),
                               ],
@@ -765,6 +849,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           onRetake: _captureFront,
                           onGallery: _selectFrontFromGallery,
                           onRemoveImage: _removeFrontImage,
+                          isFailed: _frontImageFailed,
+                          imageBytes: _frontBytes,
                         )
                       else
                         _buildUploadCard(
@@ -794,6 +880,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           onRetake: _captureBack,
                           onGallery: _selectBackFromGallery,
                           onRemoveImage: _removeBackImage,
+                          isFailed: _backImageFailed,
+                          imageBytes: _backBytes,
                         )
                       else
                         _buildUploadCard(
@@ -892,6 +980,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     VoidCallback? onRetake,
     VoidCallback? onGallery,
     VoidCallback? onRemoveImage,
+    bool isFailed = false,
+    Uint8List? imageBytes,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -942,12 +1032,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           ],
                         ),
                       )
-                    : ((path.startsWith('http') && _authToken == null)
-                        ? const Center(child: CircularProgressIndicator())
+                    : ((path.startsWith('http') && (_authToken == null || isFailed))
+                        ? Center(child: isFailed
+                            ? const Icon(Icons.broken_image, color: Colors.grey)
+                            : const CircularProgressIndicator())
                         : Transform.rotate(
                         angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
                         child: PlatformImage(
                           imagePath: path, 
+                          imageBytes: imageBytes,
                           fit: BoxFit.cover,
                           headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                         ),

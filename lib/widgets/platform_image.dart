@@ -83,37 +83,71 @@ class PlatformImage extends StatelessWidget {
         );
       }
     } else {
-      // On mobile/desktop, use Image.file
-      return Image.file(
-        File(imagePath),
-        fit: fit,
-        width: width,
-        height: height,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Image not available',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
+      // On mobile/desktop
+      if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+        return Image.network(
+          imagePath,
+          fit: fit,
+          width: width,
+          height: height,
+          headers: headers,
+          errorBuilder: (context, error, stackTrace) {
+             return Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
               ),
-            ),
-          );
-        },
-      );
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Image not available',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      } else {
+        return Image.file(
+          File(imagePath),
+          fit: fit,
+          width: width,
+          height: height,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Image not available',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      }
     }
   }
 }

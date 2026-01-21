@@ -13,6 +13,7 @@ import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
+import 'package:http/http.dart' as http;
 import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
@@ -39,6 +40,18 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   String? _pdfPassword;
   double _rotation = 0.0;
   String? _authToken;
+  bool _imageFailed = false;
+  Uint8List? _frontBytes;
+
+  bool _isValidImageBytes(Uint8List bytes) {
+    if (bytes.length < 4) return false;
+    // Check for common image headers
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true; // JPEG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return true; // PNG
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true; // GIF
+    if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true; // WebP
+    return false;
+  }
 
   @override
   void initState() {
@@ -103,11 +116,38 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         });
         // Also update SubmissionProvider
         context.read<SubmissionProvider>().setPanFront(effectiveFront);
+
+        // Fetch image if network URL and not PDF
+        if (effectiveFront.startsWith('http') && accessToken != null && (!_isPdf)) {
+          try {
+            final response = await http.get(
+              Uri.parse(effectiveFront),
+              headers: {'Authorization': 'Bearer $accessToken'},
+            );
+            if (response.statusCode == 200 && mounted) {
+              final contentType = response.headers['content-type'] ?? '';
+              final isLikelyImage = contentType.startsWith('image/');
+              final bytes = response.bodyBytes;
+              if (isLikelyImage && _isValidImageBytes(bytes)) {
+                setState(() {
+                  _frontBytes = bytes;
+                  _imageFailed = false;
+                });
+              } else {
+                setState(() { _imageFailed = true; });
+              }
+            } else {
+               if (mounted) setState(() { _imageFailed = true; });
+            }
+          } catch (e) {
+            if (mounted) setState(() { _imageFailed = true; });
+          }
+        }
       }
     }
   }
 
-  Future<void> _saveToBackend() async {
+   Future<void> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _frontPath == null) {
       return;
@@ -118,9 +158,21 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     });
 
     try {
-      // Upload PAN file (image or PDF)
-      final panFile = XFile(_frontPath!);
-      final uploadResult = await _fileUploadService.uploadPan(panFile);
+      Map<String, dynamic>? uploadResult;
+      
+      // Check if image/pdf is already uploaded (remote URL)
+      if (_frontPath!.startsWith('http')) {
+        // Reuse existing upload data
+        final currentApp = appProvider.currentApplication;
+        if (currentApp?.step3Pan != null) {
+          final stepData = currentApp!.step3Pan as Map<String, dynamic>;
+          uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
+        }
+      } else {
+        // Upload PAN file (image or PDF)
+        final panFile = XFile(_frontPath!);
+        uploadResult = await _fileUploadService.uploadPan(panFile);
+      }
 
       // Save step data to backend
       await appProvider.updateApplication(
@@ -585,12 +637,15 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                                         ],
                                       ),
                                     )
-                                  : ((_frontPath!.startsWith('http') && _authToken == null)
-                                      ? const Center(child: CircularProgressIndicator())
+                                  : ((_frontPath!.startsWith('http') && (_authToken == null || _imageFailed))
+                                      ? Center(child: _imageFailed
+                                          ? const Icon(Icons.broken_image, color: Colors.grey)
+                                          : const CircularProgressIndicator())
                                       : Transform.rotate(
                                       angle: _rotation * 3.14159 / 180,
                                       child: PlatformImage(
                                         imagePath: _frontPath!,
+                                        imageBytes: _frontBytes,
                                         fit: BoxFit.cover,
                                         headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                                       ),
