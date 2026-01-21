@@ -21,6 +21,7 @@ import 'screens/step5_personal_data_screen.dart';
 import 'screens/step5_1_salary_slips_screen.dart';
 import 'screens/step6_preview_screen.dart';
 import 'screens/submission_success_screen.dart';
+import 'screens/pdf_download_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -121,6 +122,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.submissionSuccess,
       builder: (context, state) => const SubmissionSuccessScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.pdfDownload,
+      builder: (context, state) => const PdfDownloadScreen(),
     ),
   ],
 );
