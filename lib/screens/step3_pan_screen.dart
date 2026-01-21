@@ -121,7 +121,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _pdfPassword = stepData['pdfPassword'] as String?;
         });
         // Also update SubmissionProvider
-        context.read<SubmissionProvider>().setPanFront(effectiveFront);
+        context.read<SubmissionProvider>().setPanFront(effectiveFront, isPdf: stepData['isPdf'] as bool? ?? false);
 
         // Fetch image if network URL and not PDF
         if (effectiveFront.startsWith('http') && accessToken != null && (!_isPdf)) {

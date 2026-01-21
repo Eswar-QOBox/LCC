@@ -139,6 +139,18 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             .setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
       
+      if (effectiveBack != null && effectiveBack.isNotEmpty) {
+        setState(() {
+          _backPath = effectiveBack;
+          _backIsPdf = backIsPdf;
+          _backPdfPassword = backPdfPassword;
+        });
+        // Also update SubmissionProvider
+        context
+            .read<SubmissionProvider>()
+            .setAadhaarBack(effectiveBack, isPdf: backIsPdf);
+      }
+      
       // Fetch front image if network URL
       if (effectiveFront != null && effectiveFront.startsWith('http') && accessToken != null) {
         try {
