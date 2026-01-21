@@ -138,6 +138,25 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       }
     }
 
+
+
+    // Robust URL normalization helper for de-duplication
+    String normalizeForDedup(String url) {
+      if (url.isEmpty) return url;
+      try {
+        final uri = Uri.parse(url);
+        // Return only the filename, ensuring we identify the same file regardless of path prefix
+        // e.g. /api/v1/uploads/file.pdf and /uploads/file.pdf become file.pdf
+        return uri.pathSegments.isNotEmpty ? uri.pathSegments.last : url;
+      } catch (e) {
+        // Fallback: split by slash
+        if (url.contains('/')) {
+          return url.split('/').last;
+        }
+        return url;
+      }
+    }
+
     // Sync PAN data
     if (application.step3Pan != null) {
       final stepData = application.step3Pan as Map<String, dynamic>;
@@ -175,8 +194,21 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectivePages = pages;
       }
       if (effectivePages.isNotEmpty) {
-        // De-duplicate pages
-        final uniquePages = effectivePages.toSet().toList();
+        // Robust De-duplication: Keep first occurrence of each unique normalized path
+        final uniquePages = <String>[];
+        final seenPaths = <String>{};
+        
+        for (final page in effectivePages) {
+          final normalized = normalizeForDedup(page);
+          if (!seenPaths.contains(normalized)) {
+            seenPaths.add(normalized);
+            uniquePages.add(page);
+          }
+        }
+        
+        if (kDebugMode) {
+          print('Preview: De-duplicated Bank Pages: ${effectivePages.length} -> ${uniquePages.length}');
+        }
         submissionProvider.setBankStatementPages(uniquePages, isPdf: isPdf);
       }
       final password = stepData['pdfPassword'] as String?;
@@ -205,8 +237,22 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectiveSalarySlips = salarySlips;
       }
       if (effectiveSalarySlips.isNotEmpty) {
-        // De-duplicate salary slips
-        final uniqueSlips = effectiveSalarySlips.toSet().toList();
+        // Robust De-duplication salary slips
+        final uniqueSlips = <String>[];
+        final seenPaths = <String>{};
+        
+        for (final slip in effectiveSalarySlips) {
+          final normalized = normalizeForDedup(slip);
+          if (!seenPaths.contains(normalized)) {
+            seenPaths.add(normalized);
+            uniqueSlips.add(slip);
+          }
+        }
+        
+        if (kDebugMode) {
+          print('Preview: De-duplicated Salary Slips: ${effectiveSalarySlips.length} -> ${uniqueSlips.length}');
+        }
+
         submissionProvider.setSalarySlips(
           uniqueSlips,
           isPdf: salaryIsPdf,
