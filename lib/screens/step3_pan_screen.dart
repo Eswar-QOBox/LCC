@@ -21,6 +21,7 @@ import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../services/storage_service.dart';
+import '../utils/api_config.dart';
 
 class Step3PanScreen extends StatefulWidget {
   const Step3PanScreen({super.key});
@@ -99,7 +100,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         } else if (!apiPath.startsWith('/api/')) {
           apiPath = '/api/v1$apiPath';
         }
-        return 'http://localhost:5000$apiPath';
+        return '${ApiConfig.baseUrl}$apiPath';
       }
       
       // Prefer uploaded file URL over local blob path

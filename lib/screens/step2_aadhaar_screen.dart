@@ -21,6 +21,7 @@ import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../services/storage_service.dart';
+import '../utils/api_config.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
   const Step2AadhaarScreen({super.key});
@@ -111,7 +112,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         } else if (!apiPath.startsWith('/api/')) {
           apiPath = '/api/v1$apiPath';
         }
-        return 'http://localhost:5000$apiPath';
+        return '${ApiConfig.baseUrl}$apiPath';
       }
       
       // Prefer uploaded file URL over local blob path

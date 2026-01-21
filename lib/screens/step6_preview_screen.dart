@@ -15,6 +15,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
 import '../widgets/step_progress_indicator.dart';
+import '../utils/api_config.dart';
 
 void main() {
   runApp(
@@ -83,23 +84,38 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final application = appProvider.currentApplication!;
     final submissionProvider = context.read<SubmissionProvider>();
 
+
     // Helper function to build full URL from relative path
     // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
     String? buildFullUrl(String? relativePath) {
       if (relativePath == null || relativePath.isEmpty) return null;
-      // If it's already a full URL or blob URL, return as-is
-      if (relativePath.startsWith('http') || relativePath.startsWith('blob:')) {
-        return relativePath;
+      
+      String path = relativePath;
+      
+      // Fix for "baseUrl" prefix if present
+      if (path.startsWith('baseUrl')) {
+         path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
       }
+      
+      // Fix for localhost URLs
+      if (path.startsWith('http://localhost:5000')) {
+         path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
+      }
+
+      // If it's already a full URL or blob URL, return as-is
+      if (path.startsWith('http') || path.startsWith('blob:')) {
+        return path;
+      }
+
       // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
-      String apiPath = relativePath;
+      String apiPath = path;
       if (apiPath.startsWith('/uploads/') &&
           !apiPath.contains('/uploads/files/')) {
         apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
       } else if (!apiPath.startsWith('/api/')) {
         apiPath = '/api/v1$apiPath';
       }
-      return 'http://localhost:5000$apiPath';
+      return '${ApiConfig.baseUrl}$apiPath';
     }
 
     // Sync selfie data
@@ -109,7 +125,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
       final relativeUrl = uploadedFile?['url'] as String?;
-      final effectivePath = buildFullUrl(relativeUrl) ?? imagePath;
+      final effectivePath = buildFullUrl(relativeUrl) ?? buildFullUrl(imagePath);
       if (effectivePath != null && effectivePath.isNotEmpty) {
         submissionProvider.setSelfie(effectivePath);
       }
@@ -127,9 +143,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       
       // Prefer uploaded file URLs
       final effectiveFront =
-          buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
+          buildFullUrl(frontUpload?['url'] as String?) ?? buildFullUrl(frontPath);
       final effectiveBack =
-          buildFullUrl(backUpload?['url'] as String?) ?? backPath;
+          buildFullUrl(backUpload?['url'] as String?) ?? buildFullUrl(backPath);
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
@@ -165,7 +181,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // PAN uses 'uploadedFile' not 'frontUpload'
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final effectiveFront =
-          buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
+          buildFullUrl(uploadedFile?['url'] as String?) ?? buildFullUrl(frontPath);
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setPanFront(effectiveFront, isPdf: isPdf);
       }
@@ -191,7 +207,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         }
       }
       if (effectivePages.isEmpty && pages.isNotEmpty) {
-        effectivePages = pages;
+        effectivePages = pages.map((p) => buildFullUrl(p) ?? p).toList();
       }
       if (effectivePages.isNotEmpty) {
         // Robust De-duplication: Keep first occurrence of each unique normalized path
@@ -234,7 +250,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         }
       }
       if (effectiveSalarySlips.isEmpty && salarySlips.isNotEmpty) {
-        effectiveSalarySlips = salarySlips;
+        effectiveSalarySlips = salarySlips.map((p) => buildFullUrl(p) ?? p).toList();
       }
       if (effectiveSalarySlips.isNotEmpty) {
         // Robust De-duplication salary slips

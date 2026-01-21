@@ -19,6 +19,7 @@ import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../services/storage_service.dart';
+import '../utils/api_config.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
   const Step4BankStatementScreen({super.key});
@@ -78,6 +79,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         // Helper to build full URL
         String? buildFullUrl(String? relativeUrl) {
           if (relativeUrl == null || relativeUrl.isEmpty) return null;
+          
+          // Fix for localhost URLs in saved data
+          if (relativeUrl.startsWith('http://localhost:5000')) {
+             return relativeUrl.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
+          }
+
           if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
           String apiPath = relativeUrl;
           if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
@@ -85,7 +92,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           } else if (!apiPath.startsWith('/api/')) {
             apiPath = '/api/v1$apiPath';
           }
-          return 'http://localhost:5000$apiPath'; // Assuming localhost for dev
+          return '${ApiConfig.baseUrl}$apiPath';
         }
 
         // Get access token for authenticated request

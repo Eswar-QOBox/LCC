@@ -18,6 +18,7 @@ import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../services/storage_service.dart';
+import '../utils/api_config.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
   const Step1SelfieScreen({super.key});
@@ -420,11 +421,15 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           } else if (!apiPath.startsWith('/api/')) {
             apiPath = '/api/v1$apiPath';
           }
-          effectivePath = 'http://localhost:5000$apiPath';
+          effectivePath = '${ApiConfig.baseUrl}$apiPath';
         }
         debugPrint('📷 Selfie Screen: effectivePath = $effectivePath');
       } else {
         effectivePath = imagePath;
+        // Fix for "baseUrl" prefix if present in the saved imagePath
+        if (effectivePath != null && effectivePath.startsWith('baseUrl')) {
+           effectivePath = effectivePath.replaceFirst('baseUrl', ApiConfig.baseUrl);
+        }
         debugPrint(
           '📷 Selfie Screen: Using imagePath as effectivePath = $effectivePath',
         );
@@ -439,11 +444,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
         // Also sync to SubmissionProvider
         final submissionProvider = context.read<SubmissionProvider>();
-        submissionProvider.setSelfie(effectivePath);
+        submissionProvider.setSelfie(effectivePath!);
 
         // Try to load image bytes from URL for display
         try {
-          if (effectivePath.startsWith('http')) {
+          if (effectivePath!.startsWith('http')) {
             // Get access token for authenticated request
             final storage = StorageService.instance;
             final accessToken = await storage.getAccessToken();
@@ -456,19 +461,33 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                 });
               }
               
-              final response = await http.get(Uri.parse(effectivePath), headers: headers);
+              debugPrint('📷 Selfie Screen: Fetching image from $effectivePath');
+              final response = await http.get(Uri.parse(effectivePath!), headers: headers);
+              debugPrint('📷 Selfie Screen: Fetch status: ${response.statusCode}, Content-Type: ${response.headers['content-type']}, Size: ${response.bodyBytes.length}');
+              
               if (response.statusCode == 200 && mounted) {
                 final contentType = response.headers['content-type'] ?? '';
-                final isLikelyImage = contentType.startsWith('image/');
                 final bytes = response.bodyBytes;
                 
-                if (isLikelyImage && _isValidImageBytes(bytes)) {
+                // Validate that we actually received image data, not HTML or other content
+                if (bytes.isNotEmpty && _isValidImageBytes(bytes)) {
                   setState(() {
                     _imageBytes = bytes;
                     _networkImageFailed = false;
                   });
+                  debugPrint('📷 Selfie Screen: Successfully loaded image (${bytes.length} bytes)');
                 } else {
-                  debugPrint('Received invalid image data: ${response.statusCode}, type: $contentType');
+                  final header = bytes.length >= 10 
+                      ? bytes.sublist(0, 10).map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')
+                      : 'too short';
+                  debugPrint('📷 Selfie Screen: Invalid image data received. Content-Type: $contentType, Header: $header');
+                  
+                  // Check if it's HTML (common error response)
+                  if (bytes.length > 10 && bytes[0] == 0x3c && bytes[1] == 0x21) {
+                    final htmlSnippet = String.fromCharCodes(bytes.sublist(0, bytes.length > 100 ? 100 : bytes.length));
+                    debugPrint('📷 Selfie Screen: Server returned HTML instead of image: $htmlSnippet');
+                  }
+                  
                   setState(() {
                     _networkImageFailed = true;
                   });
@@ -488,7 +507,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             }
           } else {
             // Try to load from local path
-            final imageFile = XFile(effectivePath);
+            final imageFile = XFile(effectivePath!);
             final bytes = await imageFile.readAsBytes();
             if (mounted) {
               setState(() {
