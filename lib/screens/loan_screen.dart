@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,11 +18,137 @@ class LoanScreen extends StatefulWidget {
 
 class _LoanScreenState extends State<LoanScreen> {
   bool _isLoading = true;
+  late PageController _promoPageController;
+  int _currentPromoIndex = 0;
+  Timer? _autoScrollTimer;
+  Timer? _resumeScrollTimer;
+  bool _isUserScrolling = false;
+  static const int _initialPage = 1000; // Large number for infinite scroll
+  static const Duration _autoScrollDuration = Duration(seconds: 3);
+  static const Duration _resumeScrollDelay = Duration(seconds: 5);
+
+  final List<String> _promoImages = const [
+    'assets/money.jpg',
+    'assets/Secure.jpg',
+    'assets/Intrest Rate.jpg',
+    'assets/JSEE_icon.jpg',
+  ];
+
+  Widget _buildTopBrandBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // Matches `lib/screens/instructions_screen.dart`
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            colorScheme.primary.withValues(alpha: 0.03),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset(
+              'assets/JSEE_icon.jpg',
+              height: 42,
+              width: 42,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'JSEE Solutions',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+              fontSize: 22,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    // Initialize PageController with a large initial page for infinite scroll
+    _promoPageController = PageController(
+      viewportFraction: 0.9,
+      initialPage: _initialPage,
+    );
+    _promoPageController.addListener(_onPageChanged);
+    _startAutoScroll();
     _loadLoanTypes();
+  }
+
+  void _onPageChanged() {
+    if (!_promoPageController.hasClients) return;
+    final page = _promoPageController.page ?? _initialPage;
+    final index = (page.round() % _promoImages.length);
+    if (index != _currentPromoIndex) {
+      setState(() {
+        _currentPromoIndex = index;
+      });
+    }
+    // If user is scrolling, pause auto-scroll and schedule resume
+    if (_isUserScrolling) {
+      _pauseAutoScroll();
+      _resumeScrollTimer?.cancel();
+      _resumeScrollTimer = Timer(_resumeScrollDelay, () {
+        _isUserScrolling = false;
+        _resumeAutoScroll();
+      });
+    }
+  }
+
+  void _startAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = Timer.periodic(_autoScrollDuration, (timer) {
+      if (_promoPageController.hasClients) {
+        final nextPage = _promoPageController.page!.toInt() + 1;
+        _promoPageController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
+  void _pauseAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _isUserScrolling = true;
+  }
+
+  void _resumeAutoScroll() {
+    if (!_isUserScrolling) {
+      _startAutoScroll();
+    }
+  }
+
+  @override
+  void dispose() {
+    _autoScrollTimer?.cancel();
+    _resumeScrollTimer?.cancel();
+    _promoPageController.removeListener(_onPageChanged);
+    _promoPageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadLoanTypes() async {
@@ -55,191 +182,372 @@ class _LoanScreenState extends State<LoanScreen> {
             ],
           ),
         ),
-          child: SafeArea(
-            child: _isLoading
-                ? _buildLoadingState(context)
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 32.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Header
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.secondary,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
-                                Icons.home,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    AppStrings.homeTitle,
-                                    style: theme.textTheme.headlineMedium
-                                        ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    AppStrings.homeSubtitle,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
+        child: Column(
+          children: [
+            _buildTopBrandBar(context),
+            Expanded(
+              child: _isLoading
+                  ? _buildLoadingState(context)
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 32.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Promotions Carousel
+                          _buildPromoCarousel(context),
+                          const SizedBox(height: 24),
 
-                        // Loan Types Section
-                        Text(
-                          AppStrings.chooseLoanType,
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
+                          // Loan Types Section
+                          Text(
+                            AppStrings.chooseLoanType,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-                        GridView.count(
-                          crossAxisCount: 2,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.95,
-                          children: loanTypes
-                              .map(
-                                (loanType) => _buildLoanTypeGridCard(
-                                  context,
-                                  icon: loanType.icon,
-                                  title: loanType.title,
-                                  subtitle: loanType.subtitle,
-                                  color: loanType.color,
-                                  onTap: () => context.go(
-                                    '${AppRoutes.instructions}?loanType=${loanType.title}',
+                          const SizedBox(height: 16),
+                          GridView.count(
+                            crossAxisCount: 2,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.95,
+                            children: loanTypes
+                                .map(
+                                  (loanType) => _buildLoanTypeGridCard(
+                                    context,
+                                    icon: loanType.icon,
+                                    title: loanType.title,
+                                    subtitle: loanType.subtitle,
+                                    color: loanType.color,
+                                    onTap: () => context.go(
+                                      '${AppRoutes.instructions}?loanType=${loanType.title}',
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          const SizedBox(height: 32),
+
+                          // Quick Info Cards
+                          Row(
+                            children: [
+                              Expanded(
+                                child: PremiumCard(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.check_circle_outline,
+                                        color: AppTheme.successColor,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        AppStrings.easyProcess,
+                                        style: theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        AppStrings.easyProcessSubtitle,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              )
-                              .toList(),
-                        ),
-                        const SizedBox(height: 32),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: PremiumCard(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.security,
+                                        color: colorScheme.primary,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        AppStrings.secure,
+                                        style: theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        AppStrings.secureSubtitle,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: PremiumCard(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    children: [
+                                      Icon(
+                                        Icons.access_time,
+                                        color: AppTheme.warningColor,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        AppStrings.quick,
+                                        style: theme.textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        AppStrings.quickSubtitle,
+                                        style: theme.textTheme.bodySmall?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                        // Quick Info Cards
-                        Row(
-                          children: [
-                            Expanded(
-                              child: PremiumCard(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle_outline,
-                                      color: AppTheme.successColor,
-                                      size: 32,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      AppStrings.easyProcess,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      AppStrings.easyProcessSubtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: PremiumCard(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.security,
-                                      color: colorScheme.primary,
-                                      size: 32,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      AppStrings.secure,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      AppStrings.secureSubtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: PremiumCard(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.access_time,
-                                      color: AppTheme.warningColor,
-                                      size: 32,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      AppStrings.quick,
-                                      style: theme.textTheme.titleSmall?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      AppStrings.quickSubtitle,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
+  Widget _buildPromoCarousel(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Title
+        Padding(
+          padding: const EdgeInsets.only(left: 8.0, bottom: 12.0),
+          child: Text(
+            'Featured Offers',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+        ),
+        GestureDetector(
+          onPanStart: (_) => _pauseAutoScroll(),
+          onPanEnd: (_) {
+            _resumeScrollTimer?.cancel();
+            _resumeScrollTimer = Timer(_resumeScrollDelay, () {
+              _isUserScrolling = false;
+              _resumeAutoScroll();
+            });
+          },
+          child: Stack(
+            children: [
+              SizedBox(
+                height: 200,
+                child: PageView.builder(
+                  controller: _promoPageController,
+                  onPageChanged: (_) => _pauseAutoScroll(),
+                  itemBuilder: (context, index) {
+                    final imageIndex = index % _promoImages.length;
+                    final imagePath = _promoImages[imageIndex];
+                    final isActive = imageIndex == _currentPromoIndex;
+                    return AnimatedScale(
+                      scale: isActive ? 1.0 : 0.92,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                      child: AnimatedOpacity(
+                        opacity: isActive ? 1.0 : 0.7,
+                        duration: const Duration(milliseconds: 300),
+                        child: _buildPromoCard(context, imagePath),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Gradient overlay on edges for better visual
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          colorScheme.surface.withValues(alpha: 0.3),
+                          Colors.transparent,
+                          colorScheme.surface.withValues(alpha: 0.3),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Enhanced page indicators
+        Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(
+                _promoImages.length,
+                (index) {
+                  final isActive = index == _currentPromoIndex;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: GestureDetector(
+                      onTap: () {
+                        _pauseAutoScroll();
+                        // Calculate the nearest page for infinite scroll
+                        final currentPage = _promoPageController.page?.toInt() ?? _initialPage;
+                        final remainder = currentPage % _promoImages.length;
+                        final nearestPage = currentPage - remainder + index;
+                        _promoPageController.animateToPage(
+                          nearestPage,
+                          duration: const Duration(milliseconds: 500),
+                          curve: Curves.easeInOut,
+                        );
+                        _resumeScrollTimer?.cancel();
+                        _resumeScrollTimer = Timer(_resumeScrollDelay, () {
+                          _isUserScrolling = false;
+                          _resumeAutoScroll();
+                        });
+                      },
+                      child: _buildPageIndicator(isActive: isActive),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPromoCard(BuildContext context, String imagePath) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            // Image
+            Image.asset(
+              imagePath,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        colorScheme.primary.withValues(alpha: 0.2),
+                        colorScheme.secondary.withValues(alpha: 0.1),
+                      ],
+                    ),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.image_not_supported,
+                          color: colorScheme.primary,
+                          size: 48,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Image not found',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
                   ),
-          ),
+                );
+              },
+            ),
+            // Dark gradient overlay at bottom
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.3),
+                    ],
+                    stops: const [0.3, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPageIndicator({required bool isActive}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      height: isActive ? 10 : 8,
+      width: isActive ? 28 : 8,
+      decoration: BoxDecoration(
+        color: isActive ? AppTheme.primaryColor : AppTheme.primaryColor.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ]
+            : [],
       ),
     );
   }
@@ -494,8 +802,12 @@ class _LoanScreenState extends State<LoanScreen> {
                 // WhatsApp Option
                 InkWell(
                   onTap: () {
-                    Navigator.of(context).pop();
-                    _openWhatsApp(context);
+                    Future.microtask(() {
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop();
+                      }
+                      _openWhatsApp(context);
+                    });
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: PremiumCard(
@@ -552,8 +864,12 @@ class _LoanScreenState extends State<LoanScreen> {
                 // Phone Option
                 InkWell(
                   onTap: () {
-                    Navigator.of(context).pop();
-                    _openPhoneDialer(context);
+                    Future.microtask(() {
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop();
+                      }
+                      _openPhoneDialer(context);
+                    });
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: PremiumCard(
@@ -619,7 +935,7 @@ class _LoanScreenState extends State<LoanScreen> {
   Future<void> _openWhatsApp(BuildContext context) async {
     // Replace with your WhatsApp number (include country code without +)
     // Format: countrycode + number (e.g., 911234567890 for India)
-    const String phoneNumber = '917569093224'; // Replace with actual number
+    const String phoneNumber = '916303429063'; // +91 63034 29063
     final Uri whatsappUrl = Uri.parse('https://wa.me/$phoneNumber');
 
     try {
@@ -650,7 +966,7 @@ class _LoanScreenState extends State<LoanScreen> {
 
   Future<void> _openPhoneDialer(BuildContext context) async {
     // Replace with your support phone number
-    const String phoneNumber = '+917569093224'; // Replace with actual number
+    const String phoneNumber = '+916303429063'; // +91 63034 29063
     final Uri phoneUrl = Uri.parse('tel:$phoneNumber');
 
     try {

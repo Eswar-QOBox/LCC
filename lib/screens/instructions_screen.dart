@@ -6,7 +6,6 @@ import '../utils/app_strings.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
@@ -46,6 +45,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
         ),
         child: Column(
           children: [
+            // Top brand bar with logo + JSEE Solutions
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -64,10 +64,29 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   ),
                 ],
               ),
-              child: AppHeader(
-                title: 'Application Guide',
-                icon: Icons.info_outline,
-                showBackButton: true,
+              padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/JSEE_icon.jpg',
+                      height: 42,
+                      width: 42,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'JSEE Solutions',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                      fontSize: 22,
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -76,6 +95,46 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // In-body Application Guide header row
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => context.go(AppRoutes.home),
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.08),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.arrow_back_ios_new,
+                                size: 20,
+                                color: Colors.black87,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Text(
+                            'Application Guide',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 22,
+                            ),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                     PremiumCard(
                       gradientColors: [
                         Colors.white,
