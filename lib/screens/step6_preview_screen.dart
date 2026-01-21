@@ -312,24 +312,6 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return null;
   }
 
-  /// Check if all required data is actually present (for PDF status)
-  bool _isActuallyComplete(BuildContext context) {
-    final provider = context.read<SubmissionProvider>();
-    final submission = provider.submission;
-    final selfiePath = _getSelfiePath(context);
-
-    return selfiePath != null &&
-        submission.aadhaar != null &&
-        submission.aadhaar!.isComplete &&
-        submission.pan != null &&
-        submission.pan!.isComplete &&
-        submission.bankStatement != null &&
-        submission.bankStatement!.isComplete &&
-        submission.personalData != null &&
-        submission.personalData!.isComplete &&
-        submission.salarySlips != null &&
-        submission.salarySlips!.isComplete;
-  }
 
   Future<void> _submit(BuildContext context) async {
     final provider = context.read<SubmissionProvider>();
@@ -1055,30 +1037,6 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
-                    Builder(
-                      builder: (context) {
-                        final colorScheme = Theme.of(context).colorScheme;
-                        return OutlinedButton.icon(
-                          onPressed: () => context.go(AppRoutes.pdfDownload),
-                          icon: const Icon(Icons.picture_as_pdf),
-                          label: const Text('Download Application as PDF'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 16,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            side: BorderSide(
-                              color: colorScheme.primary,
-                              width: 2,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
                     SlideToConfirm(
                       label: submission.isComplete
                           ? 'Slide to Submit'

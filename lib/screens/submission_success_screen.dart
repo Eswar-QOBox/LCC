@@ -1,7 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
+import '../providers/application_provider.dart';
+import '../services/pdf_generation_service.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/app_routes.dart';
 import '../models/document_submission.dart';
 
@@ -13,6 +17,263 @@ class SubmissionSuccessScreen extends StatefulWidget {
 }
 
 class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen> {
+  final PdfGenerationService _pdfService = PdfGenerationService();
+  bool _isGeneratingPdf = false;
+
+  Future<void> _generatePdf() async {
+    if (_isGeneratingPdf) return;
+
+    setState(() {
+      _isGeneratingPdf = true;
+    });
+
+    try {
+      final submissionProvider = context.read<SubmissionProvider>();
+      final applicationProvider = context.read<ApplicationProvider>();
+
+      // Sync latest data from backend before generating PDF
+      // This ensures we have the complete and most recent data
+      if (applicationProvider.hasApplication) {
+        try {
+          // Refresh application data from backend to get the latest saved data
+          await applicationProvider.refreshApplication();
+
+          // Sync the backend data to local submission provider
+          await _syncBackendDataToLocal(applicationProvider, submissionProvider);
+        } catch (e) {
+          debugPrint('Submission Success: Failed to sync latest data: $e');
+          // Continue with local data if sync fails
+        }
+      }
+
+      await _pdfService.generateApplicationPdf(
+        context: context,
+        submissionProvider: submissionProvider,
+        applicationProvider: applicationProvider,
+        useSampleData: false, // Use real data for submitted applications
+      );
+
+      if (mounted) {
+        PremiumToast.showSuccess(
+          context,
+          'PDF generated and downloaded successfully!',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        String errorMessage = 'Failed to generate PDF';
+        final errorStr = e.toString().toLowerCase();
+
+        // Provide user-friendly error messages
+        if (errorStr.contains('isolate') || errorStr.contains('spawn')) {
+          errorMessage = 'PDF generation encountered a system error. Please try again or restart the app.';
+        } else if (errorStr.contains('permission') || errorStr.contains('access')) {
+          errorMessage = 'Permission denied. Please grant storage permissions and try again.';
+        } else if (errorStr.contains('network') || errorStr.contains('connection')) {
+          errorMessage = 'Network error. Please check your connection and try again.';
+        } else {
+          errorMessage = 'Failed to generate PDF: ${e.toString().replaceFirst('Exception: ', '')}';
+        }
+
+        PremiumToast.showError(
+          context,
+          errorMessage,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGeneratingPdf = false;
+        });
+      }
+    }
+  }
+
+  /// Sync backend data to local submission provider
+  /// This ensures PDF generation uses the most complete and up-to-date data
+  Future<void> _syncBackendDataToLocal(
+    ApplicationProvider appProvider,
+    SubmissionProvider submissionProvider,
+  ) async {
+    final application = appProvider.currentApplication;
+    if (application == null) return;
+
+    // Helper function to build full URL from relative path
+    String? buildFullUrl(String? relativePath) {
+      if (relativePath == null || relativePath.isEmpty) return null;
+      // If it's already a full URL or blob URL, return as-is
+      if (relativePath.startsWith('http') || relativePath.startsWith('blob:')) {
+        return relativePath;
+      }
+      // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
+      String apiPath = relativePath;
+      if (apiPath.startsWith('/uploads/') &&
+          !apiPath.contains('/uploads/files/')) {
+        apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+      } else if (!apiPath.startsWith('/api/')) {
+        apiPath = '/api/v1$apiPath';
+      }
+      return 'http://localhost:5000$apiPath';
+    }
+
+    // Sync selfie data
+    if (application.step1Selfie != null) {
+      final stepData = application.step1Selfie as Map<String, dynamic>;
+      final imagePath = stepData['imagePath'] as String?;
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      // Prefer uploaded file URL over local path
+      final relativeUrl = uploadedFile?['url'] as String?;
+      final effectivePath = buildFullUrl(relativeUrl) ?? imagePath;
+      if (effectivePath != null && effectivePath.isNotEmpty) {
+        submissionProvider.setSelfie(effectivePath);
+      }
+    }
+
+    // Sync Aadhaar data
+    if (application.step2Aadhaar != null) {
+      final stepData = application.step2Aadhaar as Map<String, dynamic>;
+      final frontPath = stepData['frontPath'] as String?;
+      final backPath = stepData['backPath'] as String?;
+      final frontUpload = stepData['frontUpload'] as Map<String, dynamic>?;
+      final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
+      // Prefer uploaded file URLs
+      final effectiveFront =
+          buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
+      final effectiveBack =
+          buildFullUrl(backUpload?['url'] as String?) ?? backPath;
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
+        submissionProvider.setAadhaarFront(effectiveFront);
+      }
+      if (effectiveBack != null && effectiveBack.isNotEmpty) {
+        submissionProvider.setAadhaarBack(effectiveBack);
+      }
+    }
+
+    // Sync PAN data
+    if (application.step3Pan != null) {
+      final stepData = application.step3Pan as Map<String, dynamic>;
+      final frontPath = stepData['frontPath'] as String?;
+      // PAN uses 'uploadedFile' not 'frontUpload'
+      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final effectiveFront =
+          buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
+      if (effectiveFront != null && effectiveFront.isNotEmpty) {
+        submissionProvider.setPanFront(effectiveFront);
+      }
+    }
+
+    // Sync Bank Statement and Salary Slips data
+    if (application.step4BankStatement != null) {
+      final stepData = application.step4BankStatement as Map<String, dynamic>;
+
+      // Bank Statement pages
+      final pages = (stepData['pages'] as List<dynamic>?)?.cast<String>() ?? [];
+      final isPdf = stepData['isPdf'] as bool? ?? false;
+      final uploadedPages = stepData['uploadedPages'] as List<dynamic>?;
+      List<String> effectivePages = [];
+      if (uploadedPages != null && uploadedPages.isNotEmpty) {
+        for (var upload in uploadedPages) {
+          if (upload is Map<String, dynamic>) {
+            final url = buildFullUrl(upload['url'] as String?);
+            if (url != null && url.isNotEmpty) {
+              effectivePages.add(url);
+            }
+          }
+        }
+      }
+      if (effectivePages.isEmpty && pages.isNotEmpty) {
+        effectivePages = pages;
+      }
+      if (effectivePages.isNotEmpty) {
+        submissionProvider.setBankStatementPages(effectivePages, isPdf: isPdf);
+      }
+      final password = stepData['pdfPassword'] as String?;
+      if (password != null && password.isNotEmpty) {
+        submissionProvider.setBankStatementPassword(password);
+      }
+
+      // Salary slips are also stored in step4BankStatement
+      final salarySlips =
+          (stepData['salarySlips'] as List<dynamic>?)?.cast<String>() ?? [];
+      final salaryIsPdf = stepData['salarySlipsIsPdf'] as bool? ?? false;
+      final uploadedSalarySlips =
+          stepData['salarySlipsUploaded'] as List<dynamic>?;
+      List<String> effectiveSalarySlips = [];
+      if (uploadedSalarySlips != null && uploadedSalarySlips.isNotEmpty) {
+        for (var upload in uploadedSalarySlips) {
+          if (upload is Map<String, dynamic>) {
+            final url = buildFullUrl(upload['url'] as String?);
+            if (url != null && url.isNotEmpty) {
+              effectiveSalarySlips.add(url);
+            }
+          }
+        }
+      }
+      if (effectiveSalarySlips.isEmpty && salarySlips.isNotEmpty) {
+        effectiveSalarySlips = salarySlips;
+      }
+      if (effectiveSalarySlips.isNotEmpty) {
+        submissionProvider.setSalarySlips(
+          effectiveSalarySlips,
+          isPdf: salaryIsPdf,
+        );
+      }
+      final salaryPassword = stepData['salarySlipsPassword'] as String?;
+      if (salaryPassword != null && salaryPassword.isNotEmpty) {
+        submissionProvider.setSalarySlipsPassword(salaryPassword);
+      }
+    }
+
+    // Sync Personal Data
+    if (application.step5PersonalData != null) {
+      final stepData = application.step5PersonalData as Map<String, dynamic>;
+      final personalData = PersonalData(
+        nameAsPerAadhaar: stepData['nameAsPerAadhaar'] as String?,
+        dateOfBirth: stepData['dateOfBirth'] != null
+            ? DateTime.tryParse(stepData['dateOfBirth'] as String)
+            : null,
+        panNo: stepData['panNo'] as String?,
+        mobileNumber: stepData['mobileNumber'] as String?,
+        personalEmailId: stepData['personalEmailId'] as String?,
+        countryOfResidence: stepData['countryOfResidence'] as String?,
+        residenceAddress: stepData['residenceAddress'] as String?,
+        residenceType: stepData['residenceType'] as String?,
+        residenceStability: stepData['residenceStability'] as String?,
+        companyName: stepData['companyName'] as String?,
+        companyAddress: stepData['companyAddress'] as String?,
+        nationality: stepData['nationality'] as String?,
+        countryOfBirth: stepData['countryOfBirth'] as String?,
+        occupation: stepData['occupation'] as String?,
+        educationalQualification:
+            stepData['educationalQualification'] as String?,
+        workType: stepData['workType'] as String?,
+        industry: stepData['industry'] as String?,
+        annualIncome: stepData['annualIncome'] as String?,
+        totalWorkExperience: stepData['totalWorkExperience'] as String?,
+        currentCompanyExperience:
+            stepData['currentCompanyExperience'] as String?,
+        loanAmount: stepData['loanAmount'] as String?,
+        loanTenure: stepData['loanTenure'] as String?,
+        loanAmountTenure: stepData['loanAmountTenure'] as String?,
+        maritalStatus: stepData['maritalStatus'] as String?,
+        spouseName: stepData['spouseName'] as String?,
+        fatherName: stepData['fatherName'] as String?,
+        motherName: stepData['motherName'] as String?,
+        reference1Name: stepData['reference1Name'] as String?,
+        reference1Address: stepData['reference1Address'] as String?,
+        reference1Contact: stepData['reference1Contact'] as String?,
+        reference2Name: stepData['reference2Name'] as String?,
+        reference2Address: stepData['reference2Address'] as String?,
+        reference2Contact: stepData['reference2Contact'] as String?,
+      );
+      submissionProvider.setPersonalData(personalData);
+    }
+
+    if (kDebugMode) {
+      print('📥 Submission Success: Synced latest backend data to local state');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.read<SubmissionProvider>();
@@ -122,9 +383,15 @@ class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen> {
                 ],
                 // Download PDF button
                 OutlinedButton.icon(
-                  onPressed: () => context.go(AppRoutes.pdfDownload),
-                  icon: const Icon(Icons.picture_as_pdf_outlined),
-                  label: const Text('Download Application PDF'),
+                  onPressed: _isGeneratingPdf ? null : _generatePdf,
+                  icon: _isGeneratingPdf
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.picture_as_pdf_outlined),
+                  label: Text(_isGeneratingPdf ? 'Generating PDF...' : 'Download Application PDF'),
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 32,

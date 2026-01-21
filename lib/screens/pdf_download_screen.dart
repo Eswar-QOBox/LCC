@@ -12,7 +12,6 @@ import 'package:go_router/go_router.dart';
 
 class PdfDownloadScreen extends StatefulWidget {
   const PdfDownloadScreen({super.key});
-
   @override
   State<PdfDownloadScreen> createState() => _PdfDownloadScreenState();
 }
