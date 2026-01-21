@@ -74,7 +74,8 @@ dependencies:
   
   # File Sharing/Download
   share_plus: ^10.0.0
-
+  firebase_core: ^4.4.0
+  
   # URL Launcher
   url_launcher: ^6.3.0
   
