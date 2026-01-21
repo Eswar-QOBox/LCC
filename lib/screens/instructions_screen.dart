@@ -593,10 +593,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         isPrimary: true,
                         onPressed: () {
                           Navigator.of(dialogContext).pop();
-                          // Load application and navigate to the appropriate step
+                          // Load application and navigate based on status
                           final appProvider = context.read<ApplicationProvider>();
                           appProvider.setApplication(application);
-                          context.go(AppRoutes.getStepRoute(application.currentStep));
+                          
+                          // If submitted, go to preview (view-only mode)
+                          // If incomplete, resume at current step
+                          if (application.isSubmitted) {
+                            context.go(AppRoutes.step6Preview);
+                          } else {
+                            context.go(AppRoutes.getStepRoute(application.currentStep));
+                          }
                         },
                       ),
                     ),

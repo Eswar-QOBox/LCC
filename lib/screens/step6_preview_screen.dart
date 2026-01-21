@@ -39,6 +39,10 @@ class Step6PreviewScreen extends StatefulWidget {
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   String? _authToken;
   bool _isLoadingAuth = true;
+  
+  // Change tracking for dynamic button (Submit vs Close)
+  bool _hasChanges = false;
+  Map<String, dynamic>? _initialApplicationSnapshot;
 
   @override
   void initState() {
@@ -46,8 +50,64 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     // Load existing data from backend when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
+      _captureInitialState();
     });
   }
+  
+  /// Capture initial application state to detect changes later
+  void _captureInitialState() {
+    final appProvider = context.read<ApplicationProvider>();
+    if (appProvider.hasApplication) {
+      final app = appProvider.currentApplication!;
+      _initialApplicationSnapshot = {
+        'step1Selfie': app.step1Selfie,
+        'step2Aadhaar': app.step2Aadhaar,
+        'step3Pan': app.step3Pan,
+        'step4BankStatement': app.step4BankStatement,
+        'step5PersonalData': app.step5PersonalData,
+      };
+      if (kDebugMode) {
+        print('📸 Captured initial application snapshot');
+      }
+    }
+  }
+  
+  /// Check if current application state differs from initial snapshot
+  void _checkForChanges() {
+    if (_initialApplicationSnapshot == null) {
+      setState(() => _hasChanges = false);
+      return;
+    }
+    
+    final appProvider = context.read<ApplicationProvider>();
+    if (!appProvider.hasApplication) {
+      setState(() => _hasChanges = false);
+      return;
+    }
+    
+    final app = appProvider.currentApplication!;
+    final hasChanges = 
+      app.step1Selfie.toString() != _initialApplicationSnapshot!['step1Selfie'].toString() ||
+      app.step2Aadhaar.toString() != _initialApplicationSnapshot!['step2Aadhaar'].toString() ||
+      app.step3Pan.toString() != _initialApplicationSnapshot!['step3Pan'].toString() ||
+      app.step4BankStatement.toString() != _initialApplicationSnapshot!['step4BankStatement'].toString() ||
+      app.step5PersonalData.toString() != _initialApplicationSnapshot!['step5PersonalData'].toString();
+    
+    if (hasChanges != _hasChanges) {
+      setState(() => _hasChanges = hasChanges);
+      if (kDebugMode) {
+        print('🔄 Changes detected: $_hasChanges');
+      }
+    }
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check for changes when user returns from an edit screen
+    _checkForChanges();
+  }
+
 
   /// Load existing data from ApplicationProvider (backend) and sync to SubmissionProvider (local state)
   /// This ensures data persists across page refreshes on web
@@ -1119,15 +1179,44 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
-                    SlideToConfirm(
-                      label: submission.isComplete
-                          ? 'Slide to Submit'
-                          : 'Complete Missing Steps',
-                      enabled: submission.isComplete,
-                      onSubmitted: submission.isComplete
-                          ? () => _submit(context)
-                          : null,
-                    ),
+                    // Dynamic button: Close if no changes, Submit if changes made
+                    if (_hasChanges) ...[
+                      // User made changes - show Submit button
+                      SlideToConfirm(
+                        label: submission.isComplete
+                            ? 'Slide to Submit'
+                            : 'Complete Missing Steps',
+                        enabled: submission.isComplete,
+                        onSubmitted: submission.isComplete
+                            ? () => _submit(context)
+                            : null,
+                      ),
+                    ] else ...[
+                      // No changes - show Close button
+                      PremiumCard(
+                        gradientColors: [
+                          colorScheme.primary.withValues(alpha: 0.05),
+                          colorScheme.secondary.withValues(alpha: 0.03),
+                        ],
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () => context.go(AppRoutes.home),
+                            icon: const Icon(Icons.close),
+                            label: const Text('Close'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: colorScheme.surfaceContainerHighest,
+                              foregroundColor: colorScheme.onSurface,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              elevation: 0,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                   ],
                 ),
