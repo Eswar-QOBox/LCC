@@ -34,6 +34,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   bool _isValidating = false;
   bool _isSaving = false;
   SelfieValidationResult? _validationResult;
+  String? _authToken;
 
   Future<void> _captureFromCamera() async {
     if (!mounted) return;
@@ -422,6 +423,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             final headers = <String, String>{};
             if (accessToken != null) {
               headers['Authorization'] = 'Bearer $accessToken';
+              if (mounted) {
+                setState(() {
+                  _authToken = accessToken;
+                });
+              }
             }
             final response = await http.get(Uri.parse(effectivePath), headers: headers);
             if (response.statusCode == 200 && mounted) {
@@ -581,11 +587,14 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                           borderRadius: BorderRadius.circular(17),
                           child: Stack(
                             children: [
-                              PlatformImage(
-                                imagePath: _imagePath!,
-                                imageBytes: _imageBytes,
-                                fit: BoxFit.cover,
-                              ),
+                                ((_imagePath!.startsWith('http') && _authToken == null)
+                                    ? const Center(child: CircularProgressIndicator())
+                                    : PlatformImage(
+                                  imagePath: _imagePath!,
+                                  imageBytes: _imageBytes,
+                                  fit: BoxFit.cover,
+                                  headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                                )),
                               // Overlay gradient
                               Container(
                                 decoration: BoxDecoration(

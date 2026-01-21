@@ -19,6 +19,7 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../services/storage_service.dart';
 
 class Step3PanScreen extends StatefulWidget {
   const Step3PanScreen({super.key});
@@ -37,6 +38,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   bool _isPdf = false;
   String? _pdfPassword;
   double _rotation = 0.0;
+  String? _authToken;
 
   @override
   void initState() {
@@ -83,6 +85,15 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       
       // Prefer uploaded file URL over local blob path
       final effectiveFront = buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
+
+      // Get access token for authenticated request
+      final storage = StorageService.instance;
+      final accessToken = await storage.getAccessToken();
+      if (accessToken != null && mounted) {
+        setState(() {
+          _authToken = accessToken;
+        });
+      }
       
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
@@ -574,13 +585,16 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                                         ],
                                       ),
                                     )
-                                  : Transform.rotate(
+                                  : ((_frontPath!.startsWith('http') && _authToken == null)
+                                      ? const Center(child: CircularProgressIndicator())
+                                      : Transform.rotate(
                                       angle: _rotation * 3.14159 / 180,
                                       child: PlatformImage(
                                         imagePath: _frontPath!,
                                         fit: BoxFit.cover,
+                                        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                                       ),
-                                    ),
+                                    )),
                               // Remove button (X) for PDF and Images - top right
                               Positioned(
                                 top: 12,

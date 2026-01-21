@@ -16,6 +16,7 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../services/storage_service.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
   const Step4BankStatementScreen({super.key});
@@ -35,6 +36,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   bool _isSaving = false;
   DateTime? _statementEndDate;
   DateTime? _calculatedStartDate;
+  String? _authToken;
 
   @override
   void initState() {
@@ -57,9 +59,33 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final application = appProvider.currentApplication!;
     if (application.step4BankStatement != null) {
       final stepData = application.step4BankStatement as Map<String, dynamic>;
-          if (stepData['pages'] != null) {
+      if (stepData['pages'] != null) {
+        
+        // Helper to build full URL
+        String? buildFullUrl(String? relativeUrl) {
+          if (relativeUrl == null || relativeUrl.isEmpty) return null;
+          if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
+          String apiPath = relativeUrl;
+          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
+            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+          } else if (!apiPath.startsWith('/api/')) {
+            apiPath = '/api/v1$apiPath';
+          }
+          return 'http://localhost:5000$apiPath'; // Assuming localhost for dev
+        }
+
+        // Get access token for authenticated request
+        final storage = StorageService.instance;
+        final accessToken = await storage.getAccessToken();
+        if (accessToken != null && mounted) {
+          setState(() {
+            _authToken = accessToken;
+          });
+        }
+        
         setState(() {
-          _pages = List<String>.from(stepData['pages'] as List);
+          final rawPages = List<String>.from(stepData['pages'] as List);
+          _pages = rawPages.map((p) => buildFullUrl(p) ?? p).toList();
           _isPdf = stepData['isPdf'] as bool? ?? false;
           _pdfPassword = stepData['pdfPassword'] as String?;
           if (stepData['statementEndDate'] != null) {
@@ -1017,7 +1043,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       ),
                     ),
                   )
-                : PlatformImage(imagePath: _pages[index], fit: BoxFit.cover),
+                : ((_pages[index].startsWith('http') && _authToken == null)
+                    ? const Center(child: CircularProgressIndicator())
+                    : PlatformImage(
+                    imagePath: _pages[index], 
+                    fit: BoxFit.cover,
+                    headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                  )),
             Positioned(
               top: 8,
               right: 8,

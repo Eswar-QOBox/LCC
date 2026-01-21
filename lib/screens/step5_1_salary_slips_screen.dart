@@ -18,6 +18,7 @@ import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
 import '../models/document_submission.dart';
 import 'package:intl/intl.dart';
+import '../services/storage_service.dart';
 
 class Step5_1SalarySlipsScreen extends StatefulWidget {
   const Step5_1SalarySlipsScreen({super.key});
@@ -37,6 +38,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   bool _isSavingDraft = false;
   bool _isSaving = false;
   bool _hasSyncedWithProvider = false;
+  String? _authToken;
 
   @override
   void initState() {
@@ -99,13 +101,38 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       final stepData = application.step4BankStatement as Map<String, dynamic>;
       
       if (stepData['salarySlipItems'] != null) {
+        
+        // Helper to build full URL
+        String? buildFullUrl(String? relativeUrl) {
+          if (relativeUrl == null || relativeUrl.isEmpty) return null;
+          if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
+          String apiPath = relativeUrl;
+          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
+            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+          } else if (!apiPath.startsWith('/api/')) {
+            apiPath = '/api/v1$apiPath';
+          }
+          return 'http://localhost:5000$apiPath'; // Assuming localhost for dev
+        }
+        
+        // Get access token for authenticated request
+        final storage = StorageService.instance;
+        final accessToken = await storage.getAccessToken();
+        if (accessToken != null && mounted) {
+          setState(() {
+            _authToken = accessToken;
+          });
+        }
+
         final itemsList = stepData['salarySlipItems'] as List;
         final loadedItems = itemsList.map((item) {
           final map = item as Map<String, dynamic>;
+          final rawPath = map['path'] as String?;
+          final fullPath = buildFullUrl(rawPath) ?? rawPath ?? '';
           return SalarySlipItem(
-            path: map['path'] ?? '',
+            path: fullPath,
             slipDate: map['slipDate'] != null ? DateTime.parse(map['slipDate']) : null,
-            isPdf: map['path'].toString().toLowerCase().endsWith('.pdf') || (stepData['salarySlipsIsPdf'] == true),
+            isPdf: fullPath.toLowerCase().endsWith('.pdf') || (stepData['salarySlipsIsPdf'] == true),
           );
         }).toList();
 
@@ -938,10 +965,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                         ],
                       ),
                     )
-                  : PlatformImage(
-                      imagePath: slipItem.path,
-                      fit: BoxFit.cover,
-                    ),
+                    : ((slipItem.path.startsWith('http') && _authToken == null)
+                        ? const Center(child: CircularProgressIndicator())
+                        : PlatformImage(
+                        imagePath: slipItem.path,
+                        fit: BoxFit.cover,
+                        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                      )),
             ),
             Positioned(
               top: 8,

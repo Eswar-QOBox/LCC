@@ -19,6 +19,7 @@ import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../services/storage_service.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
   const Step2AadhaarScreen({super.key});
@@ -41,6 +42,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   String? _backPdfPassword;
   double _frontRotation = 0.0;
   double _backRotation = 0.0;
+  String? _authToken;
 
   @override
   void initState() {
@@ -98,6 +100,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       // Prefer uploaded file URL over local blob path
       final effectiveFront = buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
       final effectiveBack = buildFullUrl(backUpload?['url'] as String?) ?? backPath;
+      
+      // Get access token for authenticated request
+      final storage = StorageService.instance;
+      final accessToken = await storage.getAccessToken();
+      if (accessToken != null && mounted) {
+        setState(() {
+          _authToken = accessToken;
+        });
+      }
       
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         setState(() {
@@ -931,10 +942,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                           ],
                         ),
                       )
-                    : Transform.rotate(
+                    : ((path.startsWith('http') && _authToken == null)
+                        ? const Center(child: CircularProgressIndicator())
+                        : Transform.rotate(
                         angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
-                        child: PlatformImage(imagePath: path, fit: BoxFit.cover),
-                      ),
+                        child: PlatformImage(
+                          imagePath: path, 
+                          fit: BoxFit.cover,
+                          headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                        ),
+                      )),
                 Positioned(
                   top: 12,
                   left: 12,

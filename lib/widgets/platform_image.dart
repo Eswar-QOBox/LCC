@@ -9,7 +9,8 @@ class PlatformImage extends StatelessWidget {
   final BoxFit? fit;
   final double? width;
   final double? height;
-  final Uint8List? imageBytes; // Optional: pre-loaded bytes for web
+  final Uint8List? imageBytes;
+  final Map<String, String>? headers;
 
   const PlatformImage({
     super.key,
@@ -18,6 +19,7 @@ class PlatformImage extends StatelessWidget {
     this.width,
     this.height,
     this.imageBytes,
+    this.headers,
   });
 
   @override
@@ -40,6 +42,7 @@ class PlatformImage extends StatelessWidget {
           fit: fit,
           width: width,
           height: height,
+          headers: headers,
           errorBuilder: (context, error, stackTrace) {
             return Container(
               decoration: BoxDecoration(
