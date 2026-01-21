@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import '../models/additional_document.dart';
 import '../services/api_client.dart';
 
@@ -25,18 +25,45 @@ class AdditionalDocumentsService {
       if (leadsResponse.statusCode == 200) {
         final leadsData = leadsResponse.data;
         
-        if (leadsData['success'] == true && 
-            leadsData['data']?['leads'] != null) {
-          final leads = leadsData['data']['leads'] as List;
-          
-          // Find lead with matching email (case-insensitive)
-          // Backend should already filter this, but we double-check for security
-          for (var lead in leads) {
-            final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
+        if (kDebugMode) {
+          print('Leads API response: $leadsData');
+        }
+        
+        if (leadsData is Map && leadsData['success'] == true) {
+          final data = leadsData['data'];
+          if (data is Map && data['leads'] != null) {
+            final leads = data['leads'] as List;
             
-            if (leadEmail == normalizedEmail) {
-              return lead as Map<String, dynamic>;
+            if (kDebugMode) {
+              print('Found ${leads.length} leads in response');
             }
+            
+            // Find lead with matching email (case-insensitive)
+            // Backend should already filter this, but we double-check for security
+            for (var lead in leads) {
+              if (lead is Map) {
+                final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
+                
+                if (kDebugMode) {
+                  print('Checking lead email: $leadEmail against: $normalizedEmail');
+                }
+                
+                if (leadEmail == normalizedEmail) {
+                  if (kDebugMode) {
+                    print('Found matching lead: ${lead['id']}');
+                  }
+                  return lead as Map<String, dynamic>;
+                }
+              }
+            }
+          } else {
+            if (kDebugMode) {
+              print('Unexpected response structure: data or leads is null');
+            }
+          }
+        } else {
+          if (kDebugMode) {
+            print('API response success is false or unexpected structure');
           }
         }
       } else if (leadsResponse.statusCode == 403) {
@@ -45,13 +72,70 @@ class AdditionalDocumentsService {
         throw Exception('Authentication required. Please log in again.');
       }
 
+      // No matching lead found
+      if (kDebugMode) {
+        print('No lead found for email: $normalizedEmail');
+      }
       throw Exception('Lead not found for your email address');
+    } on DioException catch (e) {
+      // Handle DioException (network errors, HTTP errors, etc.)
+      String errorMessage;
+      
+      // Check for network/connection errors
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        errorMessage = 'Unable to connect to server. Please check your internet connection and try again.';
+      } else if (e.response != null) {
+        // HTTP error response
+        final statusCode = e.response!.statusCode;
+        if (statusCode == 401) {
+          errorMessage = 'Authentication required. Please log in again.';
+        } else if (statusCode == 403) {
+          errorMessage = 'Access denied. You can only view your own lead information.';
+        } else if (statusCode == 404) {
+          errorMessage = 'Service temporarily unavailable. Please try again later.';
+        } else if (statusCode == 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          // Try to extract error message from response
+          final errorData = e.response?.data;
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'].toString();
+          } else {
+            errorMessage = 'Failed to get lead information. Please try again later.';
+          }
+        }
+      } else {
+        // Other DioException
+        errorMessage = 'Network error: ${e.message ?? "Please check your internet connection and try again."}';
+      }
+      
+      throw Exception(errorMessage);
     } catch (e) {
-      if (e.toString().contains('Access denied') || 
-          e.toString().contains('Authentication required')) {
+      // Handle other exceptions
+      final errorString = e.toString();
+      
+      // Preserve specific error messages
+      if (errorString.contains('Access denied') || 
+          errorString.contains('Authentication required') ||
+          errorString.contains('Lead not found')) {
         rethrow;
       }
-      throw Exception('Failed to get lead information. Please try again later.');
+      
+      // For unknown errors, include the original error message for debugging
+      if (kDebugMode) {
+        print('Error in getLeadByEmail: $e');
+      }
+      
+      // Extract clean error message
+      String errorMessage = errorString.replaceFirst('Exception: ', '');
+      if (errorMessage.isEmpty || errorMessage == errorString) {
+        errorMessage = 'Failed to get lead information. Please try again later.';
+      }
+      
+      throw Exception(errorMessage);
     }
   }
 
