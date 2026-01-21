@@ -122,16 +122,19 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       final backPath = stepData['backPath'] as String?;
       final frontUpload = stepData['frontUpload'] as Map<String, dynamic>?;
       final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
+      final frontIsPdf = stepData['frontIsPdf'] as bool? ?? false;
+      final backIsPdf = stepData['backIsPdf'] as bool? ?? false;
+      
       // Prefer uploaded file URLs
       final effectiveFront =
           buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
       final effectiveBack =
           buildFullUrl(backUpload?['url'] as String?) ?? backPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
-        submissionProvider.setAadhaarFront(effectiveFront);
+        submissionProvider.setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
       if (effectiveBack != null && effectiveBack.isNotEmpty) {
-        submissionProvider.setAadhaarBack(effectiveBack);
+        submissionProvider.setAadhaarBack(effectiveBack, isPdf: backIsPdf);
       }
     }
 
@@ -139,12 +142,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     if (application.step3Pan != null) {
       final stepData = application.step3Pan as Map<String, dynamic>;
       final frontPath = stepData['frontPath'] as String?;
+      final isPdf = stepData['isPdf'] as bool? ?? false;
       // PAN uses 'uploadedFile' not 'frontUpload'
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final effectiveFront =
           buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
-        submissionProvider.setPanFront(effectiveFront);
+        submissionProvider.setPanFront(effectiveFront, isPdf: isPdf);
       }
     }
 
@@ -769,6 +773,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                 child: PlatformImage(
                                   imagePath: selfiePath,
                                   fit: BoxFit.cover,
+                                  headers: _authToken != null
+                                      ? {'Authorization': 'Bearer $_authToken'}
+                                      : null,
                                 ),
                               ),
                             )

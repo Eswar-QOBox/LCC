@@ -59,6 +59,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.pan?.frontPath;
     
+    // Check if it's a PDF based on provider extended info if available or file extension
+    // SubmissionProvider helper needed or direct check 
+     if (_frontPath != null && _frontPath!.toLowerCase().endsWith('.pdf')) {
+       _isPdf = true;
+    }
+    
     // Load existing data from backend
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
@@ -171,7 +177,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       } else {
         // Upload PAN file (image or PDF)
         final panFile = XFile(_frontPath!);
-        uploadResult = await _fileUploadService.uploadPan(panFile);
+        uploadResult = await _fileUploadService.uploadPan(panFile, isPdf: _isPdf);
       }
 
       // Save step data to backend
@@ -217,7 +223,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _rotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setPanFront(image.path);
+      context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
     }
   }
 
@@ -230,7 +236,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _rotation = 0.0;
         _resetDraftState();
       });
-      context.read<SubmissionProvider>().setPanFront(image.path);
+      context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
     }
   }
 
@@ -269,7 +275,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _rotation = 0.0;
           _resetDraftState();
         });
-        context.read<SubmissionProvider>().setPanFront(path);
+        context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
         _showPasswordDialogIfNeeded();
       }
     }

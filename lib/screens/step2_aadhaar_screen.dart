@@ -65,6 +65,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final provider = context.read<SubmissionProvider>();
     _frontPath = provider.submission.aadhaar?.frontPath;
     _backPath = provider.submission.aadhaar?.backPath;
+    _frontIsPdf = provider.submission.aadhaar?.frontIsPdf ?? false;
+    _backIsPdf = provider.submission.aadhaar?.backIsPdf ?? false;
     
     // Load existing data from backend
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -512,17 +514,22 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         frontUpload = await _fileUploadService.uploadAadhaar(
           frontFile,
           side: 'front',
+          isPdf: _frontIsPdf,
         );
       }
 
       // Upload or reuse back image
-      if (isRemote(_backPath)) {
+      // Optimization: If it's a PDF and paths are the same, don't upload again
+      if (_frontIsPdf && _backIsPdf && _frontPath == _backPath && frontUpload != null) {
+        backUpload = frontUpload; // Reuse the same upload response
+      } else if (isRemote(_backPath)) {
         backUpload = existingData?['backUpload'] as Map<String, dynamic>?;
       } else {
         final backFile = XFile(_backPath!);
         backUpload = await _fileUploadService.uploadAadhaar(
           backFile,
           side: 'back',
+          isPdf: _backIsPdf,
         );
       }
 
