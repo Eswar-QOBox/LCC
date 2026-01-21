@@ -93,7 +93,47 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   Future<void> _loadExistingData() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
-    // Salary slips are optional, so we don't require them to exist
+
+    final application = appProvider.currentApplication!;
+    if (application.step4BankStatement != null) {
+      final stepData = application.step4BankStatement as Map<String, dynamic>;
+      
+      if (stepData['salarySlipItems'] != null) {
+        final itemsList = stepData['salarySlipItems'] as List;
+        final loadedItems = itemsList.map((item) {
+          final map = item as Map<String, dynamic>;
+          return SalarySlipItem(
+            path: map['path'] ?? '',
+            slipDate: map['slipDate'] != null ? DateTime.parse(map['slipDate']) : null,
+            isPdf: map['path'].toString().toLowerCase().endsWith('.pdf') || (stepData['salarySlipsIsPdf'] == true),
+          );
+        }).toList();
+
+        if (loadedItems.isNotEmpty) {
+          setState(() {
+            _slipItems = loadedItems;
+            _isPdf = stepData['salarySlipsIsPdf'] ?? false;
+            _pdfPassword = stepData['salarySlipsPassword'];
+             _hasSyncedWithProvider = true;
+          });
+
+          // Update provider
+          final provider = context.read<SubmissionProvider>();
+          final paths = loadedItems.map((item) => item.path).toList();
+          provider.setSalarySlips(paths, isPdf: _isPdf);
+          if (_pdfPassword != null) {
+            provider.setSalarySlipsPassword(_pdfPassword!);
+          }
+          
+          // Update dates
+          for (int i = 0; i < loadedItems.length; i++) {
+            if (loadedItems[i].slipDate != null) {
+              provider.updateSalarySlipDate(i, loadedItems[i].slipDate!);
+            }
+          }
+        }
+      }
+    }
   }
 
   Future<void> _saveToBackend() async {
