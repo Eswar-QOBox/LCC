@@ -272,7 +272,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         // or keep them in step4BankStatement as additional documents
         await appProvider.updateApplication(
           step4BankStatement: {
-            'salarySlips': _slipItems.map((item) => item.path).toList(), // Mixed paths
+            'salarySlips': _slipItems.map((item) => item.path).toSet().toList(), // De-duplicate paths
             'salarySlipItems': _slipItems.map((item) => {
               'path': item.path, // Mixed paths
               'slipDate': item.slipDate?.toIso8601String(),

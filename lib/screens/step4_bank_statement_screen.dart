@@ -294,7 +294,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       await appProvider.updateApplication(
         currentStep: 5, // Move to next step
         step4BankStatement: {
-          'pages': _pages, // This contains mixed paths (http://... and local paths for display if any remained)
+          'pages': _pages.toSet().toList(), // De-duplicate pages
                            // Ideally backend should rely on uploadedFiles for truth, but preserving pages logic
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,

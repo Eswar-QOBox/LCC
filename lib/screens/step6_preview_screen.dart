@@ -159,7 +159,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // Bank Statement pages
       final pages = (stepData['pages'] as List<dynamic>?)?.cast<String>() ?? [];
       final isPdf = stepData['isPdf'] as bool? ?? false;
-      final uploadedPages = stepData['uploadedPages'] as List<dynamic>?;
+      final uploadedPages = (stepData['uploadedFiles'] ?? stepData['uploadedPages']) as List<dynamic>?;
       List<String> effectivePages = [];
       if (uploadedPages != null && uploadedPages.isNotEmpty) {
         for (var upload in uploadedPages) {
