@@ -384,6 +384,14 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 4),
+          Text(
+            'ID: ${application.applicationId}',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontFamily: 'monospace',
+            ),
+          ),
           const SizedBox(height: 16),
           
           // Loan Details Grid
