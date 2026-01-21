@@ -175,7 +175,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectivePages = pages;
       }
       if (effectivePages.isNotEmpty) {
-        submissionProvider.setBankStatementPages(effectivePages, isPdf: isPdf);
+        // De-duplicate pages
+        final uniquePages = effectivePages.toSet().toList();
+        submissionProvider.setBankStatementPages(uniquePages, isPdf: isPdf);
       }
       final password = stepData['pdfPassword'] as String?;
       if (password != null && password.isNotEmpty) {
@@ -203,8 +205,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectiveSalarySlips = salarySlips;
       }
       if (effectiveSalarySlips.isNotEmpty) {
+        // De-duplicate salary slips
+        final uniqueSlips = effectiveSalarySlips.toSet().toList();
         submissionProvider.setSalarySlips(
-          effectiveSalarySlips,
+          uniqueSlips,
           isPdf: salaryIsPdf,
         );
       }

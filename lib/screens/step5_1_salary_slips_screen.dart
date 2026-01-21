@@ -251,7 +251,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             
             for (final upload in existingUploads) {
               final url = upload['url'] as String?;
-              if (url != null && remoteItems.any((item) => item.path.contains(url) || url.contains(item.path))) {
+              if (url != null && 
+                  remoteItems.any((item) => item.path.contains(url) || url.contains(item.path)) &&
+                  !finalUploadedFiles.any((f) => f['url'] == url)) {
                 finalUploadedFiles.add(upload);
               }
             }

@@ -271,16 +271,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           final existingUploads = (stepData['uploadedFiles'] as List<dynamic>?)
                   ?.cast<Map<String, dynamic>>() ?? [];
           
-          // Filter to keep only those that are still in our _pages list
-          // We match by checking if the URL is present in our remoteUrls list
-          // Note: URLs might be relative or absolute, so we might need loose matching 
-          // but usually they will be consistent if loaded via _loadExistingData
-          
           for (final upload in existingUploads) {
             final url = upload['url'] as String?;
-            // Simple check: if any of our remote URLs contains the upload URL path or vice versa
-            // Realistically, the _pages list contains full URLs constructed in _loadExistingData
-            if (url != null && remoteUrls.any((r) => r.contains(url) || url.contains(r))) {
+            // Check if this URL matches any of our current pages AND hasn't been added yet
+            if (url != null && 
+                remoteUrls.any((r) => r.contains(url) || url.contains(r)) &&
+                !finalUploadedFiles.any((f) => f['url'] == url)) {
               finalUploadedFiles.add(upload);
             }
           }
