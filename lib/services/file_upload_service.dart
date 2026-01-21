@@ -72,6 +72,7 @@ class FileUploadService {
   Future<Map<String, dynamic>> uploadAadhaar(
     XFile imageFile, {
     required String side, // 'front' or 'back'
+    bool isPdf = false, 
   }) async {
     try {
       MultipartFile multipartFile;
@@ -79,18 +80,38 @@ class FileUploadService {
       if (kIsWeb) {
         // On web, read bytes and use fromBytes
         final bytes = await imageFile.readAsBytes();
-        // Ensure we have a valid filename - use a default if empty
+        
+        // Ensure we have a valid filename
         String filename = imageFile.name;
         if (filename.isEmpty) {
-          filename = 'aadhaar_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          filename = 'aadhaar_${DateTime.now().millisecondsSinceEpoch}';
         }
-        // Determine content type from filename or use default
-        String contentType = 'image/jpeg';
-        if (filename.toLowerCase().endsWith('.png')) {
-          contentType = 'image/png';
-        } else if (filename.toLowerCase().endsWith('.pdf')) {
-          contentType = 'application/pdf';
+        
+        // Determine content type and enforce correct extension if isPdf
+        String contentType;
+        if (isPdf) {
+           contentType = 'application/pdf';
+           if (!filename.toLowerCase().endsWith('.pdf')) {
+             // Remove existing extension if any wrong one exists
+             if (filename.contains('.')) {
+               filename = filename.split('.').first;
+             }
+             filename = '$filename.pdf';
+           }
+        } else {
+           // Default image handling
+           contentType = 'image/jpeg';
+           if (filename.toLowerCase().endsWith('.png')) {
+             contentType = 'image/png';
+           } else if (filename.toLowerCase().endsWith('.pdf')) {
+             // Fallback if isPdf was false but file is pdf
+             contentType = 'application/pdf';
+           } else if (!filename.toLowerCase().endsWith('.jpg') && !filename.toLowerCase().endsWith('.jpeg')) {
+             // Ensure it has an extension
+             filename = '$filename.jpg';
+           }
         }
+
         multipartFile = MultipartFile.fromBytes(
           bytes,
           filename: filename,
@@ -135,25 +156,45 @@ class FileUploadService {
   }
 
   /// Upload PAN card
-  Future<Map<String, dynamic>> uploadPan(XFile imageFile) async {
+  Future<Map<String, dynamic>> uploadPan(XFile imageFile, {bool isPdf = false}) async {
     try {
       MultipartFile multipartFile;
       
       if (kIsWeb) {
         // On web, read bytes and use fromBytes
         final bytes = await imageFile.readAsBytes();
-        // Ensure we have a valid filename - use a default if empty
+        
+        // Ensure we have a valid filename
         String filename = imageFile.name;
         if (filename.isEmpty) {
-          filename = 'pan_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          filename = 'pan_${DateTime.now().millisecondsSinceEpoch}';
         }
-        // Determine content type from filename or use default
-        String contentType = 'image/jpeg';
-        if (filename.toLowerCase().endsWith('.png')) {
-          contentType = 'image/png';
-        } else if (filename.toLowerCase().endsWith('.pdf')) {
-          contentType = 'application/pdf';
+        
+        // Determine content type and enforce correct extension if isPdf
+        String contentType;
+        if (isPdf) {
+           contentType = 'application/pdf';
+           if (!filename.toLowerCase().endsWith('.pdf')) {
+             // Remove existing extension if any wrong one exists
+             if (filename.contains('.')) {
+               filename = filename.split('.').first;
+             }
+             filename = '$filename.pdf';
+           }
+        } else {
+           // Default image handling
+           contentType = 'image/jpeg';
+           if (filename.toLowerCase().endsWith('.png')) {
+             contentType = 'image/png';
+           } else if (filename.toLowerCase().endsWith('.pdf')) {
+             // Fallback
+             contentType = 'application/pdf';
+           } else if (!filename.toLowerCase().endsWith('.jpg') && !filename.toLowerCase().endsWith('.jpeg')) {
+             // Ensure it has an extension
+             filename = '$filename.jpg';
+           }
         }
+
         multipartFile = MultipartFile.fromBytes(
           bytes,
           filename: filename,

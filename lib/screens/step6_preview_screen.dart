@@ -122,16 +122,38 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       final backPath = stepData['backPath'] as String?;
       final frontUpload = stepData['frontUpload'] as Map<String, dynamic>?;
       final backUpload = stepData['backUpload'] as Map<String, dynamic>?;
+      final frontIsPdf = stepData['frontIsPdf'] as bool? ?? false;
+      final backIsPdf = stepData['backIsPdf'] as bool? ?? false;
+      
       // Prefer uploaded file URLs
       final effectiveFront =
           buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
       final effectiveBack =
           buildFullUrl(backUpload?['url'] as String?) ?? backPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
-        submissionProvider.setAadhaarFront(effectiveFront);
+        submissionProvider.setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
       if (effectiveBack != null && effectiveBack.isNotEmpty) {
-        submissionProvider.setAadhaarBack(effectiveBack);
+        submissionProvider.setAadhaarBack(effectiveBack, isPdf: backIsPdf);
+      }
+    }
+
+
+
+    // Robust URL normalization helper for de-duplication
+    String normalizeForDedup(String url) {
+      if (url.isEmpty) return url;
+      try {
+        final uri = Uri.parse(url);
+        // Return only the filename, ensuring we identify the same file regardless of path prefix
+        // e.g. /api/v1/uploads/file.pdf and /uploads/file.pdf become file.pdf
+        return uri.pathSegments.isNotEmpty ? uri.pathSegments.last : url;
+      } catch (e) {
+        // Fallback: split by slash
+        if (url.contains('/')) {
+          return url.split('/').last;
+        }
+        return url;
       }
     }
 
@@ -139,12 +161,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     if (application.step3Pan != null) {
       final stepData = application.step3Pan as Map<String, dynamic>;
       final frontPath = stepData['frontPath'] as String?;
+      final isPdf = stepData['isPdf'] as bool? ?? false;
       // PAN uses 'uploadedFile' not 'frontUpload'
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final effectiveFront =
           buildFullUrl(uploadedFile?['url'] as String?) ?? frontPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
-        submissionProvider.setPanFront(effectiveFront);
+        submissionProvider.setPanFront(effectiveFront, isPdf: isPdf);
       }
     }
 
@@ -155,7 +178,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // Bank Statement pages
       final pages = (stepData['pages'] as List<dynamic>?)?.cast<String>() ?? [];
       final isPdf = stepData['isPdf'] as bool? ?? false;
-      final uploadedPages = stepData['uploadedPages'] as List<dynamic>?;
+      final uploadedPages = (stepData['uploadedFiles'] ?? stepData['uploadedPages']) as List<dynamic>?;
       List<String> effectivePages = [];
       if (uploadedPages != null && uploadedPages.isNotEmpty) {
         for (var upload in uploadedPages) {
@@ -171,7 +194,22 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectivePages = pages;
       }
       if (effectivePages.isNotEmpty) {
-        submissionProvider.setBankStatementPages(effectivePages, isPdf: isPdf);
+        // Robust De-duplication: Keep first occurrence of each unique normalized path
+        final uniquePages = <String>[];
+        final seenPaths = <String>{};
+        
+        for (final page in effectivePages) {
+          final normalized = normalizeForDedup(page);
+          if (!seenPaths.contains(normalized)) {
+            seenPaths.add(normalized);
+            uniquePages.add(page);
+          }
+        }
+        
+        if (kDebugMode) {
+          print('Preview: De-duplicated Bank Pages: ${effectivePages.length} -> ${uniquePages.length}');
+        }
+        submissionProvider.setBankStatementPages(uniquePages, isPdf: isPdf);
       }
       final password = stepData['pdfPassword'] as String?;
       if (password != null && password.isNotEmpty) {
@@ -199,8 +237,24 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         effectiveSalarySlips = salarySlips;
       }
       if (effectiveSalarySlips.isNotEmpty) {
+        // Robust De-duplication salary slips
+        final uniqueSlips = <String>[];
+        final seenPaths = <String>{};
+        
+        for (final slip in effectiveSalarySlips) {
+          final normalized = normalizeForDedup(slip);
+          if (!seenPaths.contains(normalized)) {
+            seenPaths.add(normalized);
+            uniqueSlips.add(slip);
+          }
+        }
+        
+        if (kDebugMode) {
+          print('Preview: De-duplicated Salary Slips: ${effectiveSalarySlips.length} -> ${uniqueSlips.length}');
+        }
+
         submissionProvider.setSalarySlips(
-          effectiveSalarySlips,
+          uniqueSlips,
           isPdf: salaryIsPdf,
         );
       }
@@ -751,6 +805,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                 child: PlatformImage(
                                   imagePath: selfiePath,
                                   fit: BoxFit.cover,
+                                  headers: _authToken != null
+                                      ? {'Authorization': 'Bearer $_authToken'}
+                                      : null,
                                 ),
                               ),
                             )
@@ -768,27 +825,36 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           submission.aadhaar?.isComplete == true &&
                               submission.aadhaar!.frontPath != null &&
                               submission.aadhaar!.backPath != null
-                          ? Row(
-                              children: [
-                                Expanded(
-                                  child: _buildPremiumDocumentPreview(
-                                    context,
-                                    submission.aadhaar!.frontPath!,
-                                    'Front',
-                                    submission.aadhaar!.frontIsPdf,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildPremiumDocumentPreview(
-                                    context,
-                                    submission.aadhaar!.backPath!,
-                                    'Back',
-                                    submission.aadhaar!.backIsPdf,
-                                  ),
-                                ),
-                              ],
-                            )
+                          ? (submission.aadhaar!.frontIsPdf && 
+                             submission.aadhaar!.backIsPdf && 
+                             submission.aadhaar!.frontPath == submission.aadhaar!.backPath)
+                              ? _buildPremiumDocumentPreview(
+                                  context,
+                                  submission.aadhaar!.frontPath!,
+                                  'Aadhaar PDF',
+                                  true,
+                                )
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildPremiumDocumentPreview(
+                                        context,
+                                        submission.aadhaar!.frontPath!,
+                                        'Front',
+                                        submission.aadhaar!.frontIsPdf,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _buildPremiumDocumentPreview(
+                                        context,
+                                        submission.aadhaar!.backPath!,
+                                        'Back',
+                                        submission.aadhaar!.backIsPdf,
+                                      ),
+                                    ),
+                                  ],
+                                )
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 20),
@@ -804,7 +870,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               context,
                               submission.pan!.frontPath!,
                               'Front',
-                              false, // PAN is always image, never PDF
+                              submission.pan!.isPdf,
                             )
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),

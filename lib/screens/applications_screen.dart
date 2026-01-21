@@ -2,11 +2,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
+import '../providers/application_provider.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/skeleton_box.dart';
@@ -228,6 +230,40 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     );
   }
 
+  Future<void> _handleApplicationTap(
+    BuildContext context,
+    LoanApplication application,
+  ) async {
+    // Only allow navigation for incomplete (draft) applications
+    if (!application.isDraft) {
+      return;
+    }
+
+    try {
+      // Show loading indicator
+      if (!context.mounted) return;
+      
+      // Load the application using the provider
+      final appProvider = context.read<ApplicationProvider>();
+      await appProvider.loadApplication(application.id);
+      
+      if (!context.mounted) return;
+      
+      // Navigate to the appropriate step
+      context.go(AppRoutes.getStepRoute(application.currentStep));
+    } catch (e) {
+      if (!context.mounted) return;
+      
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load application: ${e.toString()}'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+    }
+  }
+
   Widget _buildApplicationCard(
     BuildContext context,
     LoanApplication application,
@@ -235,6 +271,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final dateFormat = DateFormat('dd MMM yyyy');
+    final isIncomplete = application.isDraft;
 
     // Get icon and color based on loan type
     IconData loanIcon;
@@ -304,10 +341,15 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       statusDescription = AppStrings.statusInProgress;
     }
 
-    return PremiumCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return InkWell(
+      onTap: isIncomplete
+          ? () => _handleApplicationTap(context, application)
+          : null,
+      borderRadius: BorderRadius.circular(16),
+      child: PremiumCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Status Badge Row
           Row(
             children: [
@@ -466,7 +508,46 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
               ),
             ),
           ],
+          if (isIncomplete) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.touch_app,
+                    color: colorScheme.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tap to continue application',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    color: colorScheme.primary,
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
+      ),
       ),
     );
   }

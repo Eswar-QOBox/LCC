@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import '../models/additional_document.dart';
 import '../services/api_client.dart';
 
@@ -8,50 +8,146 @@ class AdditionalDocumentsService {
 
   /// Get lead information including document requirements
   /// Only returns lead if it matches the authenticated user's email
-  Future<Map<String, dynamic>> getLeadByEmail(String email) async {
+  /// Returns null if no lead is found (valid empty state)
+  /// Throws exception only for actual errors (network, auth, server errors)
+  Future<Map<String, dynamic>?> getLeadByEmail(String email) async {
     try {
       // Directly search for lead by email using the leads endpoint
       // Backend ensures users can only see their own lead (by email match)
       final normalizedEmail = email.toLowerCase().trim();
-      
+
       final leadsResponse = await _apiClient.get(
         '/api/v1/leads',
-        queryParameters: {
-          'search': normalizedEmail,
-          'limit': '10',
-        },
+        queryParameters: {'search': normalizedEmail, 'limit': '10'},
       );
 
       if (leadsResponse.statusCode == 200) {
         final leadsData = leadsResponse.data;
-        
-        if (leadsData['success'] == true && 
-            leadsData['data']?['leads'] != null) {
-          final leads = leadsData['data']['leads'] as List;
-          
-          // Find lead with matching email (case-insensitive)
-          // Backend should already filter this, but we double-check for security
-          for (var lead in leads) {
-            final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
-            
-            if (leadEmail == normalizedEmail) {
-              return lead as Map<String, dynamic>;
+
+        if (kDebugMode) {
+          print('Leads API response: $leadsData');
+        }
+
+        if (leadsData is Map && leadsData['success'] == true) {
+          final data = leadsData['data'];
+          if (data is Map && data['leads'] != null) {
+            final leads = data['leads'] as List;
+
+            if (kDebugMode) {
+              print('Found ${leads.length} leads in response');
             }
+
+            // Find lead with matching email (case-insensitive)
+            // Backend should already filter this, but we double-check for security
+            for (var lead in leads) {
+              if (lead is Map) {
+                final leadEmail = (lead['email'] as String? ?? '')
+                    .toLowerCase()
+                    .trim();
+
+                if (kDebugMode) {
+                  print(
+                    'Checking lead email: $leadEmail against: $normalizedEmail',
+                  );
+                }
+
+                if (leadEmail == normalizedEmail) {
+                  if (kDebugMode) {
+                    print('Found matching lead: ${lead['id']}');
+                  }
+                  return lead as Map<String, dynamic>;
+                }
+              }
+            }
+          } else {
+            if (kDebugMode) {
+              print('Unexpected response structure: data or leads is null');
+            }
+          }
+        } else {
+          if (kDebugMode) {
+            print('API response success is false or unexpected structure');
           }
         }
       } else if (leadsResponse.statusCode == 403) {
-        throw Exception('Access denied. You can only view your own lead information.');
+        throw Exception(
+          'Access denied. You can only view your own lead information.',
+        );
       } else if (leadsResponse.statusCode == 401) {
         throw Exception('Authentication required. Please log in again.');
       }
 
-      throw Exception('Lead not found for your email address');
+      // No matching lead found - return null (valid empty state, not an error)
+      if (kDebugMode) {
+        print(
+          'No lead found for email: $normalizedEmail - returning null (empty state)',
+        );
+      }
+      return null;
+    } on DioException catch (e) {
+      // Handle DioException (network errors, HTTP errors, etc.)
+      String errorMessage;
+
+      // Check for network/connection errors
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.connectionError) {
+        errorMessage =
+            'Unable to connect to server. Please check your internet connection and try again.';
+      } else if (e.response != null) {
+        // HTTP error response
+        final statusCode = e.response!.statusCode;
+        if (statusCode == 401) {
+          errorMessage = 'Authentication required. Please log in again.';
+        } else if (statusCode == 403) {
+          errorMessage =
+              'Access denied. You can only view your own lead information.';
+        } else if (statusCode == 404) {
+          errorMessage =
+              'Service temporarily unavailable. Please try again later.';
+        } else if (statusCode == 500) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          // Try to extract error message from response
+          final errorData = e.response?.data;
+          if (errorData is Map && errorData['message'] != null) {
+            errorMessage = errorData['message'].toString();
+          } else {
+            errorMessage =
+                'Failed to get lead information. Please try again later.';
+          }
+        }
+      } else {
+        // Other DioException
+        errorMessage =
+            'Network error: ${e.message ?? "Please check your internet connection and try again."}';
+      }
+
+      throw Exception(errorMessage);
     } catch (e) {
-      if (e.toString().contains('Access denied') || 
-          e.toString().contains('Authentication required')) {
+      // Handle other exceptions (not DioException)
+      final errorString = e.toString();
+
+      // Preserve specific error messages
+      if (errorString.contains('Access denied') ||
+          errorString.contains('Authentication required')) {
         rethrow;
       }
-      throw Exception('Failed to get lead information. Please try again later.');
+
+      // For unknown errors, include the original error message for debugging
+      if (kDebugMode) {
+        print('Error in getLeadByEmail: $e');
+      }
+
+      // Extract clean error message
+      String errorMessage = errorString.replaceFirst('Exception: ', '');
+      if (errorMessage.isEmpty || errorMessage == errorString) {
+        errorMessage =
+            'Failed to get lead information. Please try again later.';
+      }
+
+      throw Exception(errorMessage);
     }
   }
 
@@ -84,16 +180,18 @@ class AdditionalDocumentsService {
         final data = response.data;
         print('Response success: ${data['success']}');
         print('Has documents: ${data['data']?['documents'] != null}');
-        
+
         if (data['success'] == true && data['data']?['documents'] != null) {
           final documents = data['data']['documents'] as List;
           print('Total documents from API: ${documents.length}');
-          
+
           // Debug: Print all documents before filtering
           for (var doc in documents) {
-            print('Raw doc - folder: ${doc['folder']}, category: ${doc['category']}, status: ${doc['status']}, name: ${doc['name']}');
+            print(
+              'Raw doc - folder: ${doc['folder']}, category: ${doc['category']}, status: ${doc['status']}, name: ${doc['name']}',
+            );
           }
-          
+
           // Filter for additional documents AND regular documents (selfies, aadhaar, pan, etc.)
           // Documents uploaded to additional_documents/{doc_type} will have folder = doc_type
           // Regular documents are in folders like: selfies, aadhaar, pan, bank_statements, salary_slips
@@ -103,29 +201,40 @@ class AdditionalDocumentsService {
             final folder = doc['folder'] as String? ?? '';
             final category = doc['category'] as String? ?? '';
             final status = (doc['status'] as String? ?? '').toLowerCase();
-            
+
             // Always include rejected documents (they need to be shown for re-upload)
             if (status == 'rejected') {
-              print('Including rejected document - folder: $folder, category: $category, status: $status');
+              print(
+                'Including rejected document - folder: $folder, category: $category, status: $status',
+              );
               return true;
             }
-            
+
             // Regular document folders (selfies, aadhaar, pan, etc.)
-            final regularDocFolders = ['selfies', 'aadhaar', 'pan', 'bank_statements', 'salary_slips'];
+            final regularDocFolders = [
+              'selfies',
+              'aadhaar',
+              'pan',
+              'bank_statements',
+              'salary_slips',
+            ];
             if (regularDocFolders.contains(folder.toLowerCase())) {
               print('Including regular document - folder: $folder');
               return true;
             }
-            
+
             // For other documents, check if they match additional document patterns
-            final matches = folder.startsWith('applicant_') ||
-                   folder.startsWith('spouse_') ||
-                   folder.startsWith('custom_') ||
-                   category.toLowerCase().contains('additional') ||
-                   category.toLowerCase().contains('applicant') ||
-                   category.toLowerCase().contains('spouse');
+            final matches =
+                folder.startsWith('applicant_') ||
+                folder.startsWith('spouse_') ||
+                folder.startsWith('custom_') ||
+                category.toLowerCase().contains('additional') ||
+                category.toLowerCase().contains('applicant') ||
+                category.toLowerCase().contains('spouse');
             if (matches) {
-              print('Document matches filter - folder: $folder, category: $category');
+              print(
+                'Document matches filter - folder: $folder, category: $category',
+              );
             }
             return matches;
           }).toList();
@@ -143,12 +252,14 @@ class AdditionalDocumentsService {
               })
               .whereType<UploadedDocument>()
               .toList();
-          
+
           print('Final parsed documents: ${result.length}');
           for (var doc in result) {
-            print('Parsed doc - type: ${doc.documentType}, status: ${doc.status}, file: ${doc.fileName}');
+            print(
+              'Parsed doc - type: ${doc.documentType}, status: ${doc.status}, file: ${doc.fileName}',
+            );
           }
-          
+
           return result;
         }
       }
@@ -170,7 +281,7 @@ class AdditionalDocumentsService {
   }) async {
     try {
       MultipartFile multipartFile;
-      
+
       if (kIsWeb) {
         // On web, use bytes
         if (fileBytes == null) {
@@ -179,8 +290,8 @@ class AdditionalDocumentsService {
         String contentType = 'application/pdf';
         if (fileName.toLowerCase().endsWith('.png')) {
           contentType = 'image/png';
-        } else if (fileName.toLowerCase().endsWith('.jpg') || 
-                   fileName.toLowerCase().endsWith('.jpeg')) {
+        } else if (fileName.toLowerCase().endsWith('.jpg') ||
+            fileName.toLowerCase().endsWith('.jpeg')) {
           contentType = 'image/jpeg';
         }
         multipartFile = MultipartFile.fromBytes(
@@ -205,11 +316,7 @@ class AdditionalDocumentsService {
       final response = await _apiClient.post(
         '/api/v1/uploads/additional-document',
         data: formData,
-        options: Options(
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        ),
+        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
       );
 
       if (response.statusCode == 200) {

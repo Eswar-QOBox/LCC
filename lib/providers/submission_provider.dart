@@ -46,9 +46,10 @@ class SubmissionProvider with ChangeNotifier {
   }
 
   // PAN
-  void setPanFront(String path) {
+  void setPanFront(String path, {bool isPdf = false}) {
     _submission.pan ??= PanDocument();
     _submission.pan!.frontPath = path;
+    _submission.pan!.isPdf = isPdf;
     notifyListeners();
   }
 

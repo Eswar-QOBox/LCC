@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -11,16 +11,18 @@ import '../utils/app_theme.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 
-
 class RequiredDocumentsScreen extends StatefulWidget {
   const RequiredDocumentsScreen({super.key});
 
   @override
-  State<RequiredDocumentsScreen> createState() => _RequiredDocumentsScreenState();
+  State<RequiredDocumentsScreen> createState() =>
+      _RequiredDocumentsScreenState();
 }
 
-class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with SingleTickerProviderStateMixin {
-  final AdditionalDocumentsService _documentsService = AdditionalDocumentsService();
+class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
+    with SingleTickerProviderStateMixin {
+  final AdditionalDocumentsService _documentsService =
+      AdditionalDocumentsService();
   final ImagePicker _imagePicker = ImagePicker();
 
   List<DocumentRequirement> _requiredDocuments = [];
@@ -36,7 +38,13 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _loadDocuments();
+    // Ensure error is null at start
+    _error = null;
+    _isLoading = true;
+    // Load documents after frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDocuments();
+    });
   }
 
   @override
@@ -57,7 +65,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
 
       if (user == null) {
         setState(() {
-        _error = 'User not logged in';
+          _error = 'User not logged in';
           _isLoading = false;
         });
         return;
@@ -66,30 +74,49 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
       _userId = user.id;
 
       // Get lead information - only returns lead if it matches user's email
-      Map<String, dynamic> leadData;
+      // Returns null if no lead found (valid empty state), throws only for actual errors
+      Map<String, dynamic>? leadData;
       try {
-        leadData = await _documentsService.getLeadByEmail(user.email);
-        _leadId = leadData['id'] as String?;
-      } catch (e) {
-        // Show user-friendly error message for backend connection issues
-        String errorMessage = e.toString().replaceFirst('Exception: ', '');
-        
-        // Check if it's a connection/network error
-        if (errorMessage.toLowerCase().contains('failed host lookup') ||
-            errorMessage.toLowerCase().contains('connection refused') ||
-            errorMessage.toLowerCase().contains('socketexception') ||
-            errorMessage.toLowerCase().contains('timeout') ||
-            errorMessage.toLowerCase().contains('network') ||
-            errorMessage.toLowerCase().contains('unable to reach')) {
-          errorMessage = 'Unable to connect to server. Please check your internet connection and try again.';
-        } else if (errorMessage.toLowerCase().contains('404') ||
-                   errorMessage.toLowerCase().contains('not found')) {
-          errorMessage = 'Service temporarily unavailable. Please try again later.';
-        } else if (errorMessage.toLowerCase().contains('500') ||
-                   errorMessage.toLowerCase().contains('server error')) {
-          errorMessage = 'Server error. Please try again later.';
+        if (kDebugMode) {
+          print('Loading documents for user: ${user.email}');
         }
-        
+        leadData = await _documentsService.getLeadByEmail(user.email);
+        _leadId = leadData?['id'] as String?;
+
+        if (kDebugMode) {
+          print('Lead ID retrieved: $_leadId');
+        }
+      } catch (e) {
+        // Only actual errors reach here (network, auth, server errors)
+        // "Lead not found" returns null, not an exception
+        String errorMessage = e.toString().replaceFirst('Exception: ', '');
+
+        if (kDebugMode) {
+          print('Error loading lead information: $e');
+          print('Error message: $errorMessage');
+        }
+
+        // Double-check: if error message contains "not found", treat as empty state
+        if (errorMessage.toLowerCase().contains('lead not found') ||
+            errorMessage.toLowerCase().contains('not found for your email')) {
+          if (kDebugMode) {
+            print('Treating "not found" as empty state instead of error');
+          }
+          setState(() {
+            _error = null; // No error, just empty state
+            _requiredDocuments = [];
+            _uploadedDocuments = [];
+            _isLoading = false;
+          });
+          return;
+        }
+
+        // For actual errors, show error state
+        if (errorMessage.isEmpty) {
+          errorMessage =
+              'Failed to get lead information. Please try again later.';
+        }
+
         setState(() {
           _error = errorMessage;
           _requiredDocuments = [];
@@ -98,18 +125,26 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
         return;
       }
 
-      if (_leadId == null) {
+      // If leadData is null or leadId is null, treat as empty state (not an error)
+      if (leadData == null || _leadId == null) {
+        if (kDebugMode) {
+          print(
+            'No lead found - showing empty state (user logged in but no lead record)',
+          );
+        }
         setState(() {
-        _error = 'Lead information not available. Please contact support.';
+          _error = null; // No error, just empty state
           _requiredDocuments = [];
+          _uploadedDocuments = [];
           _isLoading = false;
         });
         return;
       }
 
       // Get document requirements
-      final requirements = leadData['additionalDocumentRequirements'] as List<dynamic>? ?? [];
-      
+      final requirements =
+          leadData['additionalDocumentRequirements'] as List<dynamic>? ?? [];
+
       // Get uploaded documents
       List<UploadedDocument> uploadedDocs = [];
       try {
@@ -122,7 +157,9 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
       _uploadedDocuments = uploadedDocs;
 
       // Create document requirements list
-      final uploadedDocTypes = uploadedDocs.map((doc) => doc.documentType).toList();
+      final uploadedDocTypes = uploadedDocs
+          .map((doc) => doc.documentType)
+          .toList();
       final requiredDocs = requirements
           .map((id) {
             try {
@@ -142,28 +179,35 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
     } catch (e) {
       // Handle any other errors
       String errorMessage = e.toString().replaceFirst('Exception: ', '');
-      
-      // Check if it's a connection/network error
-      if (errorMessage.toLowerCase().contains('failed host lookup') ||
-          errorMessage.toLowerCase().contains('connection refused') ||
-          errorMessage.toLowerCase().contains('socketexception') ||
-          errorMessage.toLowerCase().contains('timeout') ||
-          errorMessage.toLowerCase().contains('network') ||
-          errorMessage.toLowerCase().contains('unable to reach') ||
-          errorMessage.toLowerCase().contains('connection closed') ||
-          errorMessage.toLowerCase().contains('connection reset')) {
-        errorMessage = 'Unable to connect to server. Please check your internet connection and try again.';
-      } else if (errorMessage.toLowerCase().contains('provider') ||
-                 errorMessage.toLowerCase().contains('not found in widget tree')) {
-        errorMessage = 'Application error. Please restart the app.';
-      } else if (errorMessage.toLowerCase().contains('404') ||
-                 errorMessage.toLowerCase().contains('not found')) {
-        errorMessage = 'Service temporarily unavailable. Please try again later.';
-      } else if (errorMessage.toLowerCase().contains('500') ||
-                 errorMessage.toLowerCase().contains('server error')) {
-        errorMessage = 'Server error. Please try again later.';
+
+      if (kDebugMode) {
+        print('Unexpected error in _loadDocuments: $e');
+        print('Error message: $errorMessage');
       }
-      
+
+      // Check if it's a "not found" error - treat as empty state
+      if (errorMessage.toLowerCase().contains('lead not found') ||
+          errorMessage.toLowerCase().contains('not found for your email')) {
+        if (kDebugMode) {
+          print('Treating "not found" in outer catch as empty state');
+        }
+        setState(() {
+          _error = null; // No error, just empty state
+          _requiredDocuments = [];
+          _uploadedDocuments = [];
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Check if it's a provider/widget tree error (shouldn't happen but handle gracefully)
+      if (errorMessage.toLowerCase().contains('provider') ||
+          errorMessage.toLowerCase().contains('not found in widget tree')) {
+        errorMessage = 'Application error. Please restart the app.';
+      } else if (errorMessage.isEmpty) {
+        errorMessage = 'An unexpected error occurred. Please try again later.';
+      }
+
       setState(() {
         _error = errorMessage;
         _isLoading = false;
@@ -173,7 +217,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
 
   Future<void> _uploadDocument(DocumentRequirement requirement) async {
     if (_leadId == null || _userId == null) {
-        _showError('Lead information not available');
+      _showError('Lead information not available');
       return;
     }
 
@@ -233,7 +277,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
       // Read file bytes for web
       List<int>? fileBytes;
       String filePath = pickedFile.path;
-      
+
       if (kIsWeb) {
         fileBytes = await pickedFile.readAsBytes();
         // For web, we need to use a dummy path since we're using bytes
@@ -261,7 +305,9 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
         );
       }
     } catch (e) {
-      _showError('Failed to upload document: ${e.toString().replaceFirst('Exception: ', '')}');
+      _showError(
+        'Failed to upload document: ${e.toString().replaceFirst('Exception: ', '')}',
+      );
     } finally {
       setState(() {
         _uploadingStatus[requirement.id] = false;
@@ -301,14 +347,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
   void _showError(String message) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: AppTheme.errorColor,
-        ),
+        SnackBar(content: Text(message), backgroundColor: AppTheme.errorColor),
       );
     }
   }
-
 
   DocumentStatus _getDocumentStatus(DocumentRequirement requirement) {
     final uploadedDoc = _uploadedDocuments.firstWhere(
@@ -359,21 +401,21 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                 child: Column(
                   children: [
                     Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.description,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.description,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
                           child: Text(
                             AppStrings.requiredDocumentsTitle,
                             style: theme.textTheme.headlineMedium?.copyWith(
@@ -388,7 +430,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                           tooltip: 'Refresh',
                         ),
                       ],
-                          ),
+                    ),
                     const SizedBox(height: 16),
                     // Tabs
                     Container(
@@ -407,9 +449,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                         labelStyle: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
-                        unselectedLabelStyle: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                            ),
+                        unselectedLabelStyle: theme.textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w500),
                         tabs: const [
                           Tab(text: AppStrings.submittedTab),
                           Tab(text: AppStrings.verifiedTab),
@@ -426,22 +467,22 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                     ? const Center(
                         child: Padding(
                           padding: EdgeInsets.all(24.0),
-                        child: CircularProgressIndicator(),
+                          child: CircularProgressIndicator(),
                         ),
                       )
                     : _error != null
-                        ? _buildErrorView()
-                        : _requiredDocuments.isEmpty
-                            ? _buildNoDocumentsView()
-                        : TabBarView(
-                            controller: _tabController,
-                            children: [
-                              // Submitted Documents Tab
-                              _buildSubmittedDocumentsTab(),
-                              // Verified Documents Tab
-                              _buildVerifiedDocumentsTab(),
-                            ],
-                          ),
+                    ? _buildErrorView()
+                    : _requiredDocuments.isEmpty
+                    ? _buildNoDocumentsView()
+                    : TabBarView(
+                        controller: _tabController,
+                        children: [
+                          // Submitted Documents Tab
+                          _buildSubmittedDocumentsTab(),
+                          // Verified Documents Tab
+                          _buildVerifiedDocumentsTab(),
+                        ],
+                      ),
               ),
             ],
           ),
@@ -464,14 +505,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
           ],
           child: Column(
             children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: AppTheme.errorColor,
-              ),
+              Icon(Icons.error_outline, size: 64, color: AppTheme.errorColor),
               const SizedBox(height: 16),
-                                    Text(
-                                      AppStrings.errorLoadingDocuments,
+              Text(
+                AppStrings.errorLoadingDocuments,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -485,8 +522,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-                                    PremiumButton(
-                                      label: AppStrings.retry,
+              PremiumButton(
+                label: AppStrings.retry,
                 icon: Icons.refresh,
                 isPrimary: false,
                 onPressed: _loadDocuments,
@@ -542,7 +579,6 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
     );
   }
 
-
   Widget _buildSection(
     BuildContext context, {
     required String title,
@@ -575,7 +611,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
     );
   }
 
-  Widget _buildDocumentItem(BuildContext context, DocumentRequirement requirement) {
+  Widget _buildDocumentItem(
+    BuildContext context,
+    DocumentRequirement requirement,
+  ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final status = _getDocumentStatus(requirement);
@@ -630,7 +669,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                     if (requirement.isCustom) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(4),
@@ -666,12 +708,18 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
           if (status != DocumentStatus.uploading)
             Flexible(
               child: PremiumButton(
-                label: status == DocumentStatus.pending || status == DocumentStatus.rejected
+                label:
+                    status == DocumentStatus.pending ||
+                        status == DocumentStatus.rejected
                     ? AppStrings.upload
                     : AppStrings.reupload,
                 icon: Icons.upload,
-                isPrimary: status == DocumentStatus.pending || status == DocumentStatus.rejected,
-                onPressed: isUploading ? null : () => _uploadDocument(requirement),
+                isPrimary:
+                    status == DocumentStatus.pending ||
+                    status == DocumentStatus.rejected,
+                onPressed: isUploading
+                    ? null
+                    : () => _uploadDocument(requirement),
               ),
             )
           else
@@ -687,7 +735,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
 
   Widget _buildSubmittedDocumentsTab() {
     final submittedDocs = _getSubmittedDocuments();
-    
+
     if (submittedDocs.isEmpty) {
       return _buildEmptyTabView(
         icon: Icons.upload_outlined,
@@ -705,25 +753,37 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
         padding: const EdgeInsets.all(24),
         children: [
           // Applicant Documents
-          if (_getSubmittedDocumentsByCategory(DocumentCategory.applicant).isNotEmpty)
+          if (_getSubmittedDocumentsByCategory(
+            DocumentCategory.applicant,
+          ).isNotEmpty)
             _buildSection(
               context,
               title: 'Applicant Documents',
               icon: Icons.person,
-              documents: _getSubmittedDocumentsByCategory(DocumentCategory.applicant),
+              documents: _getSubmittedDocumentsByCategory(
+                DocumentCategory.applicant,
+              ),
             ),
 
-          if (_getSubmittedDocumentsByCategory(DocumentCategory.applicant).isNotEmpty &&
-              _getSubmittedDocumentsByCategory(DocumentCategory.spouse).isNotEmpty)
+          if (_getSubmittedDocumentsByCategory(
+                DocumentCategory.applicant,
+              ).isNotEmpty &&
+              _getSubmittedDocumentsByCategory(
+                DocumentCategory.spouse,
+              ).isNotEmpty)
             const SizedBox(height: 16),
 
           // Spouse Documents
-          if (_getSubmittedDocumentsByCategory(DocumentCategory.spouse).isNotEmpty)
+          if (_getSubmittedDocumentsByCategory(
+            DocumentCategory.spouse,
+          ).isNotEmpty)
             _buildSection(
               context,
               title: 'Spouse Documents',
               icon: Icons.people,
-              documents: _getSubmittedDocumentsByCategory(DocumentCategory.spouse),
+              documents: _getSubmittedDocumentsByCategory(
+                DocumentCategory.spouse,
+              ),
             ),
         ],
       ),
@@ -732,7 +792,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
 
   Widget _buildVerifiedDocumentsTab() {
     final verifiedDocs = _getVerifiedDocuments();
-    
+
     if (verifiedDocs.isEmpty) {
       return _buildEmptyTabView(
         icon: Icons.verified_outlined,
@@ -750,25 +810,37 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
         padding: const EdgeInsets.all(24),
         children: [
           // Applicant Documents
-          if (_getVerifiedDocumentsByCategory(DocumentCategory.applicant).isNotEmpty)
+          if (_getVerifiedDocumentsByCategory(
+            DocumentCategory.applicant,
+          ).isNotEmpty)
             _buildVerifiedSection(
               context,
               title: 'Applicant Documents',
               icon: Icons.person,
-              documents: _getVerifiedDocumentsByCategory(DocumentCategory.applicant),
+              documents: _getVerifiedDocumentsByCategory(
+                DocumentCategory.applicant,
+              ),
             ),
 
-          if (_getVerifiedDocumentsByCategory(DocumentCategory.applicant).isNotEmpty &&
-              _getVerifiedDocumentsByCategory(DocumentCategory.spouse).isNotEmpty)
+          if (_getVerifiedDocumentsByCategory(
+                DocumentCategory.applicant,
+              ).isNotEmpty &&
+              _getVerifiedDocumentsByCategory(
+                DocumentCategory.spouse,
+              ).isNotEmpty)
             const SizedBox(height: 16),
 
           // Spouse Documents
-          if (_getVerifiedDocumentsByCategory(DocumentCategory.spouse).isNotEmpty)
+          if (_getVerifiedDocumentsByCategory(
+            DocumentCategory.spouse,
+          ).isNotEmpty)
             _buildVerifiedSection(
               context,
               title: 'Spouse Documents',
               icon: Icons.people,
-              documents: _getVerifiedDocumentsByCategory(DocumentCategory.spouse),
+              documents: _getVerifiedDocumentsByCategory(
+                DocumentCategory.spouse,
+              ),
             ),
         ],
       ),
@@ -791,11 +863,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
         PremiumCard(
           child: Column(
             children: [
-              Icon(
-                icon,
-                size: 64,
-                color: colorScheme.onSurfaceVariant,
-              ),
+              Icon(icon, size: 64, color: colorScheme.onSurfaceVariant),
               const SizedBox(height: 16),
               Text(
                 title,
@@ -842,12 +910,20 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
     }).toList();
   }
 
-  List<DocumentRequirement> _getSubmittedDocumentsByCategory(DocumentCategory category) {
-    return _getSubmittedDocuments().where((doc) => doc.category == category).toList();
+  List<DocumentRequirement> _getSubmittedDocumentsByCategory(
+    DocumentCategory category,
+  ) {
+    return _getSubmittedDocuments()
+        .where((doc) => doc.category == category)
+        .toList();
   }
 
-  List<DocumentRequirement> _getVerifiedDocumentsByCategory(DocumentCategory category) {
-    return _getVerifiedDocuments().where((doc) => doc.category == category).toList();
+  List<DocumentRequirement> _getVerifiedDocumentsByCategory(
+    DocumentCategory category,
+  ) {
+    return _getVerifiedDocuments()
+        .where((doc) => doc.category == category)
+        .toList();
   }
 
   Widget _buildVerifiedSection(
@@ -882,7 +958,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
     );
   }
 
-  Widget _buildVerifiedDocumentItem(BuildContext context, DocumentRequirement requirement) {
+  Widget _buildVerifiedDocumentItem(
+    BuildContext context,
+    DocumentRequirement requirement,
+  ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final uploadedDoc = _uploadedDocuments.firstWhere(
@@ -919,17 +998,20 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-              children: [
-                Text(
-                  requirement.label,
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                  children: [
+                    Text(
+                      requirement.label,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     if (requirement.isCustom) ...[
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(4),
@@ -946,7 +1028,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
                   ],
                 ),
                 if (uploadedDoc.id.isNotEmpty) ...[
-                const SizedBox(height: 4),
+                  const SizedBox(height: 4),
                   Text(
                     '${uploadedDoc.fileName} • ${uploadedDoc.fileSize}',
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -986,5 +1068,4 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen> with 
       ),
     );
   }
-
 }
