@@ -60,22 +60,14 @@ class _LoanScreenState extends State<LoanScreen> {
 
   Widget _buildTopBrandBar(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
-    // Matches `lib/screens/instructions_screen.dart`
+    // Matches bottom navigation bar color
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            colorScheme.primary.withValues(alpha: 0.03),
-          ],
-        ),
+        color: AppTheme.primaryColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -101,6 +93,7 @@ class _LoanScreenState extends State<LoanScreen> {
               fontWeight: FontWeight.w700,
               letterSpacing: 0.3,
               fontSize: 22,
+              color: Colors.white,
             ),
           ),
         ],
@@ -633,10 +626,10 @@ class _LoanScreenState extends State<LoanScreen> {
       _LoanTypeOption(
         icon: Icons.person,
         title: AppStrings.loanTypePersonal,
-        subtitle: AppStrings.loanTypePersonalSubtitle,
-        color: colorScheme.primary,
-      ),
-      _LoanTypeOption(
+          subtitle: AppStrings.loanTypePersonalSubtitle,
+          color: colorScheme.primary,
+        ),
+        _LoanTypeOption(
         icon: Icons.directions_car,
         title: AppStrings.loanTypeCar,
         subtitle: AppStrings.loanTypeCarSubtitle,

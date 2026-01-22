@@ -4,9 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:io' as io;
 import 'dart:typed_data';
-import 'package:image/image.dart' as img;
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
@@ -387,8 +385,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'PDF Password (if required)',
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                floatingLabelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
                 hintText: 'Enter password or leave blank',
               ),
               obscureText: true,
@@ -425,80 +431,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     );
   }
 
-  Future<void> _rotateImage(String side) async {
-    if (kIsWeb) {
-      // On web, just update rotation angle for display
-      if (mounted) {
-        setState(() {
-          if (side == 'front' && _frontPath != null && !_frontIsPdf) {
-            _frontRotation = (_frontRotation + 90) % 360;
-          } else if (side == 'back' && _backPath != null && !_backIsPdf) {
-            _backRotation = (_backRotation + 90) % 360;
-          }
-          _resetDraftState();
-        });
-        PremiumToast.showSuccess(context, 'Image rotated');
-      }
-      return;
-    }
-
-    if (side == 'front' && _frontPath != null && !_frontIsPdf) {
-      try {
-        final imageBytes = await io.File(_frontPath!).readAsBytes();
-        final image = img.decodeImage(imageBytes);
-        if (image != null) {
-          final rotated = img.copyRotate(image, angle: 90);
-          final rotatedBytes = Uint8List.fromList(img.encodeJpg(rotated));
-          
-          // Save rotated image
-          final tempFile = io.File('${_frontPath!}_rotated_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await tempFile.writeAsBytes(rotatedBytes);
-          
-          if (mounted) {
-            setState(() {
-              _frontRotation = (_frontRotation + 90) % 360;
-              _frontPath = tempFile.path;
-              _resetDraftState();
-            });
-            context.read<SubmissionProvider>().setAadhaarFront(tempFile.path, isPdf: false);
-            PremiumToast.showSuccess(context, 'Image rotated');
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          PremiumToast.showError(context, 'Failed to rotate image: $e');
-        }
-      }
-    } else if (side == 'back' && _backPath != null && !_backIsPdf) {
-      try {
-        final imageBytes = await io.File(_backPath!).readAsBytes();
-        final image = img.decodeImage(imageBytes);
-        if (image != null) {
-          final rotated = img.copyRotate(image, angle: 90);
-          final rotatedBytes = Uint8List.fromList(img.encodeJpg(rotated));
-          
-          // Save rotated image
-          final tempFile = io.File('${_backPath!}_rotated_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await tempFile.writeAsBytes(rotatedBytes);
-          
-          if (mounted) {
-            setState(() {
-              _backRotation = (_backRotation + 90) % 360;
-              _backPath = tempFile.path;
-              _resetDraftState();
-            });
-            context.read<SubmissionProvider>().setAadhaarBack(tempFile.path, isPdf: false);
-            PremiumToast.showSuccess(context, 'Image rotated');
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          PremiumToast.showError(context, 'Failed to rotate image: $e');
-        }
-      }
-    }
-  }
-
   Future<void> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _frontPath == null || _backPath == null) {
@@ -514,7 +446,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       Map<String, dynamic>? backUpload;
       
       final currentApp = appProvider.currentApplication;
-      final existingData = currentApp?.step2Aadhaar as Map<String, dynamic>?;
+      final existingData = currentApp?.step2Aadhaar;
 
       // specific helper to check if path is remote
       bool isRemote(String? path) => path != null && path.startsWith('http');
@@ -1080,34 +1012,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                     ),
                   ),
                 ),
-                // Remove button (X) for PDF and Images - top right
-                if ((showPdf && onRemove != null) || (!showPdf && onRemoveImage != null))
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: showPdf ? onRemove : onRemoveImage,
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.9),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(Icons.close, color: Colors.white, size: 20),
-                        ),
-                      ),
-                    ),
-                  ),
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1146,19 +1050,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       icon: Icons.photo_library,
                       isPrimary: false,
                       onPressed: onGallery,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: colorScheme.primary),
-                    ),
-                    child: IconButton(
-                      onPressed: () => _rotateImage(label.toLowerCase()),
-                      icon: Icon(Icons.rotate_right, color: colorScheme.primary),
-                      tooltip: 'Rotate Image',
-                      padding: const EdgeInsets.all(16),
                     ),
                   ),
                 ],

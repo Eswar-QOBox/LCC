@@ -103,12 +103,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 20,
-                letterSpacing: 0.5,
+            Flexible(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                  letterSpacing: 0.5,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

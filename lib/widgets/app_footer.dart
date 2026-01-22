@@ -56,7 +56,7 @@ class AppFooter extends StatelessWidget {
             )
           else
             Text(
-              '© ${DateTime.now().year} JSEE. All rights reserved.',
+              '© ${DateTime.now().year} JSEE Solutions. All rights reserved.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),

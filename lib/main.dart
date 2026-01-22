@@ -46,7 +46,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
       ],
       child: MaterialApp.router(
-        title: 'JSEE',
+        title: 'JSEE Solutions',
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.light,

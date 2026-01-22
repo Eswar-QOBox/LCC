@@ -4,9 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:io' as io;
 import 'dart:typed_data';
-import 'package:image/image.dart' as img;
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
@@ -295,8 +293,16 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'PDF Password (if required)',
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                floatingLabelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
                 hintText: 'Enter password or leave blank',
               ),
               obscureText: true,
@@ -323,51 +329,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _rotateImage() async {
-    if (kIsWeb) {
-      // On web, just update rotation angle for display
-      if (mounted) {
-        setState(() {
-          if (_frontPath != null && !_isPdf) {
-            _rotation = (_rotation + 90) % 360;
-            _resetDraftState();
-          }
-        });
-        PremiumToast.showSuccess(context, 'Image rotated');
-      }
-      return;
-    }
-
-    if (_frontPath != null && !_isPdf) {
-      try {
-        final imageBytes = await io.File(_frontPath!).readAsBytes();
-        final image = img.decodeImage(imageBytes);
-        if (image != null) {
-          final rotated = img.copyRotate(image, angle: 90);
-          final rotatedBytes = Uint8List.fromList(img.encodeJpg(rotated));
-          
-          // Save rotated image
-          final tempFile = io.File('${_frontPath!}_rotated_${DateTime.now().millisecondsSinceEpoch}.jpg');
-          await tempFile.writeAsBytes(rotatedBytes);
-          
-          if (mounted) {
-            setState(() {
-              _rotation = (_rotation + 90) % 360;
-              _frontPath = tempFile.path;
-              _resetDraftState();
-            });
-            context.read<SubmissionProvider>().setPanFront(tempFile.path);
-            PremiumToast.showSuccess(context, 'Image rotated');
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          PremiumToast.showError(context, 'Failed to rotate image: $e');
-        }
-      }
-    }
   }
 
   Future<void> _proceedToNext() async {
@@ -657,33 +618,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                                         headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                                       ),
                                     )),
-                              // Remove button (X) for PDF and Images - top right
-                              Positioned(
-                                top: 12,
-                                right: 12,
-                                child: Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: _isPdf ? _removePdf : _removeImage,
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.red.withValues(alpha: 0.9),
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.3),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Icon(Icons.close, color: Colors.white, size: 20),
-                                    ),
-                                  ),
-                                ),
-                              ),
                               // Overlay gradient
                               Container(
                                 decoration: BoxDecoration(
@@ -726,19 +660,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                                     icon: Icons.photo_library,
                                     isPrimary: false,
                                     onPressed: _selectFromGallery,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: colorScheme.primary),
-                                  ),
-                                  child: IconButton(
-                                    onPressed: _rotateImage,
-                                    icon: Icon(Icons.rotate_right, color: colorScheme.primary),
-                                    tooltip: 'Rotate Image',
-                                    padding: const EdgeInsets.all(16),
                                   ),
                                 ),
                               ],

@@ -123,14 +123,15 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             ),
                           ),
                           const SizedBox(width: 14),
-                          Text(
-                            'Application Guide',
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 22,
+                          Expanded(
+                            child: Text(
+                              'Application Guide',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 22,
+                              ),
                             ),
                           ),
-                          const Spacer(),
                         ],
                       ),
                     ),
@@ -217,11 +218,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 16),
-                              Text(
-                                'Required Documents',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 22,
+                              Flexible(
+                                child: Text(
+                                  'Required Documents',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 22,
+                                  ),
                                 ),
                               ),
                             ],
@@ -288,11 +291,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 ),
                               ),
                               const SizedBox(width: 16),
-                              Text(
-                                'Instructions',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 22,
+                              Flexible(
+                                child: Text(
+                                  'Instructions',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 22,
+                                  ),
                                 ),
                               ),
                             ],
@@ -532,7 +537,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
-                  textAlign: TextAlign.center,
+                  textAlign: TextAlign.justify,
                 ),
                 const SizedBox(height: 8),
                 // Application details
@@ -586,7 +591,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
+                    Flexible(
                       child: PremiumButton(
                         label: AppStrings.viewExistingApplication,
                         icon: Icons.arrow_forward,
@@ -673,6 +678,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
+                  textAlign: TextAlign.justify,
                 ),
               ],
             ),
@@ -706,6 +712,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               height: 1.5,
             ),
+            textAlign: TextAlign.justify,
           ),
         ),
       ],

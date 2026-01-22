@@ -1754,6 +1754,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         enabled: !_isSaving,
         decoration: InputDecoration(
           labelText: '$label${isRequired ? ' *' : ''}',
+          labelStyle: TextStyle(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
+          floatingLabelStyle: TextStyle(
+            color: colorScheme.primary,
+            fontWeight: FontWeight.w700,
+            fontSize: 16,
+          ),
           hintText: hintText,
           prefixIcon: Container(
             margin: const EdgeInsets.all(12),
@@ -1821,7 +1831,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     Text(
                       'Date of Birth *',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -2120,7 +2132,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                   Text(
                     'Married / Unmarried',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
                     ),
                   ),
                   const SizedBox(height: 8),

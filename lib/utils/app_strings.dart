@@ -1,8 +1,8 @@
 class AppStrings {
   // Navigation
   static const String navHome = 'Home';
-  static const String navApplications = 'My Applications';
-  static const String navDocuments = 'My Documents';
+  static const String navApplications = 'Applications';
+  static const String navDocuments = 'My Docs';
   static const String navCalculator = 'Calculator';
   static const String navAccounts = 'Accounts';
 

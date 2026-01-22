@@ -56,7 +56,7 @@ class PdfGenerationService {
     }
   }
 
-  /// Load JSEE logo from assets
+  /// Load JSEE Solutions logo from assets
   Future<pw.MemoryImage?> _loadLogo() async {
     try {
       final byteData = await rootBundle.load('assets/main_logo.jpeg');
@@ -227,7 +227,7 @@ class PdfGenerationService {
                           pw.SizedBox(height: 15),
                         ],
                         pw.Text(
-                          'JSEE LOAN APPLICATION',
+                          'JSEE SOLUTIONS LOAN APPLICATION',
                           style: pw.TextStyle(
                             fontSize: 24,
                             fontWeight: pw.FontWeight.bold,
