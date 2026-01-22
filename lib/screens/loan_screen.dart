@@ -27,11 +27,35 @@ class _LoanScreenState extends State<LoanScreen> {
   static const Duration _autoScrollDuration = Duration(seconds: 3);
   static const Duration _resumeScrollDelay = Duration(seconds: 5);
 
-  final List<String> _promoImages = const [
-    'assets/money.jpg',
-    'assets/Secure.jpg',
-    'assets/Intrest Rate.jpg',
-    'assets/JSEE_icon.jpg',
+  final List<_PromoCardData> _promoCards = const [
+    _PromoCardData(
+      title: 'Quick Personal Loans',
+      subtitle: 'Get approved in 24 hours',
+      ctaText: 'Apply Now',
+      imagePath: 'assets/money.jpg',
+      gradientColors: [Color(0xFF2196F3), Color(0xFF1976D2)],
+    ),
+    _PromoCardData(
+      title: 'Secure & Safe',
+      subtitle: 'Bank-level encryption for your data',
+      ctaText: 'Learn More',
+      imagePath: 'assets/Secure.jpg',
+      gradientColors: [Color(0xFF4CAF50), Color(0xFF388E3C)],
+    ),
+    _PromoCardData(
+      title: 'Low Interest Rates',
+      subtitle: 'Starting from 8.5% per annum',
+      ctaText: 'Check Rates',
+      imagePath: 'assets/Intrest Rate.jpg',
+      gradientColors: [Color(0xFFFF9800), Color(0xFFF57C00)],
+    ),
+    _PromoCardData(
+      title: 'JSEE Solutions',
+      subtitle: 'Your trusted loan partner',
+      ctaText: 'Get Started',
+      imagePath: 'assets/JSEE_icon.jpg',
+      gradientColors: [Color(0xFF9C27B0), Color(0xFF7B1FA2)],
+    ),
   ];
 
   Widget _buildTopBrandBar(BuildContext context) {
@@ -100,7 +124,7 @@ class _LoanScreenState extends State<LoanScreen> {
   void _onPageChanged() {
     if (!_promoPageController.hasClients) return;
     final page = _promoPageController.page ?? _initialPage;
-    final index = (page.round() % _promoImages.length);
+    final index = (page.round() % _promoCards.length);
     if (index != _currentPromoIndex) {
       setState(() {
         _currentPromoIndex = index;
@@ -361,80 +385,56 @@ class _LoanScreenState extends State<LoanScreen> {
               _resumeAutoScroll();
             });
           },
-          child: Stack(
-            children: [
-              SizedBox(
-                height: 200,
-                child: PageView.builder(
-                  controller: _promoPageController,
-                  onPageChanged: (_) => _pauseAutoScroll(),
-                  itemBuilder: (context, index) {
-                    final imageIndex = index % _promoImages.length;
-                    final imagePath = _promoImages[imageIndex];
-                    final isActive = imageIndex == _currentPromoIndex;
-                    return AnimatedScale(
-                      scale: isActive ? 1.0 : 0.92,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                      child: AnimatedOpacity(
-                        opacity: isActive ? 1.0 : 0.7,
-                        duration: const Duration(milliseconds: 300),
-                        child: _buildPromoCard(context, imagePath),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              // Gradient overlay on edges for better visual
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          colorScheme.surface.withValues(alpha: 0.3),
-                          Colors.transparent,
-                          colorScheme.surface.withValues(alpha: 0.3),
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                      ),
-                    ),
+          child: SizedBox(
+            height: 180,
+            child: PageView.builder(
+              controller: _promoPageController,
+              onPageChanged: (_) => _pauseAutoScroll(),
+              itemBuilder: (context, index) {
+                final cardIndex = index % _promoCards.length;
+                final promoCard = _promoCards[cardIndex];
+                final isActive = cardIndex == _currentPromoIndex;
+                return AnimatedScale(
+                  scale: isActive ? 1.0 : 0.92,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  child: AnimatedOpacity(
+                    opacity: isActive ? 1.0 : 0.7,
+                    duration: const Duration(milliseconds: 300),
+                    child: _buildModernPromoCard(context, promoCard),
                   ),
-                ),
-              ),
-            ],
+                );
+              },
+            ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         // Enhanced page indicators
         Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: colorScheme.outline.withValues(alpha: 0.2),
-                width: 1,
+                color: colorScheme.outline.withValues(alpha: 0.15),
+                width: 0.5,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: List.generate(
-                _promoImages.length,
+                _promoCards.length,
                 (index) {
                   final isActive = index == _currentPromoIndex;
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: GestureDetector(
                       onTap: () {
                         _pauseAutoScroll();
                         // Calculate the nearest page for infinite scroll
                         final currentPage = _promoPageController.page?.toInt() ?? _initialPage;
-                        final remainder = currentPage % _promoImages.length;
+                        final remainder = currentPage % _promoCards.length;
                         final nearestPage = currentPage - remainder + index;
                         _promoPageController.animateToPage(
                           nearestPage,
@@ -459,92 +459,167 @@ class _LoanScreenState extends State<LoanScreen> {
     );
   }
 
-  Widget _buildPromoCard(BuildContext context, String imagePath) {
+  Widget _buildModernPromoCard(BuildContext context, _PromoCardData data) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            // Image
-            Image.asset(
-              imagePath,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        colorScheme.primary.withValues(alpha: 0.2),
-                        colorScheme.secondary.withValues(alpha: 0.1),
-                      ],
-                    ),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.image_not_supported,
-                          color: colorScheme.primary,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Image not found',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: data.gradientColors,
             ),
-            // Dark gradient overlay at bottom
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: 0.3),
-                    ],
-                    stops: const [0.3, 1.0],
+            boxShadow: [
+              BoxShadow(
+                color: data.gradientColors[0].withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              children: [
+                // Background pattern overlay
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.15),
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.05),
+                        ],
+                        stops: const [0.0, 0.5, 1.0],
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                // Content
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Brand badge with icon only
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'JSEE Solutions',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      // Title
+                      Text(
+                        data.title,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                          height: 1.2,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      // Subtitle
+                      Text(
+                        data.subtitle,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 10),
+                      // CTA as inline text with arrow
+                      Row(
+                        children: [
+                          Text(
+                            data.ctaText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.3),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward,
+                              color: Colors.white,
+                              size: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
     );
   }
 
   Widget _buildPageIndicator({required bool isActive}) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      height: isActive ? 10 : 8,
-      width: isActive ? 28 : 8,
+      height: isActive ? 7 : 6,
+      width: isActive ? 26 : 6,
       decoration: BoxDecoration(
         color: isActive ? AppTheme.primaryColor : AppTheme.primaryColor.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         boxShadow: isActive
             ? [
                 BoxShadow(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.4),
-                  blurRadius: 8,
-                  spreadRadius: 1,
+                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                  blurRadius: 6,
+                  spreadRadius: 0.5,
                 ),
               ]
             : [],
@@ -995,4 +1070,20 @@ class _LoanTypeOption {
   final String title;
   final String subtitle;
   final Color color;
+}
+
+class _PromoCardData {
+  const _PromoCardData({
+    required this.title,
+    required this.subtitle,
+    required this.ctaText,
+    required this.imagePath,
+    required this.gradientColors,
+  });
+
+  final String title;
+  final String subtitle;
+  final String ctaText;
+  final String imagePath;
+  final List<Color> gradientColors;
 }

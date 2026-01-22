@@ -61,6 +61,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     _isPdf = provider.submission.bankStatement?.isPdf ?? false;
     _pdfPassword = provider.submission.bankStatement?.pdfPassword;
     
+    // Automatically use today's date
+    _statementEndDate = DateTime.now();
+    _calculateStartDate();
+    
     // Load existing data from backend
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
@@ -224,36 +228,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     });
   }
 
-  Future<void> _selectStatementEndDate() async {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _statementEndDate ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      helpText: 'Select Last Date of Bank Statement',
-      builder: (context, child) {
-        return Theme(
-          data: theme.copyWith(
-            colorScheme: colorScheme,
-          ),
-          child: child!,
-        );
-      },
-    );
-    
-    if (picked != null && picked != _statementEndDate) {
-      setState(() {
-        _statementEndDate = picked;
-        _resetDraftState();
-      });
-      _calculateStartDate();
-    }
-  }
-
-   Future<void> _saveToBackend() async {
+  Future<void> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _pages.isEmpty) {
       return;
@@ -487,14 +462,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     }
   }
 
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    return '${months[date.month - 1]} ${date.day}';
-  }
-
   String _formatDateWithYear(DateTime date) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -655,7 +622,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Last 6 months statement required',
+                                      'Last 6 months from today',
                                       style: theme.textTheme.bodySmall?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
@@ -672,163 +639,155 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 32),
-                    // Date Selection Card
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.primary.withValues(alpha: 0.02),
-                      ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.calendar_today,
-                                  color: colorScheme.primary,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Statement Date Range',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 20,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Select the last date of your bank statement',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                    const SizedBox(height: 24),
+                    // Required Date Range Alert (Red Highlighted)
+                    if (_statementEndDate != null && _calculatedStartDate != null)
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFFFFEBEE), // Light red
+                              const Color(0xFFFFCDD2), // Lighter red
                             ],
                           ),
-                          const SizedBox(height: 24),
-                          // Date Picker Button
-                          InkWell(
-                            onTap: _selectStatementEndDate,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: colorScheme.primary.withValues(alpha: 0.3),
-                                  width: 1.5,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                color: _statementEndDate != null
-                                    ? colorScheme.primary.withValues(alpha: 0.05)
-                                    : Colors.transparent,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.event,
-                                    color: colorScheme.primary,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFFD32F2F), // Red
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFD32F2F).withValues(alpha: 0.2),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFD32F2F),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.calendar_month,
+                                    color: Colors.white,
                                     size: 24,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Text(
+                                    'Required Statement Period',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFB71C1C), // Dark red
+                                      fontSize: 20,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFD32F2F).withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.warning_rounded,
+                                        color: Color(0xFFD32F2F),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Important',
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFFD32F2F),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  RichText(
+                                    text: TextSpan(
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        height: 1.6,
+                                        color: Colors.black87,
+                                      ),
                                       children: [
-                                        Text(
-                                          'Last Date of Statement',
-                                          style: theme.textTheme.bodyMedium?.copyWith(
-                                            fontWeight: FontWeight.w500,
+                                        const TextSpan(
+                                          text: 'From ',
+                                          style: TextStyle(fontWeight: FontWeight.normal),
+                                        ),
+                                        TextSpan(
+                                          text: _formatDateWithYear(_calculatedStartDate!),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFD32F2F),
+                                            fontSize: 17,
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          _statementEndDate != null
-                                              ? _formatDateWithYear(_statementEndDate!)
-                                              : 'Tap to select date',
-                                          style: theme.textTheme.bodyLarge?.copyWith(
-                                            color: _statementEndDate != null
-                                                ? colorScheme.primary
-                                                : colorScheme.onSurfaceVariant,
-                                            fontWeight: _statementEndDate != null
-                                                ? FontWeight.w600
-                                                : FontWeight.normal,
+                                        const TextSpan(
+                                          text: ' to ',
+                                          style: TextStyle(fontWeight: FontWeight.normal),
+                                        ),
+                                        TextSpan(
+                                          text: _formatDateWithYear(_statementEndDate!),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFD32F2F),
+                                            fontSize: 17,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  Icon(
-                                    Icons.arrow_forward_ios,
-                                    color: colorScheme.primary,
-                                    size: 16,
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'you need to submit your bank statement',
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFFD32F2F),
+                                    ),
+                                    textAlign: TextAlign.center,
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          // Display calculated date range
-                          if (_statementEndDate != null && _calculatedStartDate != null) ...[
-                            const SizedBox(height: 20),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.secondary.withValues(alpha: 0.1),
-                                    colorScheme.primary.withValues(alpha: 0.05),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: colorScheme.secondary.withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline,
-                                    color: colorScheme.secondary,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                  const SizedBox(height: 12),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFEBEE),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          'Required Statement Period',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            fontWeight: FontWeight.w600,
-                                            color: colorScheme.secondary,
-                                          ),
+                                        const Icon(
+                                          Icons.info_outline,
+                                          size: 16,
+                                          color: Color(0xFFD32F2F),
                                         ),
-                                        const SizedBox(height: 4),
+                                        const SizedBox(width: 6),
                                         Text(
-                                          '${_formatDate(_calculatedStartDate!)} to ${_formatDate(_statementEndDate!)}',
-                                          style: theme.textTheme.bodyMedium?.copyWith(
+                                          '${_calculatedStartDate!.difference(_statementEndDate!).inDays.abs()} days (≈6 months)',
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: const Color(0xFFB71C1C),
                                             fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '(${_calculatedStartDate!.difference(_statementEndDate!).inDays.abs()} days / 6 months)',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
@@ -838,9 +797,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                               ),
                             ),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 32),
                     if (_pages.isEmpty) ...[
                       PremiumCard(

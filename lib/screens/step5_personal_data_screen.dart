@@ -61,6 +61,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   static final RegExp _phoneRegex = RegExp(
     r'^[0-9]{10}$',
   );
+  static final RegExp _nameRegex = RegExp(
+    r'^[a-zA-Z\s.]+$',
+  );
   
   // Input formatters
   final _panFormatter = TextInputFormatter.withFunction(
@@ -109,6 +112,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   // Loan Details Controllers
   final _loanAmountController = TextEditingController();
   final _loanTenureController = TextEditingController();
+  final _currentEmiController = TextEditingController();
+  final _existingLoansController = TextEditingController();
+  final _monthlyIncomeController = TextEditingController();
+  final _creditScoreController = TextEditingController();
   
   // Family Information Controllers
   String? _maritalStatus;
@@ -162,6 +169,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _currentCompanyExperienceController.addListener(updateSummary);
     _loanAmountController.addListener(updateSummary);
     _loanTenureController.addListener(updateSummary);
+    _currentEmiController.addListener(updateSummary);
+    _existingLoansController.addListener(updateSummary);
+    _monthlyIncomeController.addListener(updateSummary);
+    _creditScoreController.addListener(updateSummary);
     _spouseNameController.addListener(updateSummary);
     _fatherNameController.addListener(updateSummary);
     _motherNameController.addListener(updateSummary);
@@ -203,6 +214,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         _currentCompanyExperienceController.text = stepData['currentCompanyExperience'] ?? '';
         _loanAmountController.text = stepData['loanAmount'] ?? stepData['loanAmountTenure']?.split('/')[0].trim() ?? '';
         _loanTenureController.text = stepData['loanTenure'] ?? stepData['loanAmountTenure']?.split('/').length == 2 ? stepData['loanAmountTenure']?.split('/')[1].trim() ?? '' : '';
+        _currentEmiController.text = stepData['currentEmi'] ?? '';
+        _existingLoansController.text = stepData['existingLoans'] ?? '';
+        _monthlyIncomeController.text = stepData['monthlyIncome'] ?? '';
+        _creditScoreController.text = stepData['creditScore'] ?? '';
         _maritalStatus = stepData['maritalStatus'];
         _spouseNameController.text = stepData['spouseName'] ?? '';
         _fatherNameController.text = stepData['fatherName'] ?? '';
@@ -245,6 +260,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       _currentCompanyExperienceController.text = data.currentCompanyExperience ?? '';
       _loanAmountController.text = data.loanAmount ?? (data.loanAmountTenure?.split('/')[0].trim() ?? '');
       _loanTenureController.text = data.loanTenure ?? (data.loanAmountTenure?.split('/').length == 2 ? data.loanAmountTenure?.split('/')[1].trim() ?? '' : '');
+      // Note: New fields might not be in the old data model
+      _currentEmiController.text = '';
+      _existingLoansController.text = '';
+      _monthlyIncomeController.text = '';
+      _creditScoreController.text = '';
       
       _maritalStatus = data.maritalStatus;
       _spouseNameController.text = data.spouseName ?? '';
@@ -288,6 +308,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _currentCompanyExperienceController.dispose();
     _loanAmountController.dispose();
     _loanTenureController.dispose();
+    _currentEmiController.dispose();
+    _existingLoansController.dispose();
+    _monthlyIncomeController.dispose();
+    _creditScoreController.dispose();
     _spouseNameController.dispose();
     _fatherNameController.dispose();
     _motherNameController.dispose();
@@ -508,6 +532,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'loanAmount': personalData.loanAmount,
             'loanTenure': personalData.loanTenure,
             'loanAmountTenure': personalData.loanAmountTenure,
+            'currentEmi': _currentEmiController.text.trim().isEmpty ? null : _currentEmiController.text.trim(),
+            'existingLoans': _existingLoansController.text.trim().isEmpty ? null : _existingLoansController.text.trim(),
+            'monthlyIncome': _monthlyIncomeController.text.trim().isEmpty ? null : _monthlyIncomeController.text.trim(),
+            'creditScore': _creditScoreController.text.trim().isEmpty ? null : _creditScoreController.text.trim(),
             'maritalStatus': personalData.maritalStatus,
             'spouseName': personalData.spouseName,
             'fatherName': personalData.fatherName,
@@ -891,6 +919,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Please enter name as per Aadhaar Card';
                                 }
+                                if (value.trim().length < 3) {
+                                  return 'Name must be at least 3 characters';
+                                }
+                                if (!_nameRegex.hasMatch(value.trim())) {
+                                  return 'Name can only contain letters and spaces';
+                                }
                                 return null;
                               },
                             ),
@@ -1009,6 +1043,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Please enter residence address';
                                 }
+                                if (value.trim().length < 10) {
+                                  return 'Address must be at least 10 characters';
+                                }
                                 return null;
                               },
                             ),
@@ -1090,6 +1127,22 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               icon: Icons.account_balance_wallet,
                               isRequired: false,
                               keyboardType: TextInputType.number,
+                              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final income = int.tryParse(value.trim());
+                                  if (income == null) {
+                                    return 'Please enter a valid number';
+                                  }
+                                  if (income < 50000) {
+                                    return 'Annual income should be at least ₹50,000';
+                                  }
+                                  if (income > 100000000) {
+                                    return 'Please enter a valid income amount';
+                                  }
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
                             _buildPremiumTextField(
@@ -1172,6 +1225,21 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
                               ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final amount = int.tryParse(value.trim());
+                                  if (amount == null) {
+                                    return 'Please enter a valid amount';
+                                  }
+                                  if (amount < 10000) {
+                                    return 'Minimum loan amount is ₹10,000';
+                                  }
+                                  if (amount > 50000000) {
+                                    return 'Maximum loan amount is ₹5 Crore';
+                                  }
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
                             _buildPremiumTextField(
@@ -1185,7 +1253,133 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               suffixText: ' months',
                               inputFormatters: [
                                 FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(3),
                               ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final months = int.tryParse(value.trim());
+                                  if (months == null) {
+                                    return 'Please enter valid months';
+                                  }
+                                  if (months < 6) {
+                                    return 'Minimum tenure is 6 months';
+                                  }
+                                  if (months > 360) {
+                                    return 'Maximum tenure is 360 months (30 years)';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _monthlyIncomeController,
+                              label: 'Monthly Income',
+                              icon: Icons.attach_money,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'e.g., 50000',
+                              prefixText: '₹ ',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final income = int.tryParse(value.trim());
+                                  if (income == null) {
+                                    return 'Please enter a valid amount';
+                                  }
+                                  if (income < 5000) {
+                                    return 'Minimum monthly income is ₹5,000';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _currentEmiController,
+                              label: 'Current EMI (if any)',
+                              icon: Icons.payment,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'Total monthly EMI',
+                              prefixText: '₹ ',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                              ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final emi = int.tryParse(value.trim());
+                                  if (emi == null) {
+                                    return 'Please enter a valid amount';
+                                  }
+                                  if (emi < 0) {
+                                    return 'EMI cannot be negative';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _existingLoansController,
+                              label: 'Number of Existing Loans',
+                              icon: Icons.format_list_numbered,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'e.g., 0, 1, 2',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(2),
+                              ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final count = int.tryParse(value.trim());
+                                  if (count == null) {
+                                    return 'Please enter a valid number';
+                                  }
+                                  if (count < 0) {
+                                    return 'Cannot be negative';
+                                  }
+                                  if (count > 10) {
+                                    return 'Maximum 10 loans allowed';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _creditScoreController,
+                              label: 'Credit Score (CIBIL)',
+                              icon: Icons.star_rate,
+                              isRequired: false,
+                              keyboardType: TextInputType.number,
+                              hintText: 'e.g., 750',
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(3),
+                              ],
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  final score = int.tryParse(value.trim());
+                                  if (score == null) {
+                                    return 'Please enter a valid score';
+                                  }
+                                  if (score < 300) {
+                                    return 'Minimum credit score is 300';
+                                  }
+                                  if (score > 900) {
+                                    return 'Maximum credit score is 900';
+                                  }
+                                }
+                                return null;
+                              },
                             ),
                           ],
                         ),
@@ -1215,6 +1409,17 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 label: 'Spouse Name',
                                 icon: Icons.person_outline,
                                 isRequired: false,
+                                validator: (value) {
+                                  if (value != null && value.trim().isNotEmpty) {
+                                    if (value.trim().length < 3) {
+                                      return 'Name must be at least 3 characters';
+                                    }
+                                    if (!_nameRegex.hasMatch(value.trim())) {
+                                      return 'Name can only contain letters and spaces';
+                                    }
+                                  }
+                                  return null;
+                                },
                               ),
                             if (_maritalStatus == 'Married') const SizedBox(height: 16),
                             _buildPremiumTextField(
@@ -1223,6 +1428,17 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               label: 'Father Name',
                               icon: Icons.person,
                               isRequired: false,
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  if (value.trim().length < 3) {
+                                    return 'Name must be at least 3 characters';
+                                  }
+                                  if (!_nameRegex.hasMatch(value.trim())) {
+                                    return 'Name can only contain letters and spaces';
+                                  }
+                                }
+                                return null;
+                              },
                             ),
                             const SizedBox(height: 16),
                             _buildPremiumTextField(
@@ -1231,6 +1447,17 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               label: 'Mother Name',
                               icon: Icons.person,
                               isRequired: false,
+                              validator: (value) {
+                                if (value != null && value.trim().isNotEmpty) {
+                                  if (value.trim().length < 3) {
+                                    return 'Name must be at least 3 characters';
+                                  }
+                                  if (!_nameRegex.hasMatch(value.trim())) {
+                                    return 'Name can only contain letters and spaces';
+                                  }
+                                }
+                                return null;
+                              },
                             ),
                           ],
                         ),
@@ -1292,6 +1519,17 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                     label: 'Name',
                                     icon: Icons.person,
                                     isRequired: false,
+                                    validator: (value) {
+                                      if (value != null && value.trim().isNotEmpty) {
+                                        if (value.trim().length < 3) {
+                                          return 'Name must be at least 3 characters';
+                                        }
+                                        if (!_nameRegex.hasMatch(value.trim())) {
+                                          return 'Name can only contain letters and spaces';
+                                        }
+                                      }
+                                      return null;
+                                    },
                                   ),
                                   const SizedBox(height: 16),
                                   _buildPremiumTextField(
@@ -1310,6 +1548,21 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                     icon: Icons.phone,
                                     isRequired: false,
                                     keyboardType: TextInputType.phone,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(10),
+                                    ],
+                                    validator: (value) {
+                                      if (value != null && value.trim().isNotEmpty) {
+                                        if (value.trim().length != 10) {
+                                          return 'Contact number must be 10 digits';
+                                        }
+                                        if (!_phoneRegex.hasMatch(value.trim())) {
+                                          return 'Please enter a valid 10-digit contact number';
+                                        }
+                                      }
+                                      return null;
+                                    },
                                   ),
                                 ],
                               ),
@@ -1356,6 +1609,17 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                     label: 'Name',
                                     icon: Icons.person,
                                     isRequired: false,
+                                    validator: (value) {
+                                      if (value != null && value.trim().isNotEmpty) {
+                                        if (value.trim().length < 3) {
+                                          return 'Name must be at least 3 characters';
+                                        }
+                                        if (!_nameRegex.hasMatch(value.trim())) {
+                                          return 'Name can only contain letters and spaces';
+                                        }
+                                      }
+                                      return null;
+                                    },
                                   ),
                                   const SizedBox(height: 16),
                                   _buildPremiumTextField(
@@ -1374,6 +1638,21 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                     icon: Icons.phone,
                                     isRequired: false,
                                     keyboardType: TextInputType.phone,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(10),
+                                    ],
+                                    validator: (value) {
+                                      if (value != null && value.trim().isNotEmpty) {
+                                        if (value.trim().length != 10) {
+                                          return 'Contact number must be 10 digits';
+                                        }
+                                        if (!_phoneRegex.hasMatch(value.trim())) {
+                                          return 'Please enter a valid 10-digit contact number';
+                                        }
+                                      }
+                                      return null;
+                                    },
                                   ),
                                 ],
                               ),
@@ -1636,8 +1915,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     if (_occupationController.text.isNotEmpty) {
       parts.add(_occupationController.text);
     }
-    if (_educationalQualificationController.text.isNotEmpty) {
-      parts.add(_educationalQualificationController.text);
+    if (_loanAmountController.text.isNotEmpty) {
+      parts.add('Loan: ₹${_loanAmountController.text}');
+    }
+    if (_monthlyIncomeController.text.isNotEmpty) {
+      parts.add('Income: ₹${_monthlyIncomeController.text}/mo');
     }
     return parts.isEmpty ? 'Not filled' : parts.join(' • ');
   }
