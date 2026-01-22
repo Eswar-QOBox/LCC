@@ -525,8 +525,16 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             const SizedBox(height: 16),
             TextField(
               controller: passwordController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'PDF Password (if required)',
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                floatingLabelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
                 hintText: 'Enter password or leave blank',
               ),
               obscureText: true,

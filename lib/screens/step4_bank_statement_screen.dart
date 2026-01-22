@@ -405,9 +405,17 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             const Text('Is this PDF password protected?'),
             const SizedBox(height: 16),
             TextField(
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'PDF Password (if required)',
-                border: OutlineInputBorder(),
+                labelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+                floatingLabelStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+                border: const OutlineInputBorder(),
               ),
               obscureText: true,
               onChanged: (value) => _pdfPassword = value,

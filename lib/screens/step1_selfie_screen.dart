@@ -444,11 +444,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
         // Also sync to SubmissionProvider
         final submissionProvider = context.read<SubmissionProvider>();
-        submissionProvider.setSelfie(effectivePath!);
+        submissionProvider.setSelfie(effectivePath);
 
         // Try to load image bytes from URL for display
         try {
-          if (effectivePath!.startsWith('http')) {
+          if (effectivePath.startsWith('http')) {
             // Get access token for authenticated request
             final storage = StorageService.instance;
             final accessToken = await storage.getAccessToken();
@@ -462,7 +462,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
               }
               
               debugPrint('📷 Selfie Screen: Fetching image from $effectivePath');
-              final response = await http.get(Uri.parse(effectivePath!), headers: headers);
+              final response = await http.get(Uri.parse(effectivePath), headers: headers);
               debugPrint('📷 Selfie Screen: Fetch status: ${response.statusCode}, Content-Type: ${response.headers['content-type']}, Size: ${response.bodyBytes.length}');
               
               if (response.statusCode == 200 && mounted) {
@@ -507,7 +507,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             }
           } else {
             // Try to load from local path
-            final imageFile = XFile(effectivePath!);
+            final imageFile = XFile(effectivePath);
             final bytes = await imageFile.readAsBytes();
             if (mounted) {
               setState(() {
@@ -607,11 +607,13 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                Text(
-                                  'Requirements',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 22,
+                                Flexible(
+                                  child: Text(
+                                    'Requirements',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 22,
+                                    ),
                                   ),
                                 ),
                               ],

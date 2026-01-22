@@ -278,6 +278,14 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         ],
                         decoration: InputDecoration(
                           labelText: 'Enter loan amount',
+                          labelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          floatingLabelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
                           prefixIcon: const Icon(Icons.currency_rupee),
                           suffixText: 'INR',
                         ),
@@ -370,6 +378,14 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         ],
                         decoration: InputDecoration(
                           labelText: 'Enter interest rate',
+                          labelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          floatingLabelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
                           prefixIcon: const Icon(Icons.percent),
                           suffixText: '% per annum',
                         ),
@@ -460,6 +476,14 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         ],
                         decoration: InputDecoration(
                           labelText: 'Enter tenure',
+                          labelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          floatingLabelStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
                           prefixIcon: const Icon(Icons.calendar_today),
                           suffixText: 'months',
                         ),

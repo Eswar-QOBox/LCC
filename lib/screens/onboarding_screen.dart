@@ -17,7 +17,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     OnboardingPage(
       title: 'Upload Your Loan Documents',
       description:
-          'JSEE helps you securely upload and share your loan documents in one simple place. No more emails, prints or paperwork.',
+          'JSEE Solutions helps you securely upload and share your loan documents in one simple place. No more emails, prints or paperwork.',
       icon: Icons.upload_file,
       color: Colors.blue,
     ),
@@ -43,7 +43,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       color: Colors.green,
     ),
     OnboardingPage(
-      title: 'Welcome to JSEE',
+      title: 'Welcome to JSEE Solutions',
       description:
           'This app is made for easy loan document upload and smart EMI planning—so you can complete your loan faster and with confidence.',
       icon: Icons.verified_user,
