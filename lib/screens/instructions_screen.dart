@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../widgets/premium_card.dart';
@@ -533,11 +534,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 const SizedBox(height: 12),
                 // Message
                 Text(
-                  AppStrings.applicationInProgressMessage,
+                  'Application is in progress. Please talk to our agent.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
-                  textAlign: TextAlign.justify,
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 // Application details
@@ -591,24 +592,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Flexible(
+                    Expanded(
                       child: PremiumButton(
-                        label: AppStrings.viewExistingApplication,
-                        icon: Icons.arrow_forward,
+                        label: 'Call to our agents',
+                        icon: Icons.phone,
                         isPrimary: true,
                         onPressed: () {
                           Navigator.of(dialogContext).pop();
-                          // Load application and navigate based on status
-                          final appProvider = context.read<ApplicationProvider>();
-                          appProvider.setApplication(application);
-                          
-                          // If submitted, go to preview (view-only mode)
-                          // If incomplete, resume at current step
-                          if (application.isSubmitted) {
-                            context.go(AppRoutes.step6Preview);
-                          } else {
-                            context.go(AppRoutes.getStepRoute(application.currentStep));
-                          }
+                          _openPhoneDialer(context);
                         },
                       ),
                     ),
@@ -717,6 +708,24 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openPhoneDialer(BuildContext context) async {
+    // Replace with your support phone number
+    const String phoneNumber = '+916303429063'; // +91 63034 29063
+    final Uri phoneUrl = Uri.parse('tel:$phoneNumber');
+
+    try {
+      await launchUrl(phoneUrl);
+    } catch (e) {
+      debugPrint('Error opening phone dialer: $e');
+      if (context.mounted) {
+        PremiumToast.showError(
+          context,
+          AppStrings.assistancePhoneError,
+        );
+      }
+    }
   }
 }
 
