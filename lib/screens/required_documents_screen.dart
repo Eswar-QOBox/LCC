@@ -184,6 +184,34 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           .whereType<DocumentRequirement>()
           .toList();
 
+      // Add missing requirements for verified and rejected uploads
+      // This ensures they appear in the UI even if removed from backend requirements
+      for (var upload in uploadedDocs) {
+        // skip if already in requirements
+        if (requiredDocs.any((req) => req.id == upload.documentType)) {
+          continue;
+        }
+
+        // Add if verified or rejected
+        if (upload.status == DocumentStatus.verified || 
+            upload.status == DocumentStatus.rejected) {
+          
+          if (kDebugMode) {
+             print('Adding synthetic requirement for ${upload.status} document: ${upload.documentType}');
+          }
+          
+          final syntheticReq = DocumentRequirement.fromId(
+            upload.documentType, 
+            uploadedDocTypes
+          );
+          
+          // Force status update from upload
+          syntheticReq.status = upload.status;
+          
+          requiredDocs.add(syntheticReq);
+        }
+      }
+
       setState(() {
         _requiredDocuments = requiredDocs;
         _isLoading = false;

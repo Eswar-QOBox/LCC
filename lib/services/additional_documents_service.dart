@@ -215,10 +215,11 @@ class AdditionalDocumentsService {
             final category = doc['category'] as String? ?? '';
             final status = (doc['status'] as String? ?? '').toLowerCase();
 
-            // Always include rejected documents (they need to be shown for re-upload)
-            if (status == 'rejected') {
+            // Always include rejected and verified documents
+            // This ensures history is preserved even if requirement is removed
+            if (status == 'rejected' || status == 'verified') {
               print(
-                'Including rejected document - folder: $folder, category: $category, status: $status',
+                'Including $status document - folder: $folder, category: $category',
               );
               return true;
             }
