@@ -46,7 +46,7 @@ class AppStrings {
 
   // Applications screen
   static const String applicationsTitle = 'My Applications';
-  static const String tabApplied = 'Applied';
+  static const String tabApplied = 'Submitted';
   static const String tabApproved = 'Approved';
   static const String tabIncomplete = 'Incomplete';
   static const String errorLoadingApplications = 'Error Loading Applications';

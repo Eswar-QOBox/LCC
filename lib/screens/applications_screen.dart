@@ -26,7 +26,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
   bool _isLoading = true;
   String? _error;
   late TabController _tabController;
-  int _selectedTabIndex = 0; // 0: Applied, 1: Approved, 2: Incomplete
+  int _selectedTabIndex = 0; // 0: Submitted, 1: Approved, 2: Incomplete
 
   @override
   void initState() {
@@ -205,7 +205,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                         : TabBarView(
                             controller: _tabController,
                             children: [
-                              // Applied Tab (Submitted/In Progress)
+                              // Submitted Tab (Submitted/In Progress)
                               _buildApplicationsList(
                                 context,
                                 _getAppliedApplications(),
