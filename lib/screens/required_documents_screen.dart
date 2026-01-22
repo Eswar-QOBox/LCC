@@ -77,10 +77,19 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       // Returns null if no lead found (valid empty state), throws only for actual errors
       Map<String, dynamic>? leadData;
       try {
-        if (kDebugMode) {
-          print('Loading documents for user: ${user.email}');
-        }
-        leadData = await _documentsService.getLeadByEmail(user.email);
+      String? phoneNumber;
+      if (user.email.endsWith('@phone.local')) {
+        phoneNumber = user.email.split('@')[0];
+      }
+
+      if (kDebugMode) {
+        print('Loading documents for user: ${user.email}, phone: $phoneNumber');
+      }
+      
+      leadData = await _documentsService.getLeadByUser(
+        user.email,
+        phone: phoneNumber,
+      );
         _leadId = leadData?['id'] as String?;
 
         if (kDebugMode) {
@@ -143,7 +152,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
 
       // Get document requirements
       final requirements =
-          leadData['additionalDocumentRequirements'] as List<dynamic>? ?? [];
+          (leadData['additionalDocumentRequirements'] ??
+                  leadData['additional_documents'] ??
+                  leadData['additionalDocuments']) as List<dynamic>? ??
+              [];
 
       // Get uploaded documents
       List<UploadedDocument> uploadedDocs = [];
@@ -171,6 +183,34 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           })
           .whereType<DocumentRequirement>()
           .toList();
+
+      // Add missing requirements for verified and rejected uploads
+      // This ensures they appear in the UI even if removed from backend requirements
+      for (var upload in uploadedDocs) {
+        // skip if already in requirements
+        if (requiredDocs.any((req) => req.id == upload.documentType)) {
+          continue;
+        }
+
+        // Add if verified or rejected
+        if (upload.status == DocumentStatus.verified || 
+            upload.status == DocumentStatus.rejected) {
+          
+          if (kDebugMode) {
+             print('Adding synthetic requirement for ${upload.status} document: ${upload.documentType}');
+          }
+          
+          final syntheticReq = DocumentRequirement.fromId(
+            upload.documentType, 
+            uploadedDocTypes
+          );
+          
+          // Force status update from upload
+          syntheticReq.status = upload.status;
+          
+          requiredDocs.add(syntheticReq);
+        }
+      }
 
       setState(() {
         _requiredDocuments = requiredDocs;

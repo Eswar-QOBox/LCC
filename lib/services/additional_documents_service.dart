@@ -10,15 +10,23 @@ class AdditionalDocumentsService {
   /// Only returns lead if it matches the authenticated user's email
   /// Returns null if no lead is found (valid empty state)
   /// Throws exception only for actual errors (network, auth, server errors)
-  Future<Map<String, dynamic>?> getLeadByEmail(String email) async {
+  Future<Map<String, dynamic>?> getLeadByUser(
+    String email, {
+    String? phone,
+  }) async {
     try {
       // Directly search for lead by email using the leads endpoint
       // Backend ensures users can only see their own lead (by email match)
       final normalizedEmail = email.toLowerCase().trim();
+      final normalizedPhone = phone?.trim();
+
+      // We can pass either email or phone as search query
+      // The backend now supports finding by either for the logged-in user
+      final query = normalizedPhone ?? normalizedEmail;
 
       final leadsResponse = await _apiClient.get(
         '/api/v1/leads',
-        queryParameters: {'search': normalizedEmail, 'limit': '10'},
+        queryParameters: {'search': query, 'limit': '10'},
       );
 
       if (leadsResponse.statusCode == 200) {
@@ -37,21 +45,26 @@ class AdditionalDocumentsService {
               print('Found ${leads.length} leads in response');
             }
 
-            // Find lead with matching email (case-insensitive)
-            // Backend should already filter this, but we double-check for security
+            // Find lead with matching email OR phone
+            // Backend filters, but we double-check for security and correct selection
+            // We want the most recent one (backend sorts by created_at DESC)
             for (var lead in leads) {
               if (lead is Map) {
                 final leadEmail = (lead['email'] as String? ?? '')
                     .toLowerCase()
                     .trim();
+                final leadPhone = (lead['phone'] as String? ?? '').trim();
 
-                if (kDebugMode) {
-                  print(
-                    'Checking lead email: $leadEmail against: $normalizedEmail',
-                  );
+                bool matches = false;
+                if (leadEmail.isNotEmpty && leadEmail == normalizedEmail) {
+                  matches = true;
+                } else if (normalizedPhone != null &&
+                    leadPhone.isNotEmpty &&
+                    leadPhone == normalizedPhone) {
+                  matches = true;
                 }
 
-                if (leadEmail == normalizedEmail) {
+                if (matches) {
                   if (kDebugMode) {
                     print('Found matching lead: ${lead['id']}');
                   }
@@ -202,10 +215,11 @@ class AdditionalDocumentsService {
             final category = doc['category'] as String? ?? '';
             final status = (doc['status'] as String? ?? '').toLowerCase();
 
-            // Always include rejected documents (they need to be shown for re-upload)
-            if (status == 'rejected') {
+            // Always include rejected and verified documents
+            // This ensures history is preserved even if requirement is removed
+            if (status == 'rejected' || status == 'verified') {
               print(
-                'Including rejected document - folder: $folder, category: $category, status: $status',
+                'Including $status document - folder: $folder, category: $category',
               );
               return true;
             }
