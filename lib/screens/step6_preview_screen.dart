@@ -517,7 +517,11 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SubmissionProvider>();
+    final appProvider = context.watch<ApplicationProvider>();
     final submission = provider.submission;
+    // Check submission status from backend application data
+    final isSubmitted = appProvider.currentApplication?.isSubmitted ?? false;
+    
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final selfiePath = _getSelfiePath(context);
@@ -1179,9 +1183,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
-                    // Dynamic button: Close if no changes, Submit if changes made
-                    if (_hasChanges) ...[
-                      // User made changes - show Submit button
+                    // Dynamic button: Close if submitted, Submit if not submitted
+                    if (!isSubmitted) ...[
+                      // Not submitted - show Submit button
                       SlideToConfirm(
                         label: submission.isComplete
                             ? 'Slide to Submit'
@@ -1192,7 +1196,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             : null,
                       ),
                     ] else ...[
-                      // No changes - show Close button
+                      // Already submitted - show Close button
                       PremiumCard(
                         gradientColors: [
                           colorScheme.primary.withValues(alpha: 0.05),
