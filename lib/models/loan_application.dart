@@ -43,7 +43,9 @@ class LoanApplication {
       id: json['id'] as String,
       userId: json['userId'] as String,
       loanType: json['loanType'] as String,
-      currentStep: json['currentStep'] as int,
+      currentStep: json['currentStep'] is int
+          ? json['currentStep'] as int
+          : int.tryParse(json['currentStep'].toString()) ?? 1,
       status: json['status'] as String,
       applicationId: json['applicationId'] as String,
       loanAmount: json['loanAmount'] != null

@@ -27,35 +27,11 @@ class _LoanScreenState extends State<LoanScreen> {
   static const Duration _autoScrollDuration = Duration(seconds: 3);
   static const Duration _resumeScrollDelay = Duration(seconds: 5);
 
-  final List<_PromoCardData> _promoCards = const [
-    _PromoCardData(
-      title: 'Quick Personal Loans',
-      subtitle: 'Get approved in 24 hours',
-      ctaText: 'Apply Now',
-      imagePath: 'assets/money.jpg',
-      gradientColors: [Color(0xFF2196F3), Color(0xFF1976D2)],
-    ),
-    _PromoCardData(
-      title: 'Secure & Safe',
-      subtitle: 'Bank-level encryption for your data',
-      ctaText: 'Learn More',
-      imagePath: 'assets/Secure.jpg',
-      gradientColors: [Color(0xFF4CAF50), Color(0xFF388E3C)],
-    ),
-    _PromoCardData(
-      title: 'Low Interest Rates',
-      subtitle: 'Starting from 8.5% per annum',
-      ctaText: 'Check Rates',
-      imagePath: 'assets/Intrest Rate.jpg',
-      gradientColors: [Color(0xFFFF9800), Color(0xFFF57C00)],
-    ),
-    _PromoCardData(
-      title: 'JSEE Solutions',
-      subtitle: 'Your trusted loan partner',
-      ctaText: 'Get Started',
-      imagePath: 'assets/JSEE_icon.jpg',
-      gradientColors: [Color(0xFF9C27B0), Color(0xFF7B1FA2)],
-    ),
+  final List<String> _carouselImages = const [
+    'assets/1.jpg.jpeg',
+    'assets/2.jpg.jpeg',
+    'assets/3.jpg.jpeg',
+    'assets/4.jpg.jpeg',
   ];
 
   Widget _buildTopBrandBar(BuildContext context) {
@@ -106,7 +82,7 @@ class _LoanScreenState extends State<LoanScreen> {
     super.initState();
     // Initialize PageController with a large initial page for infinite scroll
     _promoPageController = PageController(
-      viewportFraction: 0.9,
+      viewportFraction: 1.0,
       initialPage: _initialPage,
     );
     _promoPageController.addListener(_onPageChanged);
@@ -117,7 +93,7 @@ class _LoanScreenState extends State<LoanScreen> {
   void _onPageChanged() {
     if (!_promoPageController.hasClients) return;
     final page = _promoPageController.page ?? _initialPage;
-    final index = (page.round() % _promoCards.length);
+    final index = (page.round() % _carouselImages.length);
     if (index != _currentPromoIndex) {
       setState(() {
         _currentPromoIndex = index;
@@ -354,7 +330,7 @@ class _LoanScreenState extends State<LoanScreen> {
   Widget _buildPromoCarousel(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -362,7 +338,7 @@ class _LoanScreenState extends State<LoanScreen> {
         Padding(
           padding: const EdgeInsets.only(left: 8.0, bottom: 12.0),
           child: Text(
-            'Featured Offers',
+            'Featured Images',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface,
@@ -384,9 +360,8 @@ class _LoanScreenState extends State<LoanScreen> {
               controller: _promoPageController,
               onPageChanged: (_) => _pauseAutoScroll(),
               itemBuilder: (context, index) {
-                final cardIndex = index % _promoCards.length;
-                final promoCard = _promoCards[cardIndex];
-                final isActive = cardIndex == _currentPromoIndex;
+                final imageIndex = index % _carouselImages.length;
+                final isActive = imageIndex == _currentPromoIndex;
                 return AnimatedScale(
                   scale: isActive ? 1.0 : 0.92,
                   duration: const Duration(milliseconds: 300),
@@ -394,7 +369,7 @@ class _LoanScreenState extends State<LoanScreen> {
                   child: AnimatedOpacity(
                     opacity: isActive ? 1.0 : 0.7,
                     duration: const Duration(milliseconds: 300),
-                    child: _buildModernPromoCard(context, promoCard),
+                    child: _buildImageCard(context, _carouselImages[imageIndex]),
                   ),
                 );
               },
@@ -402,7 +377,7 @@ class _LoanScreenState extends State<LoanScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        // Enhanced page indicators
+        // Page indicators
         Center(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -417,7 +392,7 @@ class _LoanScreenState extends State<LoanScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: List.generate(
-                _promoCards.length,
+                _carouselImages.length,
                 (index) {
                   final isActive = index == _currentPromoIndex;
                   return Padding(
@@ -425,9 +400,8 @@ class _LoanScreenState extends State<LoanScreen> {
                     child: GestureDetector(
                       onTap: () {
                         _pauseAutoScroll();
-                        // Calculate the nearest page for infinite scroll
                         final currentPage = _promoPageController.page?.toInt() ?? _initialPage;
-                        final remainder = currentPage % _promoCards.length;
+                        final remainder = currentPage % _carouselImages.length;
                         final nearestPage = currentPage - remainder + index;
                         _promoPageController.animateToPage(
                           nearestPage,
@@ -452,150 +426,30 @@ class _LoanScreenState extends State<LoanScreen> {
     );
   }
 
-  Widget _buildModernPromoCard(BuildContext context, _PromoCardData data) {
-    final theme = Theme.of(context);
-    
+  Widget _buildImageCard(BuildContext context, String imagePath) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: data.gradientColors,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: data.gradientColors[0].withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Stack(
-              children: [
-                // Background pattern overlay
-                Positioned.fill(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.15),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.05),
-                        ],
-                        stops: const [0.0, 0.5, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-                // Content
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Brand badge with icon only
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.verified_rounded,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'JSEE Solutions',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      // Title
-                      Text(
-                        data.title,
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
-                          height: 1.2,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      // Subtitle
-                      Text(
-                        data.subtitle,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.9),
-                          fontSize: 13,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 10),
-                      // CTA as inline text with arrow
-                      Row(
-                        children: [
-                          Text(
-                            data.ctaText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.arrow_forward,
-                              color: Colors.white,
-                              size: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.asset(
+            imagePath,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
           ),
         ),
+      ),
     );
   }
 
@@ -1065,18 +919,3 @@ class _LoanTypeOption {
   final Color color;
 }
 
-class _PromoCardData {
-  const _PromoCardData({
-    required this.title,
-    required this.subtitle,
-    required this.ctaText,
-    required this.imagePath,
-    required this.gradientColors,
-  });
-
-  final String title;
-  final String subtitle;
-  final String ctaText;
-  final String imagePath;
-  final List<Color> gradientColors;
-}

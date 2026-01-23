@@ -850,74 +850,61 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                gradient: _validationResult?.isValid == true
-                                    ? LinearGradient(
-                                        colors: [
-                                          AppTheme.successColor,
-                                          AppTheme.successColor.withValues(alpha: 0.8),
-                                        ],
-                                      )
-                                    : LinearGradient(
-                                        colors: [
-                                          colorScheme.primary,
-                                          colorScheme.secondary,
-                                        ],
-                                      ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (_validationResult?.isValid == true
-                                            ? AppTheme.successColor
-                                            : colorScheme.primary)
-                                        .withValues(alpha: 0.4),
-                                    blurRadius: 15,
-                                    offset: const Offset(0, 5),
+                          // Only show validation button if not yet validated successfully
+                          if (_validationResult?.isValid != true) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      colorScheme.primary,
+                                      colorScheme.secondary,
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: ElevatedButton.icon(
-                                onPressed: (_isValidating || _validationResult?.isValid == true) 
-                                    ? null 
-                                    : _validateImage,
-                                icon: _isValidating
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      )
-                                    : Icon(
-                                        _validationResult?.isValid == true 
-                                            ? Icons.check_circle 
-                                            : Icons.verified, 
-                                        color: Colors.white,
-                                      ),
-                                label: Text(
-                                  _validationResult?.isValid == true 
-                                      ? 'Validated' 
-                                      : 'Validate',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: colorScheme.primary.withValues(alpha: 0.4),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
                                 ),
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  backgroundColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  disabledBackgroundColor: Colors.transparent,
-                                  disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
+                                child: ElevatedButton.icon(
+                                  onPressed: _isValidating ? null : _validateImage,
+                                  icon: _isValidating
+                                      ? SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.verified,
+                                          color: Colors.white,
+                                        ),
+                                  label: const Text(
+                                    'Validate',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    backgroundColor: Colors.transparent,
+                                    shadowColor: Colors.transparent,
+                                    disabledBackgroundColor: Colors.transparent,
+                                    disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ] else ...[

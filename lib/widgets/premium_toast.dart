@@ -102,7 +102,7 @@ class PremiumToast {
         ),
         backgroundColor: backgroundColor,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),

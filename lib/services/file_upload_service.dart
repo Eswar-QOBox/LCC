@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/api_client.dart';
 
@@ -9,36 +11,42 @@ class FileUploadService {
   /// Upload selfie image
   Future<Map<String, dynamic>> uploadSelfie(XFile imageFile) async {
     try {
+      // Compress the image to reduce file size
+      final compressedBytes = await _compressImage(imageFile);
+
       MultipartFile multipartFile;
-      
+
       if (kIsWeb) {
-        // On web, read bytes and use fromBytes
-        final bytes = await imageFile.readAsBytes();
+        // On web, use compressed bytes
+        final bytes = compressedBytes ?? await imageFile.readAsBytes();
         // Ensure we have a valid filename - use a default if empty
         String filename = imageFile.name;
         if (filename.isEmpty) {
           filename = 'selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
         }
-        // Determine content type from filename or use default
-        String contentType = 'image/jpeg';
-        if (filename.toLowerCase().endsWith('.png')) {
-          contentType = 'image/png';
-        } else if (filename.toLowerCase().endsWith('.webp')) {
-          contentType = 'image/webp';
-        }
         multipartFile = MultipartFile.fromBytes(
           bytes,
           filename: filename,
-          contentType: DioMediaType.parse(contentType),
+          contentType: DioMediaType.parse('image/jpeg'),
         );
       } else {
-        // On mobile/desktop, use fromFile
-        multipartFile = await MultipartFile.fromFile(
-          imageFile.path,
-          filename: imageFile.name.isNotEmpty
-              ? imageFile.name
-              : 'selfie_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        );
+        // On mobile/desktop, use compressed bytes or fallback to original
+        if (compressedBytes != null) {
+          multipartFile = MultipartFile.fromBytes(
+            compressedBytes,
+            filename: imageFile.name.isNotEmpty
+                ? imageFile.name
+                : 'selfie_${DateTime.now().millisecondsSinceEpoch}.jpg',
+            contentType: DioMediaType.parse('image/jpeg'),
+          );
+        } else {
+          multipartFile = await MultipartFile.fromFile(
+            imageFile.path,
+            filename: imageFile.name.isNotEmpty
+                ? imageFile.name
+                : 'selfie_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          );
+        }
       }
 
       final formData = FormData.fromMap({
@@ -423,6 +431,38 @@ class FileUploadService {
       throw Exception('Failed to upload selfie');
     } catch (e) {
       throw Exception('Failed to upload selfie: $e');
+    }
+  }
+
+  /// Compress image to reduce file size for upload
+  Future<Uint8List?> _compressImage(XFile imageFile) async {
+    try {
+      if (kIsWeb) {
+        // On web, compress using flutter_image_compress
+        final bytes = await imageFile.readAsBytes();
+        final compressedBytes = await FlutterImageCompress.compressWithList(
+          bytes,
+          minWidth: 1024,  // Max width
+          minHeight: 1024, // Max height
+          quality: 70,     // Compression quality (0-100)
+          format: CompressFormat.jpeg,
+        );
+        return compressedBytes;
+      } else {
+        // On mobile, compress using flutter_image_compress
+        final compressedBytes = await FlutterImageCompress.compressWithFile(
+          imageFile.path,
+          minWidth: 1024,
+          minHeight: 1024,
+          quality: 70,
+          format: CompressFormat.jpeg,
+        );
+        return compressedBytes;
+      }
+    } catch (e) {
+      debugPrint('Image compression failed: $e');
+      // Return null to fall back to original image
+      return null;
     }
   }
 }
