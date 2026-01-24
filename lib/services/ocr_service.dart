@@ -89,34 +89,71 @@ class OcrService {
         // Address is typically in multiple lines, look for longer text blocks
         final addressLines = <String>[];
         
+        // Filter out "Unique Identification Authority of India" and "UIDAI" text
+        final filteredText = recognizedText.text
+            .replaceAll(RegExp(r'Unique Identification Authority of India', caseSensitive: false), '')
+            .replaceAll(RegExp(r'UIDAI', caseSensitive: false), '')
+            .replaceAll(RegExp(r'UNIQUE IDENTIFICATION AUTHORITY OF INDIA', caseSensitive: false), '');
+        
+        // Find pin code (6 digits) - this marks the end of address
+        final pinCodeRegex = RegExp(r'\b\d{6}\b');
+        final pinCodeMatch = pinCodeRegex.firstMatch(filteredText);
+        int? stopIndex;
+        
+        if (pinCodeMatch != null) {
+          // Find the position after pin code (including pin code itself)
+          stopIndex = pinCodeMatch.end;
+        }
+        
+        // Extract text blocks up to pin code
         for (final block in recognizedText.blocks) {
           final text = block.text.trim();
+          
+          // Skip if this block is beyond the pin code
+          if (stopIndex != null) {
+            final blockStart = recognizedText.text.indexOf(block.text);
+            if (blockStart > stopIndex) {
+              break; // Stop processing blocks after pin code
+            }
+          }
+          
           // Look for text that might be part of an address
           // Address typically contains numbers (house numbers, pincodes) and longer text
-          if (text.length > 10 && 
+          if (text.length > 5 && 
               (text.contains(RegExp(r'\d')) || 
                text.contains(RegExp(r'[A-Za-z]')))) {
             // Filter out common non-address text
-            if (!text.toUpperCase().contains('GOVERNMENT OF INDIA') &&
-                !text.toUpperCase().contains('AADHAAR') &&
-                !text.toUpperCase().contains('UIDAI') &&
-                !text.toUpperCase().contains('DOB') &&
-                !text.toUpperCase().contains('YOB') &&
-                !text.toUpperCase().contains('MALE') &&
-                !text.toUpperCase().contains('FEMALE')) {
+            final textUpper = text.toUpperCase();
+            if (!textUpper.contains('GOVERNMENT OF INDIA') &&
+                !textUpper.contains('AADHAAR') &&
+                !textUpper.contains('UIDAI') &&
+                !textUpper.contains('UNIQUE IDENTIFICATION AUTHORITY') &&
+                !textUpper.contains('DOB') &&
+                !textUpper.contains('YOB') &&
+                !textUpper.contains('MALE') &&
+                !textUpper.contains('FEMALE') &&
+                textUpper.trim().isNotEmpty) {
               addressLines.add(text);
             }
           }
         }
         
-        // Combine address lines (typically 2-5 lines)
+        // Combine address lines
         if (addressLines.isNotEmpty) {
-          // Take first 3-5 lines that look like address
-          final addressCandidates = addressLines.take(5).toList();
-          address = addressCandidates.join(', ');
+          address = addressLines.join(', ');
           
-          // Clean up the address
+          // Clean up the address - remove extra spaces
           address = address.replaceAll(RegExp(r'\s+'), ' ').trim();
+          
+          // Ensure we stop at pin code if found
+          if (pinCodeMatch != null) {
+            final pinCode = pinCodeMatch.group(0)!;
+            // Find pin code position in final address and truncate after it
+            final pinCodePos = address.indexOf(pinCode);
+            if (pinCodePos != -1) {
+              address = address.substring(0, pinCodePos + pinCode.length).trim();
+            }
+          }
         }
 
         debugPrint('OCR Results (Aadhaar Back) - Address: $address');
