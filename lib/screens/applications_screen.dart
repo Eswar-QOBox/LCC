@@ -91,63 +91,144 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         child: SafeArea(
           child: Column(
             children: [
-              // Header
+              // Header with Gradient
               Container(
-                color: colorScheme.primary,
-                padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 0),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      colorScheme.primary,
+                      colorScheme.primary.withValues(alpha: 0.85),
+                      colorScheme.secondary.withValues(alpha: 0.9),
+                    ],
+                  ),
+                ),
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.folder,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(
-                            AppStrings.applicationsTitle,
-                            style: theme.textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
+                    // App Bar
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 20.0),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.folder_open,
                               color: Colors.white,
+                              size: 28,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  AppStrings.applicationsTitle,
+                                  style: theme.textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Track and manage your loan applications',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!_isLoading && _error == null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.article,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${_applications.length}',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 16),
                     // Tabs
                     Container(
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: Colors.white,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(20),
-                          topRight: Radius.circular(20),
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(24),
+                          topRight: Radius.circular(24),
                         ),
                       ),
-                      child: TabBar(
-                        controller: _tabController,
-                        indicatorColor: colorScheme.primary,
-                        labelColor: colorScheme.primary,
-                        unselectedLabelColor: colorScheme.onSurfaceVariant,
-                        labelStyle: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        unselectedLabelStyle: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                        tabs: const [
-                          Tab(text: AppStrings.tabApplied),
-                          Tab(text: AppStrings.tabApproved),
-                          Tab(text: AppStrings.tabIncomplete),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 4),
+                          TabBar(
+                            controller: _tabController,
+                            indicatorColor: colorScheme.primary,
+                            indicatorWeight: 3,
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            labelColor: colorScheme.primary,
+                            unselectedLabelColor: colorScheme.onSurfaceVariant,
+                            labelStyle: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 14,
+                            ),
+                            unselectedLabelStyle: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 14,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            tabs: const [
+                              Tab(
+                                text: AppStrings.tabApplied,
+                                height: 48,
+                              ),
+                              Tab(
+                                text: AppStrings.tabApproved,
+                                height: 48,
+                              ),
+                              Tab(
+                                text: AppStrings.tabIncomplete,
+                                height: 48,
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),

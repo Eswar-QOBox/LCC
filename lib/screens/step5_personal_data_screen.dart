@@ -58,6 +58,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   static final RegExp _panRegex = RegExp(
     r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$',
   );
+  static final RegExp _aadhaarRegex = RegExp(
+    r'^\d{12}$',
+  );
   static final RegExp _phoneRegex = RegExp(
     r'^[0-9]{10}$',
   );
@@ -79,11 +82,13 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     },
   );
   
+  final _aadhaarFormatter = FilteringTextInputFormatter.digitsOnly;
   final _phoneFormatter = FilteringTextInputFormatter.digitsOnly;
   
   // Basic Information Controllers
   final _nameAsPerAadhaarController = TextEditingController();
   final _panNoController = TextEditingController();
+  final _aadhaarNumberController = TextEditingController();
   final _mobileNumberController = TextEditingController();
   final _personalEmailIdController = TextEditingController();
   DateTime? _dateOfBirth;
@@ -150,6 +155,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
 
     _nameAsPerAadhaarController.addListener(updateSummary);
     _panNoController.addListener(updateSummary);
+    _aadhaarNumberController.addListener(updateSummary);
     _mobileNumberController.addListener(updateSummary);
     _personalEmailIdController.addListener(updateSummary);
     _countryOfResidenceController.addListener(updateSummary);
@@ -192,6 +198,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         final stepData = appProvider.currentApplication!.step5PersonalData as Map<String, dynamic>;
         _nameAsPerAadhaarController.text = stepData['nameAsPerAadhaar'] ?? '';
         _panNoController.text = stepData['panNo'] ?? '';
+        _aadhaarNumberController.text = stepData['aadhaarNumber'] ?? '';
         _mobileNumberController.text = stepData['mobileNumber'] ?? '';
         _personalEmailIdController.text = stepData['personalEmailId'] ?? '';
         if (stepData['dateOfBirth'] != null) {
@@ -237,6 +244,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       if (data != null) {
       _nameAsPerAadhaarController.text = data.nameAsPerAadhaar ?? '';
       _panNoController.text = data.panNo ?? '';
+      _aadhaarNumberController.text = data.aadhaarNumber ?? '';
       _mobileNumberController.text = data.mobileNumber ?? '';
       _personalEmailIdController.text = data.personalEmailId ?? '';
       _dateOfBirth = data.dateOfBirth;
@@ -289,6 +297,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   void dispose() {
     _nameAsPerAadhaarController.dispose();
     _panNoController.dispose();
+    _aadhaarNumberController.dispose();
     _mobileNumberController.dispose();
     _personalEmailIdController.dispose();
     _countryOfResidenceController.dispose();
@@ -394,7 +403,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         panNo: _panNoController.text.trim().isEmpty 
             ? null 
             : _panNoController.text.trim().toUpperCase(),
-        mobileNumber: _mobileNumberController.text.trim().isEmpty 
+        aadhaarNumber: _aadhaarNumberController.text.trim().isEmpty
+            ? null
+            : _aadhaarNumberController.text.trim().replaceAll(' ', '').replaceAll('-', ''),
+        mobileNumber: _mobileNumberController.text.trim().isEmpty
             ? null 
             : _mobileNumberController.text.trim(),
         personalEmailId: _personalEmailIdController.text.trim().isEmpty 
@@ -512,6 +524,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'nameAsPerAadhaar': personalData.nameAsPerAadhaar,
             'dateOfBirth': personalData.dateOfBirth?.toIso8601String(),
             'panNo': personalData.panNo,
+            'aadhaarNumber': personalData.aadhaarNumber,
             'mobileNumber': personalData.mobileNumber,
             'personalEmailId': personalData.personalEmailId,
             'countryOfResidence': personalData.countryOfResidence,
@@ -607,7 +620,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         panNo: _panNoController.text.trim().isEmpty 
             ? null 
             : _panNoController.text.trim().toUpperCase(),
-        mobileNumber: _mobileNumberController.text.trim().isEmpty 
+        aadhaarNumber: _aadhaarNumberController.text.trim().isEmpty
+            ? null
+            : _aadhaarNumberController.text.trim().replaceAll(' ', '').replaceAll('-', ''),
+        mobileNumber: _mobileNumberController.text.trim().isEmpty
             ? null 
             : _mobileNumberController.text.trim(),
         personalEmailId: _personalEmailIdController.text.trim().isEmpty 
@@ -949,6 +965,32 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 }
                                 if (!_panRegex.hasMatch(pan)) {
                                   return 'Invalid PAN format. Format: ABCDE1234F';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            _buildPremiumTextField(
+                              context,
+                              controller: _aadhaarNumberController,
+                              label: 'Aadhaar No',
+                              icon: Icons.badge,
+                              isRequired: true,
+                              inputFormatters: [
+                                _aadhaarFormatter,
+                                LengthLimitingTextInputFormatter(12),
+                              ],
+                              keyboardType: TextInputType.number,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return 'Please enter Aadhaar number';
+                                }
+                                final aadhaar = value.trim().replaceAll(' ', '').replaceAll('-', '');
+                                if (aadhaar.length != 12) {
+                                  return 'Aadhaar number must be 12 digits';
+                                }
+                                if (!_aadhaarRegex.hasMatch(aadhaar)) {
+                                  return 'Invalid Aadhaar format. Must be 12 digits';
                                 }
                                 return null;
                               },

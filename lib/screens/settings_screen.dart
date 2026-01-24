@@ -3,12 +3,64 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import '../widgets/premium_card.dart';
+import '../widgets/skeleton_box.dart';
 import '../providers/submission_provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_theme.dart';
+import '../models/loan_application.dart';
+import '../services/loan_application_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final LoanApplicationService _applicationService = LoanApplicationService();
+  List<LoanApplication> _previousLoans = [];
+  bool _isLoadingLoans = true;
+  String? _loansError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreviousLoans();
+  }
+
+  Future<void> _loadPreviousLoans() async {
+    setState(() {
+      _isLoadingLoans = true;
+      _loansError = null;
+    });
+
+    try {
+      final apps = await _applicationService.getApplications(
+        status: 'all',
+        limit: 50,
+      );
+      
+      // Filter only submitted and approved loans (excluding drafts)
+      final previousLoans = apps.where((app) => 
+        app.isSubmitted || app.isApproved || app.isRejected
+      ).toList();
+      
+      // Sort by most recent first
+      previousLoans.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      
+      setState(() {
+        _previousLoans = previousLoans;
+        _isLoadingLoans = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loansError = e.toString();
+        _isLoadingLoans = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +184,10 @@ class SettingsScreen extends StatelessWidget {
                         );
                       },
                     ),
+                    const SizedBox(height: 16),
+
+                    // Previous Loans Section
+                    _buildPreviousLoansSection(context),
                     const SizedBox(height: 16),
 
                     // App Settings
@@ -498,5 +554,404 @@ class SettingsScreen extends StatelessWidget {
         }
       }
     }
+  }
+
+  Widget _buildPreviousLoansSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      colorScheme.primary,
+                      colorScheme.secondary,
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.history,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Previous Loans',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (!_isLoadingLoans && _loansError == null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_previousLoans.length}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_isLoadingLoans)
+            _buildLoansLoadingState()
+          else if (_loansError != null)
+            _buildLoansErrorState(context)
+          else if (_previousLoans.isEmpty)
+            _buildNoLoansState(context)
+          else
+            _buildLoansList(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoansLoadingState() {
+    return Column(
+      children: List.generate(
+        3,
+        (index) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SkeletonBox(width: 40, height: 40),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SkeletonBox(height: 14),
+                        SizedBox(height: 6),
+                        SkeletonBox(width: 120, height: 12),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (index < 2) ...[
+                SizedBox(height: 12),
+                Divider(height: 1),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoansErrorState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Icon(
+          Icons.error_outline,
+          size: 48,
+          color: colorScheme.error,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Failed to load loans',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _loansError!,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: _loadPreviousLoans,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Retry'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoLoansState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        Icon(
+          Icons.folder_open_outlined,
+          size: 48,
+          color: colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'No Previous Loans',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Your loan history will appear here once you submit applications',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoansList(BuildContext context) {
+    // Show only the first 5 loans to keep the profile clean
+    final displayLoans = _previousLoans.take(5).toList();
+    
+    return Column(
+      children: [
+        ...displayLoans.asMap().entries.map((entry) {
+          final index = entry.key;
+          final loan = entry.value;
+          return Column(
+            children: [
+              _buildLoanItem(context, loan),
+              if (index < displayLoans.length - 1) ...[
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+              ],
+            ],
+          );
+        }),
+        if (_previousLoans.length > 5) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${_previousLoans.length - 5} more loans available in Applications tab',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildLoanItem(BuildContext context, LoanApplication loan) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final dateFormat = DateFormat('dd MMM yyyy');
+
+    // Get status information
+    Color statusColor;
+    IconData statusIcon;
+    String statusText;
+
+    if (loan.isApproved) {
+      statusColor = AppTheme.successColor;
+      statusIcon = Icons.check_circle;
+      statusText = 'Approved';
+    } else if (loan.isRejected) {
+      statusColor = AppTheme.errorColor;
+      statusIcon = Icons.cancel;
+      statusText = 'Rejected';
+    } else if (loan.isSubmitted) {
+      statusColor = AppTheme.warningColor;
+      statusIcon = Icons.pending;
+      statusText = 'Under Review';
+    } else {
+      statusColor = AppTheme.infoColor;
+      statusIcon = Icons.hourglass_empty;
+      statusText = 'In Progress';
+    }
+
+    // Get loan type icon
+    IconData loanIcon;
+    Color loanColor;
+    switch (loan.loanType) {
+      case 'Personal Loan':
+        loanIcon = Icons.person;
+        loanColor = colorScheme.primary;
+        break;
+      case 'Car Loan':
+        loanIcon = Icons.directions_car;
+        loanColor = AppTheme.infoColor;
+        break;
+      case 'Home Loan':
+        loanIcon = Icons.home;
+        loanColor = AppTheme.successColor;
+        break;
+      case 'Business Loan':
+        loanIcon = Icons.business;
+        loanColor = AppTheme.warningColor;
+        break;
+      case 'Education Loan':
+        loanIcon = Icons.school;
+        loanColor = colorScheme.secondary;
+        break;
+      default:
+        loanIcon = Icons.account_balance_wallet;
+        loanColor = colorScheme.primary;
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [loanColor, loanColor.withValues(alpha: 0.7)],
+            ),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(loanIcon, color: Colors.white, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      loan.loanType,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(statusIcon, size: 14, color: statusColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          statusText,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: statusColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'ID: ${loan.applicationId}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if (loan.loanAmount != null) ...[
+                    Icon(
+                      Icons.currency_rupee,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    Text(
+                      _formatAmount(loan.loanAmount!),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Icon(
+                    Icons.calendar_today,
+                    size: 14,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    loan.submittedAt != null
+                        ? dateFormat.format(loan.submittedAt!)
+                        : dateFormat.format(loan.updatedAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatAmount(double amount) {
+    if (amount >= 10000000) {
+      return '${(amount / 10000000).toStringAsFixed(2)}Cr';
+    } else if (amount >= 100000) {
+      return '${(amount / 100000).toStringAsFixed(2)}L';
+    } else if (amount >= 1000) {
+      return '${(amount / 1000).toStringAsFixed(0)}K';
+    }
+    return amount.toStringAsFixed(0);
   }
 }

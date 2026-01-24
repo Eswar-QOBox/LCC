@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
+import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
@@ -283,6 +284,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
+      
+      // Perform OCR on front side
+      await _performAadhaarOCR(image.path, isFront: true);
     }
   }
 
@@ -296,6 +300,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
+      
+      // Perform OCR on front side
+      await _performAadhaarOCR(image.path, isFront: true);
     }
   }
 
@@ -309,6 +316,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
+      
+      // Perform OCR on back side
+      await _performAadhaarOCR(image.path, isFront: false);
     }
   }
 
@@ -322,6 +332,92 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
+      
+      // Perform OCR on back side
+      await _performAadhaarOCR(image.path, isFront: false);
+    }
+  }
+
+  /// Perform OCR on Aadhaar image and show extracted data
+  Future<void> _performAadhaarOCR(String imagePath, {required bool isFront}) async {
+    if (!mounted) return;
+
+    try {
+      // Show loading indicator
+      if (mounted) {
+        PremiumToast.showInfo(
+          context,
+          'Extracting text from Aadhaar card...',
+          duration: const Duration(seconds: 2),
+        );
+      }
+
+      final result = await OcrService.extractAadhaarText(imagePath, isFront: isFront);
+
+      if (!mounted) return;
+
+      if (result.success) {
+        final extractedData = <String>[];
+        final provider = context.read<SubmissionProvider>();
+        
+        if (isFront) {
+          // Front side: Show Aadhaar number and DOB, auto-fill DOB and Aadhaar number
+          if (result.hasAadhaarNumber) {
+            extractedData.add('Aadhaar: ${result.aadhaarNumber}');
+            // Auto-fill Aadhaar number to personal data
+            provider.updatePersonalDataField(aadhaarNumber: result.aadhaarNumber);
+          }
+          if (result.hasDateOfBirth) {
+            extractedData.add('DOB: ${result.dateOfBirth}');
+            // Auto-fill DOB to personal data
+            try {
+              final dobParts = result.dateOfBirth!.split('/');
+              if (dobParts.length == 3) {
+                final dob = DateTime(
+                  int.parse(dobParts[2]), // year
+                  int.parse(dobParts[1]), // month
+                  int.parse(dobParts[0]), // day
+                );
+                provider.updatePersonalDataField(dateOfBirth: dob);
+              }
+            } catch (e) {
+              debugPrint('Error parsing DOB: $e');
+            }
+          }
+        } else {
+          // Back side: Show address, auto-fill address
+          if (result.hasAddress) {
+            extractedData.add('Address: ${result.address}');
+            // Auto-fill address to personal data
+            provider.updatePersonalDataField(address: result.address);
+          }
+        }
+
+        if (extractedData.isNotEmpty) {
+          PremiumToast.showSuccess(
+            context,
+            'Extracted & auto-filled: ${extractedData.join(' • ')}',
+            duration: const Duration(seconds: 5),
+          );
+        } else {
+          PremiumToast.showWarning(
+            context,
+            'No data extracted. Please ensure image is clear.',
+            duration: const Duration(seconds: 3),
+          );
+        }
+      } else {
+        PremiumToast.showWarning(
+          context,
+          result.errorMessage ?? 'Could not extract text from image',
+          duration: const Duration(seconds: 3),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        debugPrint('OCR Error: $e');
+        // Don't show error toast - OCR is optional feature
+      }
     }
   }
 

@@ -134,6 +134,8 @@ class SubmissionProvider with ChangeNotifier {
     String? email,
     String? employmentStatus,
     String? incomeDetails,
+    String? panNo,
+    String? aadhaarNumber,
   }) {
     _submission.personalData ??= PersonalData();
     // Map legacy fields to new fields for backward compatibility
@@ -150,6 +152,8 @@ class SubmissionProvider with ChangeNotifier {
     if (incomeDetails != null) {
       _submission.personalData!.annualIncome = incomeDetails;
     }
+    if (panNo != null) _submission.personalData!.panNo = panNo;
+    if (aadhaarNumber != null) _submission.personalData!.aadhaarNumber = aadhaarNumber;
     notifyListeners();
   }
 
@@ -393,6 +397,7 @@ class SubmissionProvider with ChangeNotifier {
               'nameAsPerAadhaar': submission.personalData!.nameAsPerAadhaar,
               'dateOfBirth': submission.personalData!.dateOfBirth?.toIso8601String(),
               'panNo': submission.personalData!.panNo,
+              'aadhaarNumber': submission.personalData!.aadhaarNumber,
               'mobileNumber': submission.personalData!.mobileNumber,
               'personalEmailId': submission.personalData!.personalEmailId,
               'countryOfResidence': submission.personalData!.countryOfResidence,
@@ -488,6 +493,7 @@ class SubmissionProvider with ChangeNotifier {
             ? DateTime.parse(personalData['dateOfBirth'] as String)
             : null,
         panNo: personalData['panNo'] as String?,
+        aadhaarNumber: personalData['aadhaarNumber'] as String?,
         mobileNumber: personalData['mobileNumber'] as String?,
         personalEmailId: personalData['personalEmailId'] as String?,
         countryOfResidence: personalData['countryOfResidence'] as String?,
