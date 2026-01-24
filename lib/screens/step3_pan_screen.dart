@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
+import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
@@ -223,6 +224,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
+      
+      // Perform OCR on PAN card
+      await _performPanOCR(image.path);
     }
   }
 
@@ -236,6 +240,70 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
+      
+      // Perform OCR on PAN card
+      await _performPanOCR(image.path);
+    }
+  }
+
+  /// Perform OCR on PAN card image and show extracted data
+  Future<void> _performPanOCR(String imagePath) async {
+    if (!mounted) return;
+
+    try {
+      // Show loading indicator
+      if (mounted) {
+        PremiumToast.showInfo(
+          context,
+          'Extracting text from PAN card...',
+          duration: const Duration(seconds: 2),
+        );
+      }
+
+      final result = await OcrService.extractPanText(imagePath);
+
+      if (!mounted) return;
+
+      if (result.success) {
+        final extractedData = <String>[];
+        final provider = context.read<SubmissionProvider>();
+        
+        if (result.hasPanNumber) {
+          extractedData.add('PAN: ${result.panNumber}');
+          // Auto-fill PAN number to personal data
+          provider.updatePersonalDataField(panNo: result.panNumber);
+        }
+        if (result.hasName) {
+          extractedData.add('Name: ${result.name}');
+          // Auto-fill name to personal data
+          provider.updatePersonalDataField(fullName: result.name);
+        }
+
+        if (extractedData.isNotEmpty) {
+          PremiumToast.showSuccess(
+            context,
+            'Extracted & auto-filled: ${extractedData.join(' • ')}',
+            duration: const Duration(seconds: 5),
+          );
+        } else {
+          PremiumToast.showWarning(
+            context,
+            'No data extracted. Please ensure image is clear.',
+            duration: const Duration(seconds: 3),
+          );
+        }
+      } else {
+        PremiumToast.showWarning(
+          context,
+          result.errorMessage ?? 'Could not extract text from image',
+          duration: const Duration(seconds: 3),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        debugPrint('OCR Error: $e');
+        // Don't show error toast - OCR is optional feature
+      }
     }
   }
 

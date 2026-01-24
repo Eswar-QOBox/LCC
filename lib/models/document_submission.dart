@@ -141,6 +141,7 @@ class PersonalData {
   String? nameAsPerAadhaar;
   DateTime? dateOfBirth;
   String? panNo;
+  String? aadhaarNumber;
   String? mobileNumber;
   String? personalEmailId;
   
@@ -190,6 +191,7 @@ class PersonalData {
     this.nameAsPerAadhaar,
     this.dateOfBirth,
     this.panNo,
+    this.aadhaarNumber,
     this.mobileNumber,
     this.personalEmailId,
     this.countryOfResidence,
@@ -239,6 +241,8 @@ class PersonalData {
         dateOfBirth != null &&
         panNo != null &&
         panNo!.trim().isNotEmpty &&
+        aadhaarNumber != null &&
+        aadhaarNumber!.trim().isNotEmpty &&
         mobileNumber != null &&
         mobileNumber!.trim().isNotEmpty &&
         personalEmailId != null &&
@@ -258,6 +262,9 @@ class PersonalData {
     }
     if (panNo == null || panNo!.trim().isEmpty) {
       missing.add('PAN No');
+    }
+    if (aadhaarNumber == null || aadhaarNumber!.trim().isEmpty) {
+      missing.add('Aadhaar Number');
     }
     if (mobileNumber == null || mobileNumber!.trim().isEmpty) {
       missing.add('Mobile Number');

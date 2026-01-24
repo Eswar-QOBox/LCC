@@ -67,7 +67,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
               ),
               padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
