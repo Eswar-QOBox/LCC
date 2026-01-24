@@ -280,12 +280,12 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       if (source == 'camera') {
         pickedFile = await _imagePicker.pickImage(
           source: ImageSource.camera,
-          imageQuality: 85,
+          imageQuality: 50,
         );
       } else if (source == 'gallery') {
         pickedFile = await _imagePicker.pickImage(
           source: ImageSource.gallery,
-          imageQuality: 85,
+          imageQuality: 50,
         );
       } else if (source == 'file') {
         final result = await FilePicker.platform.pickFiles(
@@ -345,13 +345,19 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         );
       }
     } catch (e) {
-      _showError(
-        'Failed to upload document: ${e.toString().replaceFirst('Exception: ', '')}',
-      );
+      String errorMessage = e.toString();
+      if (errorMessage.contains('413')) {
+        errorMessage = 'File is too large for the server. Please try a smaller file.';
+      } else {
+        errorMessage = 'Failed to upload document: ${errorMessage.replaceFirst('Exception: ', '')}';
+      }
+      _showError(errorMessage);
     } finally {
-      setState(() {
-        _uploadingStatus[requirement.id] = false;
-      });
+      if (mounted) {
+        setState(() {
+          _uploadingStatus[requirement.id] = false;
+        });
+      }
     }
   }
 

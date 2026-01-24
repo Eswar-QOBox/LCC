@@ -213,11 +213,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         _totalWorkExperienceController.text = stepData['totalWorkExperience'] ?? '';
         _currentCompanyExperienceController.text = stepData['currentCompanyExperience'] ?? '';
         _loanAmountController.text = stepData['loanAmount'] ?? stepData['loanAmountTenure']?.split('/')[0].trim() ?? '';
-        _loanTenureController.text = stepData['loanTenure'] ?? stepData['loanAmountTenure']?.split('/').length == 2 ? stepData['loanAmountTenure']?.split('/')[1].trim() ?? '' : '';
-        _currentEmiController.text = stepData['currentEmi'] ?? '';
-        _existingLoansController.text = stepData['existingLoans'] ?? '';
+        _loanTenureController.text = stepData['loanTenure'] ?? (stepData['loanAmountTenure']?.split('/').length == 2 ? stepData['loanAmountTenure']?.split('/')[1].trim() ?? '' : '');
         _monthlyIncomeController.text = stepData['monthlyIncome'] ?? '';
-        _creditScoreController.text = stepData['creditScore'] ?? '';
+        _currentEmiController.text = stepData['currentEmi'] ?? '';
+        _existingLoansController.text = stepData['existingLoans']?.toString() ?? '';
+        _creditScoreController.text = stepData['creditScore']?.toString() ?? '';
         _maritalStatus = stepData['maritalStatus'];
         _spouseNameController.text = stepData['spouseName'] ?? '';
         _fatherNameController.text = stepData['fatherName'] ?? '';
@@ -260,11 +260,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       _currentCompanyExperienceController.text = data.currentCompanyExperience ?? '';
       _loanAmountController.text = data.loanAmount ?? (data.loanAmountTenure?.split('/')[0].trim() ?? '');
       _loanTenureController.text = data.loanTenure ?? (data.loanAmountTenure?.split('/').length == 2 ? data.loanAmountTenure?.split('/')[1].trim() ?? '' : '');
-      // Note: New fields might not be in the old data model
-      _currentEmiController.text = '';
-      _existingLoansController.text = '';
-      _monthlyIncomeController.text = '';
-      _creditScoreController.text = '';
+      _monthlyIncomeController.text = data.monthlyIncome ?? '';
+      _currentEmiController.text = data.currentEmi ?? '';
+      _existingLoansController.text = data.existingLoans ?? '';
+      _creditScoreController.text = data.creditScore ?? '';
       
       _maritalStatus = data.maritalStatus;
       _spouseNameController.text = data.spouseName ?? '';
@@ -450,6 +449,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
             ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
             : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
+        monthlyIncome: _monthlyIncomeController.text.trim().isEmpty ? null : _monthlyIncomeController.text.trim(),
+        currentEmi: _currentEmiController.text.trim().isEmpty ? null : _currentEmiController.text.trim(),
+        existingLoans: _existingLoansController.text.trim().isEmpty ? null : _existingLoansController.text.trim(),
+        creditScore: _creditScoreController.text.trim().isEmpty ? null : _creditScoreController.text.trim(),
         maritalStatus: _maritalStatus,
         spouseName: _spouseNameController.text.trim().isEmpty 
             ? null 
@@ -532,10 +535,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'loanAmount': personalData.loanAmount,
             'loanTenure': personalData.loanTenure,
             'loanAmountTenure': personalData.loanAmountTenure,
-            'currentEmi': _currentEmiController.text.trim().isEmpty ? null : _currentEmiController.text.trim(),
-            'existingLoans': _existingLoansController.text.trim().isEmpty ? null : _existingLoansController.text.trim(),
-            'monthlyIncome': _monthlyIncomeController.text.trim().isEmpty ? null : _monthlyIncomeController.text.trim(),
-            'creditScore': _creditScoreController.text.trim().isEmpty ? null : _creditScoreController.text.trim(),
+            'monthlyIncome': personalData.monthlyIncome,
+            'currentEmi': personalData.currentEmi,
+            'existingLoans': personalData.existingLoans,
+            'creditScore': personalData.creditScore,
             'maritalStatus': personalData.maritalStatus,
             'spouseName': personalData.spouseName,
             'fatherName': personalData.fatherName,
@@ -667,6 +670,18 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
             ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
             : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
+        monthlyIncome: _monthlyIncomeController.text.trim().isEmpty 
+            ? null 
+            : _monthlyIncomeController.text.trim(),
+        currentEmi: _currentEmiController.text.trim().isEmpty 
+            ? null 
+            : _currentEmiController.text.trim(),
+        existingLoans: _existingLoansController.text.trim().isEmpty 
+            ? null 
+            : _existingLoansController.text.trim(),
+        creditScore: _creditScoreController.text.trim().isEmpty 
+            ? null 
+            : _creditScoreController.text.trim(),
         maritalStatus: _maritalStatus,
         spouseName: _spouseNameController.text.trim().isEmpty 
             ? null 

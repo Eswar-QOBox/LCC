@@ -167,6 +167,10 @@ class PersonalData {
   String? loanAmount; // Enhanced: Separate loan amount field
   String? loanTenure; // Enhanced: Separate tenure field (in months/years)
   String? loanAmountTenure; // Legacy field for backward compatibility
+  String? monthlyIncome; // Monthly income field
+  String? currentEmi; // Current EMI (if any)
+  String? existingLoans; // Number of existing loans
+  String? creditScore; // Credit Score (CIBIL)
   
   // Family Information
   String? maritalStatus; // Married/Unmarried
@@ -206,6 +210,10 @@ class PersonalData {
     this.loanAmount,
     this.loanTenure,
     this.loanAmountTenure,
+    this.monthlyIncome,
+    this.currentEmi,
+    this.existingLoans,
+    this.creditScore,
     this.maritalStatus,
     this.spouseName,
     this.fatherName,
