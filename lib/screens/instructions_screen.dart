@@ -293,46 +293,69 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                       },
                     ),
                     const SizedBox(height: 24),
+                    // Match Review & Submit screen: full-width slide, same size as "Slide to Submit"
                     Consumer<SubmissionProvider>(
                       builder: (context, provider, _) {
                         final termsAccepted = provider.termsAccepted;
                         final canStart = termsAccepted && !_isCreatingApplication;
-                        return SlideToConfirm(
-                          label: _isCreatingApplication
-                              ? 'Creating Application...'
-                              : 'Slide to start',
-                          enabled: canStart,
-                          onSubmitted: canStart
+                        return SizedBox(
+                          width: double.infinity,
+                          child: SlideToConfirm(
+                            label: _isCreatingApplication
+                                ? 'Creating Application...'
+                                : 'Slide to start',
+                            height: 60,
+                            borderRadius: const BorderRadius.all(Radius.circular(16)),
+                            enabled: canStart,
+                            onSubmitted: canStart
                               ? () async {
-                                  // Since login is bypassed, skip API calls and navigate directly
+                                  if (!mounted) return;
+                                  setState(() => _isCreatingApplication = true);
                                   try {
                                     // Clear old draft data before starting new submission
                                     final submissionProvider =
                                         context.read<SubmissionProvider>();
                                     await submissionProvider.clearDraft();
-                                    // Reset submission provider state
                                     submissionProvider.resetSubmission();
 
-                                    // Set loan type in submission provider if provided
-                                    if (widget.loanType != null) {
-                                      debugPrint(
-                                        'Starting submission for loan type: ${widget.loanType}',
-                                      );
-                                    }
-
-                                    // Navigate directly to step 1 (bypassing API calls)
-                                    if (mounted) {
-                                      context.go(AppRoutes.step1Selfie);
-                                    }
+                                    final loanType =
+                                        widget.loanType ?? 'personal';
+                                    debugPrint(
+                                        'Creating application for loan type: $loanType');
+                                    // Create application so step screens have an applicationId
+                                    // for uploads and saving step data
+                                    final application =
+                                        await _applicationService.createApplication(
+                                      loanType: loanType,
+                                      currentStep: 1,
+                                      status: 'draft',
+                                    );
+                                    if (!mounted) return;
+                                    context
+                                        .read<ApplicationProvider>()
+                                        .setApplication(application);
+                                    debugPrint(
+                                        'Application created: ${application.id}');
+                                    context.go(AppRoutes.step1Selfie);
                                   } catch (e) {
                                     if (mounted) {
-                                      debugPrint('Error starting submission: $e');
-                                      // Even if there's an error, try to navigate
-                                      context.go(AppRoutes.step1Selfie);
+                                      debugPrint(
+                                          'Error creating application: $e');
+                                      PremiumToast.showError(
+                                        context,
+                                        'Could not start application. '
+                                        'Please check your connection and try again.',
+                                      );
+                                    }
+                                  } finally {
+                                    if (mounted) {
+                                      setState(
+                                          () => _isCreatingApplication = false);
                                     }
                                   }
                                 }
                               : null,
+                          ),
                         );
                       },
                     ),

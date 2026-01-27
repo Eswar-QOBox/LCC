@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
-import 'aadhaar_grid_capture_screen.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -325,19 +324,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   }
 
   Future<void> _captureFront() async {
-    if (!kIsWeb) {
-      final result = await Navigator.of(context).push<XFile>(
-        MaterialPageRoute<XFile>(
-          builder: (context) => const AadhaarGridCaptureScreen(isFront: true),
-          fullscreenDialog: true,
-        ),
-      );
-      if (result != null && mounted) {
-        final path = await _cropImage(result.path);
-        if (path != null && mounted) await _applySideImage(path, isFront: true);
-      }
-      return;
-    }
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
       final path = await _cropImage(image.path);
@@ -353,21 +339,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
-  /// Same logic as front: on mobile use grid capture then crop; on web use picker then crop; then _applySideImage.
   Future<void> _captureBack() async {
-    if (!kIsWeb) {
-      final result = await Navigator.of(context).push<XFile>(
-        MaterialPageRoute<XFile>(
-          builder: (context) => const AadhaarGridCaptureScreen(isFront: false),
-          fullscreenDialog: true,
-        ),
-      );
-      if (result != null && mounted) {
-        final path = await _cropImage(result.path);
-        if (path != null && mounted) await _applySideImage(path, isFront: false);
-      }
-      return;
-    }
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
       final path = await _cropImage(image.path);
@@ -594,10 +566,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     );
   }
 
-  Future<void> _saveToBackend() async {
+  /// Saves draft to DB. Returns true only if save succeeded; then safe to go to next step.
+  Future<bool> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _frontPath == null || _backPath == null) {
-      return;
+      return false;
     }
 
     setState(() {
@@ -607,43 +580,35 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     try {
       Map<String, dynamic>? frontUpload;
       Map<String, dynamic>? backUpload;
-      
+
       final currentApp = appProvider.currentApplication;
       final existingData = currentApp?.step2Aadhaar;
-
-      // specific helper to check if path is remote
       bool isRemote(String? path) => path != null && path.startsWith('http');
 
-      // Upload or reuse front image
       if (isRemote(_frontPath)) {
         frontUpload = existingData?['frontUpload'] as Map<String, dynamic>?;
       } else {
-        final frontFile = XFile(_frontPath!);
         frontUpload = await _fileUploadService.uploadAadhaar(
-          frontFile,
+          XFile(_frontPath!),
           side: 'front',
           isPdf: _frontIsPdf,
         );
       }
 
-      // Upload or reuse back image
-      // Optimization: If it's a PDF and paths are the same, don't upload again
       if (_frontIsPdf && _backIsPdf && _frontPath == _backPath && frontUpload != null) {
-        backUpload = frontUpload; // Reuse the same upload response
+        backUpload = frontUpload;
       } else if (isRemote(_backPath)) {
         backUpload = existingData?['backUpload'] as Map<String, dynamic>?;
       } else {
-        final backFile = XFile(_backPath!);
         backUpload = await _fileUploadService.uploadAadhaar(
-          backFile,
+          XFile(_backPath!),
           side: 'back',
           isPdf: _backIsPdf,
         );
       }
 
-      // Save step data to backend
       await appProvider.updateApplication(
-        currentStep: 3, // Move to next step
+        currentStep: 3,
         step2Aadhaar: {
           'frontPath': _frontPath,
           'backPath': _backPath,
@@ -654,15 +619,13 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontPdfPassword': _frontPdfPassword,
           'backPdfPassword': _backPdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
-          // OCR extracted data for verification
           'frontAadhaarNumber': _frontAadhaarNumber,
           'backAadhaarNumber': _backAadhaarNumber,
-          'aadhaarName': _aadhaarName, // Name from Aadhaar for PAN cross-validation
-          // Internal validation flags (for admin review - not shown to user)
+          'aadhaarName': _aadhaarName,
           '_internalValidation': {
             'frontDocumentValid': _frontInternalValid,
             'backDocumentValid': _backInternalValid,
-            'aadhaarNumbersMatch': _frontAadhaarNumber != null && _backAadhaarNumber != null 
+            'aadhaarNumbersMatch': _frontAadhaarNumber != null && _backAadhaarNumber != null
                 ? _frontAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '') == _backAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '')
                 : null,
           },
@@ -670,11 +633,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       );
 
       if (mounted) {
-        PremiumToast.showSuccess(
-          context,
-          'Aadhaar saved successfully!',
-        );
+        PremiumToast.showSuccess(context, 'Aadhaar saved successfully!');
       }
+      return true;
     } catch (e) {
       if (mounted) {
         PremiumToast.showError(
@@ -682,6 +643,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'Failed to save Aadhaar: ${e.toString()}',
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -813,10 +775,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       }
     }
     
-    if (!_isSaving) {
-      await _saveToBackend();
-    }
-    if (mounted) {
+    if (_isSaving) return;
+    final saved = await _saveToBackend();
+    if (mounted && saved) {
       context.go(AppRoutes.step3Pan);
     }
   }

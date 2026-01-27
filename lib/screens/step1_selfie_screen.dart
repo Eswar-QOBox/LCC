@@ -313,9 +313,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     }
   }
 
-  Future<void> _saveToBackend() async {
+  /// Saves draft to DB. Returns true only if save succeeded; then safe to go to next step.
+  Future<bool> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication || _imagePath == null) return;
+    if (!appProvider.hasApplication || _imagePath == null) return false;
 
     setState(() {
       _isSaving = true;
@@ -323,24 +324,21 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
     try {
       Map<String, dynamic>? uploadResult;
-      
+
       // Check if image is already uploaded (remote URL)
       if (_imagePath!.startsWith('http')) {
-        // Reuse existing upload data
         final currentApp = appProvider.currentApplication;
         if (currentApp?.step1Selfie != null) {
           final stepData = currentApp!.step1Selfie as Map<String, dynamic>;
           uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
         }
       } else {
-        // New local file - upload it
         final imageFile = XFile(_imagePath!);
         uploadResult = await _fileUploadService.uploadSelfie(imageFile);
       }
 
-      // Save step data to backend
       await appProvider.updateApplication(
-        currentStep: 2, // Move to next step
+        currentStep: 2,
         step1Selfie: {
           'imagePath': _imagePath,
           'uploadedFile': uploadResult,
@@ -349,18 +347,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         },
       );
 
-      // Also update local submission state so preview step sees selfie as completed
       if (mounted) {
-        final submissionProvider = context.read<SubmissionProvider>();
-        submissionProvider.setSelfie(_imagePath!);
+        context.read<SubmissionProvider>().setSelfie(_imagePath!);
+        PremiumToast.showSuccess(context, 'Selfie saved successfully!');
       }
-
-      if (mounted) {
-        PremiumToast.showSuccess(
-          context,
-          'Selfie saved successfully!',
-        );
-      }
+      return true;
     } catch (e) {
       if (mounted) {
         PremiumToast.showError(
@@ -368,6 +359,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           'Failed to save selfie: ${e.toString()}',
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -379,11 +371,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
   void _proceedToNext() async {
     if (_imagePath != null && _validationResult?.isValid == true) {
-      // Ensure data is saved before proceeding
-      if (!_isSaving) {
-        await _saveToBackend();
-      }
-      if (mounted) {
+      if (_isSaving) return;
+      final saved = await _saveToBackend();
+      if (mounted && saved) {
         context.go(AppRoutes.step2Aadhaar);
       }
     } else {

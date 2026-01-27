@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
-import 'pan_horizontal_card_capture_screen.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -169,11 +168,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
   }
 
-   Future<void> _saveToBackend() async {
+  /// Saves draft to DB. Returns true only if save succeeded; then safe to go to next step.
+  Future<bool> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication || _frontPath == null) {
-      return;
-    }
+    if (!appProvider.hasApplication || _frontPath == null) return false;
 
     setState(() {
       _isSaving = true;
@@ -181,35 +179,30 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
 
     try {
       Map<String, dynamic>? uploadResult;
-      
-      // Check if image/pdf is already uploaded (remote URL)
       if (_frontPath!.startsWith('http')) {
-        // Reuse existing upload data
         final currentApp = appProvider.currentApplication;
         if (currentApp?.step3Pan != null) {
           final stepData = currentApp!.step3Pan as Map<String, dynamic>;
           uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
         }
       } else {
-        // Upload PAN file (image or PDF)
-        final panFile = XFile(_frontPath!);
-        uploadResult = await _fileUploadService.uploadPan(panFile, isPdf: _isPdf);
+        uploadResult = await _fileUploadService.uploadPan(
+          XFile(_frontPath!),
+          isPdf: _isPdf,
+        );
       }
 
-      // Save step data to backend
       await appProvider.updateApplication(
-        currentStep: 4, // Move to next step
+        currentStep: 4,
         step3Pan: {
           'frontPath': _frontPath,
           'uploadedFile': uploadResult,
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
-          // OCR extracted data for verification
           'extractedPanNumber': _extractedPanNumber,
           'extractedName': _extractedName,
           'aadhaarNameUsedForValidation': _aadhaarName,
-          // Internal validation flag (for admin review - not shown to user)
           '_internalValidation': {
             'documentValid': _internalDocumentValid,
             'namesMatch': _aadhaarName != null && _extractedName != null
@@ -220,18 +213,14 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       );
 
       if (mounted) {
-        PremiumToast.showSuccess(
-          context,
-          'PAN saved successfully!',
-        );
+        PremiumToast.showSuccess(context, 'PAN saved successfully!');
       }
+      return true;
     } catch (e) {
       if (mounted) {
-        PremiumToast.showError(
-          context,
-          'Failed to save PAN: ${e.toString()}',
-        );
+        PremiumToast.showError(context, 'Failed to save PAN: ${e.toString()}');
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -242,29 +231,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   Future<void> _captureFromCamera() async {
-    if (!kIsWeb) {
-      final result = await Navigator.of(context).push<XFile>(
-        MaterialPageRoute<XFile>(
-          builder: (context) => const PanHorizontalCardCaptureScreen(),
-          fullscreenDialog: true,
-        ),
-      );
-      if (result != null && mounted) {
-        setState(() {
-          _frontPath = result.path;
-          _frontBytes = null;
-          _isPdf = false;
-          _rotation = 0.0;
-        });
-        context.read<SubmissionProvider>().setPanFront(result.path, isPdf: false);
-        await _performPanOCR(result.path);
-      }
-      return;
-    }
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
       setState(() {
         _frontPath = image.path;
+        _frontBytes = null;
         _isPdf = false;
         _rotation = 0.0;
       });
@@ -636,10 +607,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       }
     }
     
-    if (!_isSaving) {
-      await _saveToBackend();
-    }
-    if (mounted) {
+    if (_isSaving) return;
+    final saved = await _saveToBackend();
+    if (mounted && saved) {
       context.go(AppRoutes.step4BankStatement);
     }
   }

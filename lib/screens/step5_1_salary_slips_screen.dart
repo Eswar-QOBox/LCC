@@ -227,73 +227,64 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   }
 
 
-   Future<void> _saveToBackend() async {
+  /// Saves draft to DB when slips are uploaded. Returns true if ok to go to next step (saved or nothing to save).
+  Future<bool> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication) return;
+    if (!appProvider.hasApplication) return false;
+
+    if (_slipItems.isEmpty) {
+      return true; // optional step, nothing to save
+    }
 
     setState(() {
       _isSaving = true;
     });
 
     try {
-      // Only save if slips are uploaded (this step is optional)
-      if (_slipItems.isNotEmpty) {
-        // 1. Separate local files and remote URLs
-        final localItems = _slipItems.where((item) => !item.path.startsWith('http')).toList();
-        final remoteItems = _slipItems.where((item) => item.path.startsWith('http')).toList();
+      final localItems = _slipItems.where((item) => !item.path.startsWith('http')).toList();
+      final remoteItems = _slipItems.where((item) => item.path.startsWith('http')).toList();
+      List<Map<String, dynamic>> finalUploadedFiles = [];
 
-        List<Map<String, dynamic>> finalUploadedFiles = [];
-
-        // 2. Handle remote URLs (preserve existing metadata)
-        // Note: Salary slips are stored in step4BankStatement in the backend
-        if (remoteItems.isNotEmpty) {
-          final currentApp = appProvider.currentApplication;
-          if (currentApp?.step4BankStatement != null) {
-            final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
-            final existingUploads = (stepData['salarySlipsUploaded'] as List<dynamic>?)
-                    ?.cast<Map<String, dynamic>>() ?? [];
-            
-            for (final upload in existingUploads) {
-              final url = upload['url'] as String?;
-              if (url != null && 
-                  remoteItems.any((item) => item.path.contains(url) || url.contains(item.path)) &&
-                  !finalUploadedFiles.any((f) => f['url'] == url)) {
-                finalUploadedFiles.add(upload);
-              }
+      if (remoteItems.isNotEmpty) {
+        final currentApp = appProvider.currentApplication;
+        if (currentApp?.step4BankStatement != null) {
+          final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
+          final existingUploads = (stepData['salarySlipsUploaded'] as List<dynamic>?)
+                  ?.cast<Map<String, dynamic>>() ?? [];
+          for (final upload in existingUploads) {
+            final url = upload['url'] as String?;
+            if (url != null &&
+                remoteItems.any((item) => item.path.contains(url) || url.contains(item.path)) &&
+                !finalUploadedFiles.any((f) => f['url'] == url)) {
+              finalUploadedFiles.add(upload);
             }
           }
         }
-
-        // 3. Upload new local files
-        if (localItems.isNotEmpty) {
-          final files = localItems.map((item) => XFile(item.path)).toList();
-          final newUploadResults = await _fileUploadService.uploadSalarySlips(files);
-          finalUploadedFiles.addAll(newUploadResults);
-        }
-
-        // Save to step4BankStatement or create a separate field
-        // Since salary slips are part of step 5, we can include them in step5PersonalData
-        // or keep them in step4BankStatement as additional documents
-        await appProvider.updateApplication(
-          step4BankStatement: {
-            'salarySlips': _slipItems.map((item) => item.path).toSet().toList(), // De-duplicate paths
-            'salarySlipItems': _slipItems.map((item) => {
-              'path': item.path, // Mixed paths
-              'slipDate': item.slipDate?.toIso8601String(),
-            }).toList(),
-            'salarySlipsIsPdf': _isPdf,
-            'salarySlipsPassword': _pdfPassword,
-            'salarySlipsUploaded': finalUploadedFiles,
-          },
-        );
       }
+
+      if (localItems.isNotEmpty) {
+        final files = localItems.map((item) => XFile(item.path)).toList();
+        final newUploadResults = await _fileUploadService.uploadSalarySlips(files);
+        finalUploadedFiles.addAll(newUploadResults);
+      }
+
+      await appProvider.updateApplication(
+        step4BankStatement: {
+          'salarySlips': _slipItems.map((item) => item.path).toSet().toList(),
+          'salarySlipItems': _slipItems.map((item) => {
+            'path': item.path,
+            'slipDate': item.slipDate?.toIso8601String(),
+          }).toList(),
+          'salarySlipsIsPdf': _isPdf,
+          'salarySlipsPassword': _pdfPassword,
+          'salarySlipsUploaded': finalUploadedFiles,
+        },
+      );
 
       if (mounted) {
-        PremiumToast.showSuccess(
-          context,
-          'Salary slips saved successfully!',
-        );
+        PremiumToast.showSuccess(context, 'Salary slips saved successfully!');
       }
+      return true;
     } catch (e) {
       if (mounted) {
         PremiumToast.showError(
@@ -301,6 +292,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           'Failed to save salary slips: ${e.toString()}',
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -558,12 +550,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   }
 
   Future<void> _proceedToNext() async {
-    // Salary slips are optional, so we can proceed even if empty
-    // But if slips are uploaded, save them
-    if (_slipItems.isNotEmpty && !_isSaving) {
-      await _saveToBackend();
-    }
-    if (mounted) {
+    if (_isSaving) return;
+    final saved = await _saveToBackend();
+    if (mounted && saved) {
       context.go(AppRoutes.step5PersonalData);
     }
   }

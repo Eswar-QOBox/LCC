@@ -223,35 +223,29 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     });
   }
 
-  Future<void> _saveToBackend() async {
+  /// Saves draft to DB. Returns true only if save succeeded; then safe to go to next step.
+  Future<bool> _saveToBackend() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication || _pages.isEmpty) {
-      return;
-    }
+    if (!appProvider.hasApplication || _pages.isEmpty) return false;
 
     setState(() {
       _isSaving = true;
     });
 
     try {
-      // 1. Separate local files and remote URLs
       final localPaths = _pages.where((p) => !p.startsWith('http')).toList();
       final remoteUrls = _pages.where((p) => p.startsWith('http')).toList();
-
       List<Map<String, dynamic>> finalUploadedFiles = [];
 
-      // 2. Handle remote URLs (preserve existing metadata)
       if (remoteUrls.isNotEmpty) {
         final currentApp = appProvider.currentApplication;
         if (currentApp?.step4BankStatement != null) {
           final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
           final existingUploads = (stepData['uploadedFiles'] as List<dynamic>?)
                   ?.cast<Map<String, dynamic>>() ?? [];
-          
           for (final upload in existingUploads) {
             final url = upload['url'] as String?;
-            // Check if this URL matches any of our current pages AND hasn't been added yet
-            if (url != null && 
+            if (url != null &&
                 remoteUrls.any((r) => r.contains(url) || url.contains(r)) &&
                 !finalUploadedFiles.any((f) => f['url'] == url)) {
               finalUploadedFiles.add(upload);
@@ -260,19 +254,16 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         }
       }
 
-      // 3. Upload new local files
       if (localPaths.isNotEmpty) {
         final files = localPaths.map((path) => XFile(path)).toList();
         final newUploadResults = await _fileUploadService.uploadBankStatements(files);
         finalUploadedFiles.addAll(newUploadResults);
       }
 
-      // Save step data to backend
       await appProvider.updateApplication(
-        currentStep: 5, // Move to next step
+        currentStep: 5,
         step4BankStatement: {
-          'pages': _pages.toSet().toList(), // De-duplicate pages
-                           // Ideally backend should rely on uploadedFiles for truth, but preserving pages logic
+          'pages': _pages.toSet().toList(),
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,
           'uploadedFiles': finalUploadedFiles,
@@ -283,11 +274,9 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       );
 
       if (mounted) {
-        PremiumToast.showSuccess(
-          context,
-          'Bank statement saved successfully!',
-        );
+        PremiumToast.showSuccess(context, 'Bank statement saved successfully!');
       }
+      return true;
     } catch (e) {
       if (mounted) {
         PremiumToast.showError(
@@ -295,6 +284,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           'Failed to save bank statement: ${e.toString()}',
         );
       }
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -440,18 +430,17 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   }
 
   Future<void> _proceedToNext() async {
-    if (_pages.isNotEmpty) {
-      if (!_isSaving) {
-        await _saveToBackend();
-      }
-      if (mounted) {
-        context.go(AppRoutes.step5_1SalarySlips);
-      }
-    } else {
+    if (_pages.isEmpty) {
       PremiumToast.showWarning(
         context,
         'Please upload bank statement (last 6 months)',
       );
+      return;
+    }
+    if (_isSaving) return;
+    final saved = await _saveToBackend();
+    if (mounted && saved) {
+      context.go(AppRoutes.step5_1SalarySlips);
     }
   }
 
