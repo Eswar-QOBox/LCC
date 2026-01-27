@@ -5,6 +5,10 @@ import 'package:path_provider/path_provider.dart';
 
 /// Aspect ratio used for Aadhaar grid: normal card w/h ≈ 1.58, vertical h/w ≈ 1.58.
 const double _gridAspect = 1.58;
+// Very large source images can cause memory pressure on older devices when decoded.
+// If the file is bigger than this threshold, we skip cropping and let the caller
+// fall back to using the original path.
+const int _maxBytesForSafeCrop = 8 * 1024 * 1024; // 8 MB
 
 /// Center-crops the image at [imagePath] to the grid aspect (normal or vertical card).
 /// Returns the path to a new temp JPEG, or null on failure.
@@ -12,6 +16,15 @@ const double _gridAspect = 1.58;
 Future<String?> cropToGridAspect(String imagePath, bool isVertical) async {
   try {
     final bytes = await File(imagePath).readAsBytes();
+
+    // On older/low-memory Android devices, decoding very large images can crash
+    // the process with an out-of-memory error before Dart can catch it.
+    // To avoid that, skip cropping when the file is too big – the original
+    // image will still be usable by the caller.
+    if (bytes.length > _maxBytesForSafeCrop) {
+      return null;
+    }
+
     final image = img.decodeImage(bytes);
     if (image == null) return null;
 

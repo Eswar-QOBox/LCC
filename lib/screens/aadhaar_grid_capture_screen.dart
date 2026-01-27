@@ -57,9 +57,11 @@ class _AadhaarGridCaptureScreenState extends State<AadhaarGridCaptureScreen> {
           ? cameras.firstWhere((c) => c.lensDirection == CameraLensDirection.back)
           : cameras.first;
 
+      // Use a moderate resolution to reduce memory usage on older devices.
+      // High resolutions can cause crashes when decoding/cropping images.
       final controller = CameraController(
         camera,
-        ResolutionPreset.high,
+        ResolutionPreset.medium,
         imageFormatGroup: ImageFormatGroup.jpeg,
         enableAudio: false,
       );

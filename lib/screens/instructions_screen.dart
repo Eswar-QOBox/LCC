@@ -8,6 +8,7 @@ import '../utils/app_strings.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../widgets/slide_to_confirm.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
@@ -295,28 +296,28 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     Consumer<SubmissionProvider>(
                       builder: (context, provider, _) {
                         final termsAccepted = provider.termsAccepted;
-                        return PremiumButton(
-                          label: _isCreatingApplication 
-                              ? 'Creating Application...' 
-                              : 'Start Submission',
-                          icon: _isCreatingApplication 
-                              ? Icons.hourglass_empty 
-                              : Icons.arrow_forward_rounded,
-                          isPrimary: termsAccepted && !_isCreatingApplication,
-                          onPressed: (termsAccepted && !_isCreatingApplication)
+                        final canStart = termsAccepted && !_isCreatingApplication;
+                        return SlideToConfirm(
+                          label: _isCreatingApplication
+                              ? 'Creating Application...'
+                              : 'Slide to start',
+                          enabled: canStart,
+                          onSubmitted: canStart
                               ? () async {
                                   // Since login is bypassed, skip API calls and navigate directly
                                   try {
                                     // Clear old draft data before starting new submission
-                                    final submissionProvider = context.read<SubmissionProvider>();
+                                    final submissionProvider =
+                                        context.read<SubmissionProvider>();
                                     await submissionProvider.clearDraft();
                                     // Reset submission provider state
                                     submissionProvider.resetSubmission();
 
                                     // Set loan type in submission provider if provided
                                     if (widget.loanType != null) {
-                                      // Store loan type in submission provider for later use
-                                      debugPrint('Starting submission for loan type: ${widget.loanType}');
+                                      debugPrint(
+                                        'Starting submission for loan type: ${widget.loanType}',
+                                      );
                                     }
 
                                     // Navigate directly to step 1 (bypassing API calls)
@@ -331,29 +332,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     }
                                   }
                                 }
-                              : () {
-                                  if (!termsAccepted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: const Row(
-                                          children: [
-                                            Icon(Icons.warning_amber_rounded,
-                                                color: Colors.white),
-                                            SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                'Please accept Terms & Conditions to continue',
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        backgroundColor: AppTheme.warningColor,
-                                        behavior: SnackBarBehavior.floating,
-                                        duration: const Duration(seconds: 3),
-                                      ),
-                                    );
-                                  }
-                                },
+                              : null,
                         );
                       },
                     ),
