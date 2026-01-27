@@ -59,6 +59,7 @@ dependencies:
   
   # Image Processing
   image: ^4.2.0
+  image_cropper: ^8.0.2
   
   # Face Detection
   google_mlkit_face_detection: ^0.10.0

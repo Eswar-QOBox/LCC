@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
+import 'face_grid_capture_screen.dart';
 import '../providers/submission_provider.dart';
 import '../services/document_service.dart';
 import '../services/file_upload_service.dart';
@@ -53,7 +54,21 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
   Future<void> _captureFromCamera() async {
     if (!mounted) return;
-    
+
+    // On mobile: use face grid capture (live camera + oval overlay). On web: use image picker.
+    if (!kIsWeb) {
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const FaceGridCaptureScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+      if (result != null && mounted) {
+        await _setImage(result);
+      }
+      return;
+    }
+
     try {
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,

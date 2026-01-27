@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import 'aadhaar_grid_capture_screen.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -282,63 +284,102 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
-  Future<void> _captureFront() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.camera);
-    if (image != null && mounted) {
+  Future<String?> _cropImage(String path) async {
+    if (kIsWeb) return path;
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: path,
+        compressQuality: 90,
+        uiSettings: [
+          AndroidUiSettings(toolbarTitle: 'Crop Aadhaar'),
+          IOSUiSettings(title: 'Crop Aadhaar'),
+        ],
+      );
+      return cropped?.path ?? path;
+    } catch (_) {
+      return path;
+    }
+  }
+
+  /// Same logic for front and back: crop path, update state/provider, run OCR.
+  Future<void> _applySideImage(String path, {required bool isFront}) async {
+    if (!mounted) return;
+    if (isFront) {
       setState(() {
-        _frontPath = image.path;
+        _frontPath = path;
+        _frontBytes = null;
         _frontIsPdf = false;
         _frontRotation = 0.0;
       });
-      context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
-      
-      // Perform OCR on front side
-      await _performAadhaarOCR(image.path, isFront: true);
+      context.read<SubmissionProvider>().setAadhaarFront(path, isPdf: false);
+    } else {
+      setState(() {
+        _backPath = path;
+        _backBytes = null;
+        _backIsPdf = false;
+        _backRotation = 0.0;
+      });
+      context.read<SubmissionProvider>().setAadhaarBack(path, isPdf: false);
+    }
+    await _performAadhaarOCR(path, isFront: isFront);
+  }
+
+  Future<void> _captureFront() async {
+    if (!kIsWeb) {
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const AadhaarGridCaptureScreen(isFront: true),
+          fullscreenDialog: true,
+        ),
+      );
+      if (result != null && mounted) {
+        final path = await _cropImage(result.path);
+        if (path != null && mounted) await _applySideImage(path, isFront: true);
+      }
+      return;
+    }
+    final image = await _imagePicker.pickImage(source: ImageSource.camera);
+    if (image != null && mounted) {
+      final path = await _cropImage(image.path);
+      if (path != null && mounted) await _applySideImage(path, isFront: true);
     }
   }
 
   Future<void> _selectFrontFromGallery() async {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
-      setState(() {
-        _frontPath = image.path;
-        _frontIsPdf = false;
-        _frontRotation = 0.0;
-      });
-      context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
-      
-      // Perform OCR on front side
-      await _performAadhaarOCR(image.path, isFront: true);
+      final path = await _cropImage(image.path);
+      if (path != null && mounted) await _applySideImage(path, isFront: true);
     }
   }
 
+  /// Same logic as front: on mobile use grid capture then crop; on web use picker then crop; then _applySideImage.
   Future<void> _captureBack() async {
+    if (!kIsWeb) {
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const AadhaarGridCaptureScreen(isFront: false),
+          fullscreenDialog: true,
+        ),
+      );
+      if (result != null && mounted) {
+        final path = await _cropImage(result.path);
+        if (path != null && mounted) await _applySideImage(path, isFront: false);
+      }
+      return;
+    }
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
-      setState(() {
-        _backPath = image.path;
-        _backIsPdf = false;
-        _backRotation = 0.0;
-      });
-      context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
-      
-      // Perform OCR on back side
-      await _performAadhaarOCR(image.path, isFront: false);
+      final path = await _cropImage(image.path);
+      if (path != null && mounted) await _applySideImage(path, isFront: false);
     }
   }
 
   Future<void> _selectBackFromGallery() async {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
-      setState(() {
-        _backPath = image.path;
-        _backIsPdf = false;
-        _backRotation = 0.0;
-      });
-      context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
-      
-      // Perform OCR on back side
-      await _performAadhaarOCR(image.path, isFront: false);
+      final path = await _cropImage(image.path);
+      if (path != null && mounted) await _applySideImage(path, isFront: false);
     }
   }
 
@@ -1364,9 +1405,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   : Transform.rotate(
                       angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
                       child: PlatformImage(
+                        key: ValueKey(path),
                         imagePath: path,
                         imageBytes: isFront ? _frontBytes : _backBytes,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                         headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                       ),
                     ),

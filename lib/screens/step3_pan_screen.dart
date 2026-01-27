@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'dart:typed_data';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import 'pan_horizontal_card_capture_screen.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -241,6 +242,25 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   Future<void> _captureFromCamera() async {
+    if (!kIsWeb) {
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const PanHorizontalCardCaptureScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _frontPath = result.path;
+          _frontBytes = null;
+          _isPdf = false;
+          _rotation = 0.0;
+        });
+        context.read<SubmissionProvider>().setPanFront(result.path, isPdf: false);
+        await _performPanOCR(result.path);
+      }
+      return;
+    }
     final image = await _imagePicker.pickImage(source: ImageSource.camera);
     if (image != null && mounted) {
       setState(() {
@@ -249,8 +269,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _rotation = 0.0;
       });
       context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
-      
-      // Perform OCR on PAN card
       await _performPanOCR(image.path);
     }
   }
