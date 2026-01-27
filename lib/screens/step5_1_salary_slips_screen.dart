@@ -10,7 +10,6 @@ import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
-import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
@@ -37,8 +36,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   List<SalarySlipItem> _slipItems = [];
   String? _pdfPassword;
   bool _isPdf = false;
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
   bool _isSaving = false;
   bool _hasSyncedWithProvider = false;
   String? _authToken;
@@ -381,7 +378,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           // Extend fail/byte lists
           _slipFailures.addAll(List.filled(newSlipItems.length, false));
           _slipBytes.addAll(List.filled(newSlipItems.length, null));
-          _resetDraftState();
         });
         
         // Update provider with all new slip items
@@ -411,7 +407,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         _slipFailures.removeAt(index);
         _slipBytes.removeAt(index);
       }
-      _resetDraftState();
     });
   }
 
@@ -468,7 +463,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         // Add to fail/byte lists
         _slipFailures.add(false);
         _slipBytes.add(null);
-        _resetDraftState();
       });
       
       // Update provider
@@ -506,7 +500,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     if (pickedDate != null && mounted) {
       setState(() {
         _slipItems[index].slipDate = pickedDate;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().updateSalarySlipDate(index, pickedDate);
     }
@@ -564,74 +557,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     );
   }
 
-  void _resetDraftState() {
-    if (_isDraftSaved) {
-      setState(() {
-        _isDraftSaved = false;
-      });
-    }
-  }
-
-  Future<void> _saveDraft() async {
-    if (_isSavingDraft || _isDraftSaved) return;
-
-    setState(() {
-      _isSavingDraft = true;
-    });
-
-    final provider = context.read<SubmissionProvider>();
-    
-    if (_slipItems.isNotEmpty) {
-      final paths = _slipItems.map((item) => item.path).toList();
-      provider.setSalarySlips(paths, isPdf: _isPdf);
-      // Update dates in provider
-      for (int i = 0; i < _slipItems.length; i++) {
-        if (_slipItems[i].slipDate != null) {
-          provider.updateSalarySlipDate(i, _slipItems[i].slipDate!);
-        }
-      }
-    }
-    if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-      provider.setSalarySlipsPassword(_pdfPassword!);
-    }
-
-    try {
-      final success = await provider.saveDraft();
-      
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
-        PremiumToast.showError(
-          context,
-          'Error saving draft: $e',
-        );
-      }
-    }
-  }
-
   Future<void> _proceedToNext() async {
     // Salary slips are optional, so we can proceed even if empty
     // But if slips are uploaded, save them
@@ -652,19 +577,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              colorScheme.surface,
-            ],
-          ),
-        ),
-        child: Column(
+      backgroundColor: Colors.white,
+      body: Column(
           children: [
             // Consistent Header
             AppHeader(
@@ -674,7 +588,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               onBackPressed: () => context.go(AppRoutes.step4BankStatement),
               showHomeButton: true,
             ),
-            StepProgressIndicator(currentStep: 5, totalSteps: 6),
+            _buildProgressIndicator(context),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -869,41 +783,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                       ),
                     ],
                     const SizedBox(height: 40),
-                    Builder(
-                      builder: (context) {
-                        final colorScheme = Theme.of(context).colorScheme;
-                        return OutlinedButton.icon(
-                          onPressed: _isDraftSaved ? null : _saveDraft,
-                          icon: _isDraftSaved
-                              ? const Icon(Icons.check_circle)
-                              : (_isSavingDraft
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.save_outlined)),
-                          label: Text(_isDraftSaved
-                              ? 'Draft Saved'
-                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            foregroundColor: _isDraftSaved
-                                ? AppTheme.successColor
-                                : null,
-                            side: BorderSide(
-                              color: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : colorScheme.primary,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
                     PremiumButton(
                       label: 'Continue to Personal Data',
                       icon: Icons.arrow_forward_rounded,
@@ -917,7 +796,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -1184,6 +1062,131 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Steps 1-4: Completed
+          for (int i = 1; i <= 4; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Step 5: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '5',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Steps 6-7: Pending
+          for (int i = 6; i <= 7; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$i',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (i < 7)
+                    Expanded(
+                      child: Container(
+                        height: 2,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

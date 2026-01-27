@@ -8,12 +8,9 @@ import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
-import '../widgets/step_progress_indicator.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 
 void main() {
   runApp(
@@ -40,8 +37,6 @@ class Step5PersonalDataScreen extends StatefulWidget {
 class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
   
   // Track expanded sections - first section expanded by default
   bool _basicInfoExpanded = true;
@@ -596,187 +591,6 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     }
   }
 
-  Future<void> _saveDraft() async {
-    if (_isSavingDraft || _isDraftSaved) return;
-
-    setState(() {
-      _isSavingDraft = true;
-    });
-
-    final provider = context.read<SubmissionProvider>();
-    
-      // Save current form data to provider (even if incomplete - it's a draft)
-    try {
-      debugPrint('💾 SAVING DRAFT - Personal Data');
-      debugPrint('   Name: "${_nameAsPerAadhaarController.text.trim()}"');
-      debugPrint('   DOB: ${_dateOfBirth ?? "null"}');
-      debugPrint('   PAN: "${_panNoController.text.trim()}"');
-      debugPrint('   Mobile: "${_mobileNumberController.text.trim()}"');
-      debugPrint('   Email: "${_personalEmailIdController.text.trim()}"');
-      debugPrint('   Address: "${_residenceAddressController.text.trim()}"');
-      
-      final personalData = PersonalData(
-        nameAsPerAadhaar: _nameAsPerAadhaarController.text.trim().isEmpty 
-            ? null 
-            : _nameAsPerAadhaarController.text.trim(),
-        dateOfBirth: _dateOfBirth,
-        panNo: _panNoController.text.trim().isEmpty 
-            ? null 
-            : _panNoController.text.trim().toUpperCase(),
-        aadhaarNumber: _aadhaarNumberController.text.trim().isEmpty
-            ? null
-            : _aadhaarNumberController.text.trim().replaceAll(' ', '').replaceAll('-', ''),
-        mobileNumber: _mobileNumberController.text.trim().isEmpty
-            ? null 
-            : _mobileNumberController.text.trim(),
-        personalEmailId: _personalEmailIdController.text.trim().isEmpty 
-            ? null 
-            : _personalEmailIdController.text.trim().toLowerCase(),
-        countryOfResidence: _countryOfResidenceController.text.trim().isEmpty 
-            ? null 
-            : _countryOfResidenceController.text.trim(),
-        residenceAddress: _residenceAddressController.text.trim().isEmpty 
-            ? null 
-            : _residenceAddressController.text.trim(),
-        residenceType: _residenceTypeController.text.trim().isEmpty 
-            ? null 
-            : _residenceTypeController.text.trim(),
-        residenceStability: _residenceStabilityController.text.trim().isEmpty 
-            ? null 
-            : _residenceStabilityController.text.trim(),
-        companyName: _companyNameController.text.trim().isEmpty 
-            ? null 
-            : _companyNameController.text.trim(),
-        companyAddress: _companyAddressController.text.trim().isEmpty 
-            ? null 
-            : _companyAddressController.text.trim(),
-        nationality: _nationalityController.text.trim().isEmpty 
-            ? null 
-            : _nationalityController.text.trim(),
-        countryOfBirth: _countryOfBirthController.text.trim().isEmpty 
-            ? null 
-            : _countryOfBirthController.text.trim(),
-        occupation: _occupationController.text.trim().isEmpty 
-            ? null 
-            : _occupationController.text.trim(),
-        educationalQualification: _educationalQualificationController.text.trim().isEmpty 
-            ? null 
-            : _educationalQualificationController.text.trim(),
-        workType: _workTypeController.text.trim().isEmpty 
-            ? null 
-            : _workTypeController.text.trim(),
-        industry: _industryController.text.trim().isEmpty 
-            ? null 
-            : _industryController.text.trim(),
-        annualIncome: _annualIncomeController.text.trim().isEmpty 
-            ? null 
-            : _annualIncomeController.text.trim(),
-        totalWorkExperience: _totalWorkExperienceController.text.trim().isEmpty 
-            ? null 
-            : _totalWorkExperienceController.text.trim(),
-        currentCompanyExperience: _currentCompanyExperienceController.text.trim().isEmpty 
-            ? null 
-            : _currentCompanyExperienceController.text.trim(),
-        loanAmount: _loanAmountController.text.trim().isEmpty 
-            ? null 
-            : _loanAmountController.text.trim(),
-        loanTenure: _loanTenureController.text.trim().isEmpty 
-            ? null 
-            : _loanTenureController.text.trim(),
-        loanAmountTenure: _loanAmountController.text.trim().isNotEmpty && _loanTenureController.text.trim().isNotEmpty
-            ? '${_loanAmountController.text.trim()}/${_loanTenureController.text.trim()}'
-            : (_loanAmountController.text.trim().isNotEmpty ? _loanAmountController.text.trim() : null),
-        monthlyIncome: _monthlyIncomeController.text.trim().isEmpty 
-            ? null 
-            : _monthlyIncomeController.text.trim(),
-        currentEmi: _currentEmiController.text.trim().isEmpty 
-            ? null 
-            : _currentEmiController.text.trim(),
-        existingLoans: _existingLoansController.text.trim().isEmpty 
-            ? null 
-            : _existingLoansController.text.trim(),
-        creditScore: _creditScoreController.text.trim().isEmpty 
-            ? null 
-            : _creditScoreController.text.trim(),
-        maritalStatus: _maritalStatus,
-        spouseName: _spouseNameController.text.trim().isEmpty 
-            ? null 
-            : _spouseNameController.text.trim(),
-        fatherName: _fatherNameController.text.trim().isEmpty 
-            ? null 
-            : _fatherNameController.text.trim(),
-        motherName: _motherNameController.text.trim().isEmpty 
-            ? null 
-            : _motherNameController.text.trim(),
-        reference1Name: _reference1NameController.text.trim().isEmpty 
-            ? null 
-            : _reference1NameController.text.trim(),
-        reference1Address: _reference1AddressController.text.trim().isEmpty 
-            ? null 
-            : _reference1AddressController.text.trim(),
-        reference1Contact: _reference1ContactController.text.trim().isEmpty 
-            ? null 
-            : _reference1ContactController.text.trim(),
-        reference2Name: _reference2NameController.text.trim().isEmpty 
-            ? null 
-            : _reference2NameController.text.trim(),
-        reference2Address: _reference2AddressController.text.trim().isEmpty 
-            ? null 
-            : _reference2AddressController.text.trim(),
-        reference2Contact: _reference2ContactController.text.trim().isEmpty 
-            ? null 
-            : _reference2ContactController.text.trim(),
-      );
-
-      // Save to provider
-      if (mounted) {
-        provider.setPersonalData(personalData);
-        
-        // Debug: Check completeness after saving
-        debugPrint('📊 DRAFT SAVED - Completeness check:');
-        debugPrint('   Is Complete: ${personalData.isComplete}');
-        if (!personalData.isComplete) {
-          final missingFields = personalData.getMissingFields();
-          debugPrint('   Missing Fields: ${missingFields.join(", ")}');
-        }
-      }
-
-      final success = await provider.saveDraft();
-      
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
-        PremiumToast.showError(
-          context,
-          'Error saving draft: $e',
-        );
-      }
-    }
-  }
-
   void _scrollToFirstError() {
     try {
       // Find first error field and scroll to it
@@ -805,134 +619,50 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colorScheme.primary.withValues(alpha: 0.08),
-                colorScheme.secondary.withValues(alpha: 0.04),
-                Colors.white,
-              ],
-            ),
-          ),
-          child: Column(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Colors.white,
-                      colorScheme.primary.withValues(alpha: 0.03),
-                    ],
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: AppHeader(
-                  title: 'Personal Information',
-                  icon: Icons.person,
-                  showBackButton: true,
-                  onBackPressed: _isSaving ? null : () {
-                    if (mounted && context.mounted) {
-                      try {
-                        context.go(AppRoutes.step5_1SalarySlips);
-                      } catch (e) {
-                        if (Navigator.canPop(context)) {
-                          Navigator.pop(context);
-                        }
-                      }
+        child: Column(
+          children: [
+            // Header
+            AppHeader(
+              title: 'Personal Information',
+              icon: Icons.person,
+              showBackButton: true,
+              onBackPressed: _isSaving ? null : () {
+                if (mounted && context.mounted) {
+                  try {
+                    context.go(AppRoutes.step5_1SalarySlips);
+                  } catch (e) {
+                    if (Navigator.canPop(context)) {
+                      Navigator.pop(context);
                     }
-                  },
-                  showHomeButton: true,
-                ),
-              ),
-            StepProgressIndicator(currentStep: 5, totalSteps: 6),
+                  }
+                }
+              },
+              showHomeButton: true,
+            ),
+            // Progress Indicator
+            _buildProgressIndicator(context),
+            // Content
             Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        PremiumCard(
-                          gradientColors: [
-                            Colors.white,
-                            colorScheme.primary.withValues(alpha: 0.03),
-                          ],
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary,
-                                    colorScheme.secondary,
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: colorScheme.primary.withValues(alpha: 0.3),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.person_outline,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                            const SizedBox(width: 20),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Personal Information',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 22,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Please fill in all required fields',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Info Card
+                      _buildInfoCard(context),
+                      const SizedBox(height: 16),
                       // Section 1: Basic Information
                       _buildExpandableSection(
                         context: context,
                         title: 'Basic Information',
-                        icon: Icons.person,
+                        icon: Icons.contact_page,
                         summary: _getBasicInfoSummary(),
                         isExpanded: _basicInfoExpanded,
+                        isActive: _basicInfoExpanded,
                         onExpansionChanged: () {
                           setState(() {
                             _basicInfoExpanded = !_basicInfoExpanded;
@@ -944,7 +674,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               context,
                               controller: _nameAsPerAadhaarController,
                               label: 'Name as per Aadhaar Card',
-                              icon: Icons.badge,
+                              icon: Icons.person_outline,
                               isRequired: true,
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
@@ -989,7 +719,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               context,
                               controller: _aadhaarNumberController,
                               label: 'Aadhaar No',
-                              icon: Icons.badge,
+                              icon: Icons.fingerprint,
                               isRequired: true,
                               inputFormatters: [
                                 _aadhaarFormatter,
@@ -1015,7 +745,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               context,
                               controller: _mobileNumberController,
                               label: 'Mobile Number',
-                              icon: Icons.phone,
+                              icon: Icons.phone_iphone,
                               isRequired: true,
                               keyboardType: TextInputType.phone,
                               inputFormatters: [
@@ -1041,7 +771,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               context,
                               controller: _personalEmailIdController,
                               label: 'Personal Email Id',
-                              icon: Icons.email,
+                              icon: Icons.mail_outline,
                               isRequired: true,
                               keyboardType: TextInputType.emailAddress,
                               textCapitalization: TextCapitalization.none,
@@ -1068,6 +798,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         icon: Icons.home,
                         summary: _getResidenceInfoSummary(),
                         isExpanded: _residenceInfoExpanded,
+                        isActive: false,
                         onExpansionChanged: () {
                           setState(() {
                             _residenceInfoExpanded = !_residenceInfoExpanded;
@@ -1133,9 +864,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       _buildExpandableSection(
                         context: context,
                         title: 'Work Info',
-                        icon: Icons.work,
+                        icon: Icons.work_outline,
                         summary: _getWorkInfoSummary(),
                         isExpanded: _workInfoExpanded,
+                        isActive: false,
                         onExpansionChanged: () {
                           setState(() {
                             _workInfoExpanded = !_workInfoExpanded;
@@ -1231,6 +963,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         icon: Icons.info,
                         summary: _getPersonalDetailsSummary(),
                         isExpanded: _personalDetailsExpanded,
+                        isActive: false,
                         onExpansionChanged: () {
                           setState(() {
                             _personalDetailsExpanded = !_personalDetailsExpanded;
@@ -1447,9 +1180,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       _buildExpandableSection(
                         context: context,
                         title: 'Family Information',
-                        icon: Icons.family_restroom,
+                        icon: Icons.groups,
                         summary: _getFamilyInfoSummary(),
                         isExpanded: _familyInfoExpanded,
+                        isActive: false,
                         onExpansionChanged: () {
                           setState(() {
                             _familyInfoExpanded = !_familyInfoExpanded;
@@ -1525,9 +1259,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       _buildExpandableSection(
                         context: context,
                         title: 'Two Reference Details',
-                        icon: Icons.contacts,
+                        icon: Icons.record_voice_over,
                         summary: _getReferenceInfoSummary(),
                         isExpanded: _referenceInfoExpanded,
+                        isActive: false,
                         onExpansionChanged: () {
                           setState(() {
                             _referenceInfoExpanded = !_referenceInfoExpanded;
@@ -1535,11 +1270,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         },
                         expandedContent: Column(
                           children: [
-                            PremiumCard(
-                              gradientColors: [
-                                colorScheme.primary.withValues(alpha: 0.05),
-                                colorScheme.secondary.withValues(alpha: 0.02),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Colors.grey.shade200,
+                                  width: 1,
+                                ),
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -1625,11 +1365,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               ),
                             ),
                             const SizedBox(height: 16),
-                            PremiumCard(
-                              gradientColors: [
-                                colorScheme.primary.withValues(alpha: 0.05),
-                                colorScheme.secondary.withValues(alpha: 0.02),
-                              ],
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Colors.grey.shade200,
+                                  width: 1,
+                                ),
+                              ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -1717,50 +1462,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
-                      // Save as Draft button
-                      Builder(
-                        builder: (context) {
-                          final colorScheme = Theme.of(context).colorScheme;
-                          return OutlinedButton.icon(
-                            onPressed: (_isSaving || _isDraftSaved) ? null : _saveDraft,
-                            icon: _isDraftSaved
-                                ? const Icon(Icons.check_circle)
-                                : (_isSavingDraft
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.save_outlined)),
-                            label: Text(_isDraftSaved
-                                ? 'Draft Saved'
-                                : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              foregroundColor: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : null,
-                              side: BorderSide(
-                                color: _isDraftSaved
-                                    ? AppTheme.successColor
-                                    : colorScheme.primary,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      PremiumButton(
-                        label: _isSaving ? 'Saving...' : 'Next: Preview',
-                        icon: _isSaving ? null : Icons.arrow_forward_rounded,
-                        isPrimary: true,
-                        onPressed: _isSaving ? null : _saveAndProceed,
-                      ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 100), // Space for footer
                     ],
                   ),
                 ),
@@ -1769,6 +1471,237 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           ],
         ),
       ),
+      bottomNavigationBar: _buildFooter(context),
+    );
+  }
+
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Steps 1-5: Completed
+          for (int i = 1; i <= 5; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Step 6: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '6',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Step 7: Pending
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                '7',
+                style: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.grey.shade100,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.badge,
+              color: AppTheme.primaryColor,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Personal Information',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Please fill in all required fields',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 14,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade100, width: 1),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Next Button
+          Material(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              onTap: _isSaving ? null : _saveAndProceed,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _isSaving ? 'Saving...' : 'Next: Preview',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (!_isSaving) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1787,135 +1720,144 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     TextCapitalization textCapitalization = TextCapitalization.words,
     String? prefixText,
     String? suffixText,
+    Widget? suffixWidget,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              '$label${isRequired ? ' *' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9), // slate-50
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFE2E8F0), // slate-200
+                width: 1,
+              ),
+            ),
+            child: TextFormField(
+              controller: controller,
+              keyboardType: keyboardType,
+              maxLines: maxLines,
+              validator: validator,
+              inputFormatters: inputFormatters,
+              textCapitalization: textCapitalization,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 14,
+                color: const Color(0xFF1E293B),
+              ),
+              enabled: !_isSaving,
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 14,
+                ),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Icon(
+                    icon,
+                    color: Colors.grey.shade400,
+                    size: 20,
+                  ),
+                ),
+                suffixIcon: suffixWidget,
+                prefixText: prefixText,
+                suffixText: suffixText,
+                filled: true,
+                fillColor: const Color(0xFFF1F5F9),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+            ),
           ),
         ],
-      ),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        validator: validator,
-        inputFormatters: inputFormatters,
-        textCapitalization: textCapitalization,
-        style: Theme.of(context).textTheme.bodyLarge,
-        enabled: !_isSaving,
-        decoration: InputDecoration(
-          labelText: '$label${isRequired ? ' *' : ''}',
-          labelStyle: TextStyle(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
-          ),
-          floatingLabelStyle: TextStyle(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-          ),
-          hintText: hintText,
-          prefixIcon: Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: colorScheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: colorScheme.primary, size: 20),
-          ),
-          prefixText: prefixText,
-          suffixText: suffixText,
-          filled: true,
-          fillColor: colorScheme.surface,
-        ),
       ),
     );
   }
 
   Widget _buildDatePickerField(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        onTap: _selectDateOfBirth,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.2),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Date of Birth *',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
             ),
           ),
-          child: Row(
-            children: [
-              Container(
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: colorScheme.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.calendar_today_outlined,
-                  color: colorScheme.primary,
-                  size: 20,
+          InkWell(
+            onTap: _selectDateOfBirth,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9), // slate-50
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFE2E8F0), // slate-200
+                  width: 1,
                 ),
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Date of Birth *',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    color: Colors.grey.shade400,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
                       _dateOfBirth != null
                           ? DateFormat('MMMM dd, yyyy').format(_dateOfBirth!)
                           : 'Select date',
-                      style: theme.textTheme.bodyLarge?.copyWith(
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
                         color: _dateOfBirth != null
-                            ? colorScheme.onSurface
-                            : colorScheme.onSurfaceVariant,
-                        fontWeight: _dateOfBirth != null ? FontWeight.w500 : FontWeight.normal,
+                            ? const Color(0xFF1E293B)
+                            : Colors.grey.shade400,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: Colors.grey.shade400,
+                  ),
+                ],
               ),
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -2030,16 +1972,35 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     required bool isExpanded,
     required VoidCallback onExpansionChanged,
     required Widget expandedContent,
+    bool isActive = false,
   }) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final hasData = summary != 'Not filled';
+    final isNotFilled = summary == 'Not filled';
 
-    return PremiumCard(
-      gradientColors: [
-        Colors.white,
-        colorScheme.primary.withValues(alpha: 0.02),
-      ],
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: isActive
+            ? Border(
+                left: BorderSide(
+                  color: AppTheme.primaryColor,
+                  width: 4,
+                ),
+              )
+            : Border.all(
+                color: Colors.grey.shade100,
+                width: 1,
+              ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -2047,30 +2008,27 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             color: Colors.transparent,
             child: InkWell(
               onTap: onExpansionChanged,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                padding: const EdgeInsets.all(16),
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(10),
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        color: isActive
+                            ? AppTheme.primaryColor.withValues(alpha: 0.1)
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(icon, color: Colors.white, size: 20),
+                      child: Icon(
+                        icon,
+                        color: isActive
+                            ? AppTheme.primaryColor
+                            : Colors.grey.shade500,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -2080,65 +2038,46 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         children: [
                           Text(
                             title,
-                            style: theme.textTheme.titleLarge?.copyWith(
+                            style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
-                              fontSize: 18,
+                              fontSize: 16,
+                              color: isActive
+                                  ? const Color(0xFF1E293B)
+                                  : const Color(0xFF475569),
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             summary,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: hasData 
-                                  ? colorScheme.onSurfaceVariant 
-                                  : colorScheme.error.withValues(alpha: 0.7),
-                              fontSize: 13,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isNotFilled && isActive
+                                  ? const Color(0xFFEF4444) // rose-500
+                                  : Colors.grey.shade400,
+                              letterSpacing: 0.5,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    AnimatedRotation(
-                      turns: isExpanded ? 0.5 : 0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      child: Icon(
-                        Icons.keyboard_arrow_down,
-                        color: colorScheme.primary,
-                        size: 28,
-                      ),
+                    Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: isActive
+                          ? AppTheme.primaryColor
+                          : Colors.grey.shade400,
+                      size: 24,
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Divider(
-                    height: 24,
-                    thickness: 1,
-                    color: colorScheme.primary.withValues(alpha: 0.1),
-                  ),
-                  expandedContent,
-                ],
-              ),
+          if (isExpanded)
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: expandedContent,
             ),
-            crossFadeState: isExpanded 
-                ? CrossFadeState.showSecond 
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
-            sizeCurve: Curves.easeInOut,
-          ),
         ],
       ),
     );

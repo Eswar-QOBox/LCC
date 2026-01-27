@@ -13,12 +13,9 @@ import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
 import 'package:http/http.dart' as http;
-import '../widgets/step_progress_indicator.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 
@@ -33,8 +30,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final FileUploadService _fileUploadService = FileUploadService();
   String? _frontPath;
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
   bool _isSaving = false;
   bool _isPdf = false;
   String? _pdfPassword;
@@ -42,6 +37,16 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   String? _authToken;
   bool _imageFailed = false;
   Uint8List? _frontBytes;
+
+  // OCR extracted PAN number
+  String? _extractedPanNumber;
+  String? _extractedName;
+  
+  // Aadhaar name loaded from previous step (for cross-validation)
+  String? _aadhaarName;
+  
+  // Internal validation flag (secret - not shown to user)
+  bool _internalDocumentValid = true;
 
   bool _isValidImageBytes(Uint8List bytes) {
     if (bytes.length < 4) return false;
@@ -151,6 +156,16 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         }
       }
     }
+    
+    // Load Aadhaar name from previous step for cross-validation
+    if (application.step2Aadhaar != null) {
+      final aadhaarData = application.step2Aadhaar as Map<String, dynamic>;
+      final aadhaarName = aadhaarData['aadhaarName'] as String?;
+      if (aadhaarName != null && aadhaarName.isNotEmpty) {
+        _aadhaarName = aadhaarName;
+        debugPrint('Loaded Aadhaar name for cross-validation: $_aadhaarName');
+      }
+    }
   }
 
    Future<void> _saveToBackend() async {
@@ -189,6 +204,17 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
+          // OCR extracted data for verification
+          'extractedPanNumber': _extractedPanNumber,
+          'extractedName': _extractedName,
+          'aadhaarNameUsedForValidation': _aadhaarName,
+          // Internal validation flag (for admin review - not shown to user)
+          '_internalValidation': {
+            'documentValid': _internalDocumentValid,
+            'namesMatch': _aadhaarName != null && _extractedName != null
+                ? _areNamesSimilar(_aadhaarName!, _extractedName!)
+                : null,
+          },
         },
       );
 
@@ -221,7 +247,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _frontPath = image.path;
         _isPdf = false;
         _rotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
       
@@ -237,7 +262,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _frontPath = image.path;
         _isPdf = false;
         _rotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
       
@@ -267,6 +291,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       if (result.success) {
         final extractedData = <String>[];
         final provider = context.read<SubmissionProvider>();
+        
+        // Store extracted data and internal validation flag
+        _extractedPanNumber = result.panNumber;
+        _extractedName = result.name;
+        _internalDocumentValid = result.isInternallyValid;
         
         if (result.hasPanNumber) {
           extractedData.add('PAN: ${result.panNumber}');
@@ -340,7 +369,6 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _frontPath = path;
           _isPdf = true;
           _rotation = 0.0;
-          _resetDraftState();
         });
         context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
         _showPasswordDialogIfNeeded();
@@ -399,27 +427,202 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     );
   }
 
-  Future<void> _proceedToNext() async {
-    if (_frontPath != null) {
-      if (!_isSaving) {
-        await _saveToBackend();
-      }
-      if (mounted) {
-        context.go(AppRoutes.step4BankStatement);
-      }
-    } else {
-      PremiumToast.showWarning(
-        context,
-        'Please upload PAN card front side',
-      );
-    }
+  /// Normalize name for comparison (remove extra spaces, convert to uppercase)
+  String _normalizeName(String name) {
+    return name.toUpperCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+  
+  /// Check if two names are similar enough (handles minor OCR variations)
+  bool _areNamesSimilar(String name1, String name2) {
+    final normalized1 = _normalizeName(name1);
+    final normalized2 = _normalizeName(name2);
+    
+    // Exact match
+    if (normalized1 == normalized2) return true;
+    
+    // Check if one contains the other (handles partial name extraction)
+    if (normalized1.contains(normalized2) || normalized2.contains(normalized1)) return true;
+    
+    // Check word overlap (at least 2 common words should match)
+    final words1 = normalized1.split(' ').where((w) => w.length > 1).toSet();
+    final words2 = normalized2.split(' ').where((w) => w.length > 1).toSet();
+    final commonWords = words1.intersection(words2);
+    
+    // At least 2 words should match for names to be considered similar
+    return commonWords.length >= 2;
   }
 
-  void _resetDraftState() {
-    if (_isDraftSaved) {
-      setState(() {
-        _isDraftSaved = false;
-      });
+  /// Show validation error dialog - user cannot proceed until fixed
+  void _showValidationErrorDialog({
+    required String title,
+    required String message,
+    required String instruction,
+    required IconData icon,
+    String? aadhaarName,
+    String? panName,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        actionsAlignment: MainAxisAlignment.start,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: const Color(0xFFEF4444), size: 28),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.left,
+              style: const TextStyle(fontSize: 15, color: Color(0xFF475569)),
+            ),
+            if (aadhaarName != null || panName != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (aadhaarName != null)
+                      Row(
+                        children: [
+                          const Icon(Icons.badge, size: 16, color: Color(0xFF64748B)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Aadhaar: $aadhaarName',
+                              textAlign: TextAlign.left,
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (aadhaarName != null && panName != null) const SizedBox(height: 8),
+                    if (panName != null)
+                      Row(
+                        children: [
+                          const Icon(Icons.credit_card, size: 16, color: Color(0xFF64748B)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'PAN: $panName',
+                              textAlign: TextAlign.left,
+                              style: const TextStyle(fontSize: 13, color: Color(0xFF334155), fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFBBF24)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.lightbulb_outline, color: Color(0xFFD97706), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      instruction,
+                      textAlign: TextAlign.left,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF92400E),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('OK, I\'ll Fix It', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _proceedToNext() async {
+    if (_frontPath == null) {
+      _showValidationErrorDialog(
+        title: 'Missing PAN Card',
+        message: 'You need to upload your PAN card to continue with the application.',
+        instruction: 'Please capture or upload a clear image of your PAN card.',
+        icon: Icons.credit_card_off,
+      );
+      return;
+    }
+    
+    // Strict validation: Check if Aadhaar name and PAN name match
+    if (_aadhaarName != null && _extractedName != null) {
+      if (!_areNamesSimilar(_aadhaarName!, _extractedName!)) {
+        _showValidationErrorDialog(
+          title: 'Name Mismatch Detected',
+          message: 'The name on your Aadhaar card does not match the name on your PAN card. Both documents must belong to the same person.',
+          instruction: 'Please ensure you are uploading YOUR documents. If the names are correct but spelled differently, please contact support.',
+          icon: Icons.person_off,
+          aadhaarName: _aadhaarName,
+          panName: _extractedName,
+        );
+        return;
+      }
+    }
+    
+    if (!_isSaving) {
+      await _saveToBackend();
+    }
+    if (mounted) {
+      context.go(AppRoutes.step4BankStatement);
     }
   }
 
@@ -429,7 +632,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _isPdf = false;
       _rotation = 0.0;
       _pdfPassword = null;
-      _resetDraftState();
+      _extractedPanNumber = null;
+      _extractedName = null;
+      _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
     if (provider.submission.pan != null) {
@@ -445,7 +650,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _frontPath = null;
       _isPdf = false;
       _pdfPassword = null;
-      _resetDraftState();
+      _extractedPanNumber = null;
+      _extractedName = null;
+      _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
     if (provider.submission.pan != null) {
@@ -456,458 +663,52 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
   }
 
-  Future<void> _saveDraft() async {
-    if (_isSavingDraft || _isDraftSaved) return;
-
-    setState(() {
-      _isSavingDraft = true;
-    });
-
-    final provider = context.read<SubmissionProvider>();
-    
-    // Save current state to provider
-    if (_frontPath != null) {
-      provider.setPanFront(_frontPath!);
-    }
-
-    try {
-      final success = await provider.saveDraft();
-      
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
-        PremiumToast.showError(
-          context,
-          'Error saving draft: $e',
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
-            ],
-          ),
-        ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: SafeArea(
         child: Column(
           children: [
-            // Consistent Header
+            // Blue Header
             AppHeader(
               title: 'PAN Card',
-              icon: Icons.badge,
+              icon: Icons.credit_card,
               showBackButton: true,
               onBackPressed: () => context.go(AppRoutes.step2Aadhaar),
               showHomeButton: true,
             ),
-            // Premium Progress Indicator (below AppBar)
-            StepProgressIndicator(currentStep: 3, totalSteps: 6),
+            
+            // Progress Indicator
+            _buildProgressIndicator(context),
             
             // Content
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Premium Requirements Card
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.primary.withValues(alpha: 0.03),
-                      ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      colorScheme.primary,
-                                      colorScheme.secondary,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colorScheme.primary.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.credit_card,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'PAN Card Requirements',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Ensure your document meets these standards',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          _buildPremiumRequirement(
-                            context,
-                            icon: Icons.visibility,
-                            text: 'Must be clear and readable',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(
-                            context,
-                            icon: Icons.image,
-                            text: 'Front side only (PAN has only front)',
-                          ),
-                        ],
-                      ),
-                    ),
+                    // Requirements Card
+                    _buildRequirementsCard(context),
+                    const SizedBox(height: 24),
                     
+                    // Show PDF card if PDF mode, otherwise show photo section
+                    if (_isPdf && _frontPath != null)
+                      _buildPdfCardSection(context)
+                    else ...[
+                      // Front Side Section
+                      _buildFrontSideSection(context),
+                      
+                      // Single Switch to PDF Button (only show if not in PDF mode)
+                      const SizedBox(height: 24),
+                      _buildPdfSwitchButton(context),
+                    ],
                     const SizedBox(height: 32),
                     
-                    // Document Preview or Upload Options
-                    if (_frontPath != null) ...[
-                      // Premium Image Preview
-                      Container(
-                        height: 400,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: colorScheme.primary.withValues(alpha: 0.2),
-                              blurRadius: 30,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 15),
-                            ),
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.05),
-                              blurRadius: 20,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                          border: Border.all(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            width: 2,
-                          ),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(22),
-                          child: Stack(
-                            children: [
-                              _isPdf
-                                  ? Center(
-                                      child: Column(
-                                        mainAxisAlignment: MainAxisAlignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.picture_as_pdf,
-                                            size: 60,
-                                            color: colorScheme.primary,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            'PDF',
-                                            style: theme.textTheme.bodyLarge?.copyWith(
-                                              color: colorScheme.primary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  : ((_frontPath!.startsWith('http') && (_authToken == null || _imageFailed))
-                                      ? Center(child: _imageFailed
-                                          ? const Icon(Icons.broken_image, color: Colors.grey)
-                                          : const CircularProgressIndicator())
-                                      : Transform.rotate(
-                                      angle: _rotation * 3.14159 / 180,
-                                      child: PlatformImage(
-                                        imagePath: _frontPath!,
-                                        imageBytes: _frontBytes,
-                                        fit: BoxFit.cover,
-                                        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
-                                      ),
-                                    )),
-                              // Overlay gradient
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.1),
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(22),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      // Action Buttons
-                      Column(
-                        children: [
-                          if (!_isPdf) ...[
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Retake',
-                                    icon: Icons.camera_alt,
-                                    isPrimary: false,
-                                    onPressed: _captureFromCamera,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: PremiumButton(
-                                    label: 'Re-upload from Gallery',
-                                    icon: Icons.photo_library,
-                                    isPrimary: false,
-                                    onPressed: _selectFromGallery,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: PremiumButton(
-                                label: 'Switch to PDF Upload',
-                                icon: Icons.picture_as_pdf,
-                                isPrimary: false,
-                                onPressed: () {
-                                  // Remove current image and trigger PDF upload
-                                  _removeImage();
-                                  // Trigger PDF upload dialog after a short delay to allow state update
-                                  Future.delayed(const Duration(milliseconds: 200), () {
-                                    if (mounted) {
-                                      _uploadPdf();
-                                    }
-                                  });
-                                },
-                              ),
-                            ),
-                          ] else ...[
-                            Column(
-                              children: [
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: PremiumButton(
-                                    label: 'Change PDF',
-                                    icon: Icons.picture_as_pdf,
-                                    isPrimary: false,
-                                    onPressed: _uploadPdf,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: PremiumButton(
-                                    label: 'Switch to Photo Upload',
-                                    icon: Icons.camera_alt,
-                                    isPrimary: false,
-                                    onPressed: () {
-                                      // Remove PDF and allow photo upload
-                                      _removePdf();
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
-                    ] else ...[
-                      // Premium Upload Options
-                      PremiumCard(
-                        gradientColors: [
-                          Colors.white,
-                          colorScheme.primary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(32),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary.withValues(alpha: 0.1),
-                                    colorScheme.secondary.withValues(alpha: 0.05),
-                                  ],
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.add_photo_alternate_outlined,
-                                size: 64,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'Upload Your PAN Card',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 24,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Capture or select from gallery',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            // Stack buttons vertically for better fit
-                            Column(
-                              children: [
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: PremiumButton(
-                                    label: 'Camera',
-                                    icon: Icons.camera_alt,
-                                    isPrimary: false,
-                                    onPressed: _captureFromCamera,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: PremiumButton(
-                                    label: 'Gallery',
-                                    icon: Icons.photo_library,
-                                    isPrimary: false,
-                                    onPressed: _selectFromGallery,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: PremiumButton(
-                                    label: 'Upload PDF',
-                                    icon: Icons.picture_as_pdf,
-                                    isPrimary: false,
-                                    onPressed: _uploadPdf,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    // Action Buttons
+                    _buildActionButtons(context),
                     const SizedBox(height: 40),
-                    // Save as Draft button
-                    Builder(
-                      builder: (context) {
-                        final colorScheme = Theme.of(context).colorScheme;
-                        return OutlinedButton.icon(
-                          onPressed: _isDraftSaved ? null : _saveDraft,
-                          icon: _isDraftSaved
-                              ? const Icon(Icons.check_circle)
-                              : (_isSavingDraft
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.save_outlined)),
-                          label: Text(_isDraftSaved
-                              ? 'Draft Saved'
-                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            foregroundColor: _isDraftSaved
-                                ? AppTheme.successColor
-                                : null,
-                            side: BorderSide(
-                              color: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : colorScheme.primary,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    // Premium Next Button
-                    PremiumButton(
-                      label: 'Continue to Bank Statement',
-                      icon: Icons.arrow_forward_rounded,
-                      isPrimary: true,
-                      onPressed: _proceedToNext,
-                    ),
-                    
-                    const SizedBox(height: 24),
                   ],
                 ),
               ),
@@ -918,31 +719,864 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     );
   }
 
-  Widget _buildPremiumRequirement(BuildContext context, {
-    required IconData icon,
-    required String text,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Steps 1-2: Completed
+          for (int i = 1; i <= 2; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Step 3: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '3',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Steps 4-7: Pending
+          for (int i = 4; i <= 7; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$i',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (i < 7)
+                    Expanded(
+                      child: Container(
+                        height: 2,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementsCard(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF), // blue-50
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFDBEAFE), // blue-100
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.badge,
+              color: AppTheme.primaryColor,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PAN Card Requirements',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: const Color(0xFF1E293B), // slate-800
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildRequirementItem(Icons.visibility, 'Must be clear and readable'),
+                const SizedBox(height: 8),
+                _buildRequirementItem(Icons.image, 'Front side only (PAN has only front)'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementItem(IconData icon, String text) {
+    final theme = Theme.of(context);
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            icon,
-            size: 20,
-            color: colorScheme.primary,
-          ),
-        ),
-        const SizedBox(width: 16),
+        Icon(icon, color: AppTheme.primaryColor, size: 16),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              height: 1.5,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 14,
+              color: const Color(0xFF475569), // slate-600
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFrontSideSection(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Front Side',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _frontPath != null
+                    ? const Color(0xFFF0FDF4) // green-50
+                    : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _frontPath != null ? 'UPLOADED' : 'PENDING',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: _frontPath != null
+                      ? const Color(0xFF22C55E) // green-500
+                      : Colors.grey.shade400,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_frontPath != null)
+          _buildImagePreview(context)
+        else
+          _buildEmptyUploadState(context, 'Click to capture front side'),
+        const SizedBox(height: 12),
+        if (_frontPath != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.sync,
+                  label: 'Retake',
+                  onPressed: _captureFromCamera,
+                  isOutlined: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.file_upload,
+                  label: 'Re-upload',
+                  onPressed: _selectFromGallery,
+                  isOutlined: true,
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.photo_camera,
+                  label: 'Take Photo',
+                  onPressed: _captureFromCamera,
+                  isPrimary: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.upload,
+                  label: 'Upload',
+                  onPressed: _selectFromGallery,
+                  isOutlined: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildImagePreview(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 2,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            children: [
+              _isPdf
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.picture_as_pdf,
+                            size: 60,
+                            color: AppTheme.primaryColor,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'PDF',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: AppTheme.primaryColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ((_frontPath!.startsWith('http') && (_authToken == null || _imageFailed))
+                      ? Center(
+                          child: _imageFailed
+                              ? const Icon(Icons.broken_image, color: Colors.grey, size: 64)
+                              : const CircularProgressIndicator())
+                      : Transform.rotate(
+                          angle: _rotation * 3.14159 / 180,
+                          child: PlatformImage(
+                            imagePath: _frontPath!,
+                            imageBytes: _frontBytes,
+                            fit: BoxFit.cover,
+                            headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                          ),
+                        )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyUploadState(BuildContext context, String text) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 2,
+            style: BorderStyle.solid,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.add_a_photo,
+                color: Colors.grey,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey.shade400,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    bool isPrimary = false,
+    bool isOutlined = false,
+  }) {
+    final theme = Theme.of(context);
+
+    if (isPrimary) {
+      return Material(
+        color: AppTheme.primaryColor,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isOutlined
+                  ? AppTheme.primaryColor.withValues(alpha: 0.2)
+                  : Colors.grey.shade200,
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isOutlined ? AppTheme.primaryColor : Colors.grey.shade600,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: isOutlined ? AppTheme.primaryColor : Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPdfCardSection(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'PAN Card PDF',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF22C55E), // green-500
+                    const Color(0xFF16A34A), // green-600
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'UPLOADED',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // PDF Preview Card
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFFEFF6FF), // blue-50
+                  const Color(0xFFDBEAFE), // blue-100
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.picture_as_pdf,
+                        size: 64,
+                        color: AppTheme.primaryColor.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PDF',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryColor,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Delete button
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: const Color(0xFFEF4444),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: () {
+                        _removePdf();
+                      },
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Change PDF Button
+        _buildActionButton(
+          context,
+          icon: Icons.file_upload,
+          label: 'Change PDF',
+          onPressed: _uploadPdf,
+          isOutlined: true,
+        ),
+        const SizedBox(height: 12),
+        // Switch to Photos Button
+        _buildPhotosSwitchButton(context),
+      ],
+    );
+  }
+
+  Widget _buildPdfSwitchButton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () {
+          if (_frontPath != null) {
+            _removeImage();
+          }
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) {
+              _uploadPdf();
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFFDC2626).withValues(alpha: 0.1), // red-600
+                const Color(0xFFEF4444).withValues(alpha: 0.05), // red-500
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFDC2626).withValues(alpha: 0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.picture_as_pdf,
+                color: const Color(0xFFDC2626), // red-600
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Switch to PDF Upload',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFFDC2626), // red-600
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotosSwitchButton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () {
+          _switchToPhotos();
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor.withValues(alpha: 0.1),
+                AppTheme.primaryColor.withValues(alpha: 0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppTheme.primaryColor.withValues(alpha: 0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.photo_camera,
+                color: AppTheme.primaryColor,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Switch to Photos',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _switchToPhotos() {
+    setState(() {
+      // Clear PDF mode
+      _frontPath = null;
+      _isPdf = false;
+      _pdfPassword = null;
+      _rotation = 0.0;
+      _extractedPanNumber = null;
+      _extractedName = null;
+      _internalDocumentValid = true;
+    });
+    // Clear from provider
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.pan != null) {
+      provider.submission.pan = null;
+    }
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        // Continue to Bank Statement
+        Material(
+          color: AppTheme.primaryColor,
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: _proceedToNext,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Continue to Bank Statement',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                ],
+              ),
             ),
           ),
         ),

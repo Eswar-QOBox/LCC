@@ -38,14 +38,14 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Colors.white,
-            colorScheme.primary.withValues(alpha: 0.03),
+            colorScheme.primary,
+            const Color(0xFF0052CC), // royal-blue
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
+            color: colorScheme.primary.withValues(alpha: 0.3),
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
@@ -58,8 +58,12 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                 ? Container(
                     margin: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 1,
+                      ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.1),
@@ -71,7 +75,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                     child: IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new, size: 18),
                       onPressed: onBackPressed ?? () => Navigator.of(context).pop(),
-                      color: colorScheme.primary,
+                      color: Colors.white,
                     ),
                   )
                 : null),
@@ -81,16 +85,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primary,
-                    colorScheme.secondary,
-                  ],
-                ),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: colorScheme.primary.withValues(alpha: 0.3),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -110,6 +113,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                   fontWeight: FontWeight.w700,
                   fontSize: 20,
                   letterSpacing: 0.5,
+                  color: Colors.white,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -122,8 +126,12 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
             Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  width: 1,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.1),
@@ -135,7 +143,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               child: IconButton(
                 icon: const Icon(Icons.home, size: 20),
                 onPressed: onHomePressed ?? () => context.go(AppRoutes.home),
-                color: colorScheme.primary,
+                color: Colors.white,
                 tooltip: 'Go to Home',
               ),
             ),

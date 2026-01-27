@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -32,346 +33,261 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
-            ],
-          ),
-        ),
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: SafeArea(
         child: Column(
           children: [
-            // Top brand bar with logo + JSEE Solutions
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white,
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.03),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 40, 16, 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.asset(
-                      'assets/JSEE_icon.jpg',
-                      height: 42,
-                      width: 42,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'JSEE Solutions',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
-                      fontSize: 22,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            // Header with back button and logo
+            _buildHeader(context),
+            
+            // Content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // In-body Application Guide header row
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () => context.go(AppRoutes.home),
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.08),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.arrow_back_ios_new,
-                                size: 20,
-                                color: Colors.black87,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Text(
-                              'Application Guide',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 22,
-                              ),
-                            ),
-                          ),
-                        ],
+                    // Title and subtitle
+                    Text(
+                      'Application Guide',
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 24,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Follow these steps for a smooth loan application.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 24),
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.primary.withValues(alpha: 0.03),
-                      ],
-                      child: Column(
+                    // Process Overview Card
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      colorScheme.primary,
-                                      colorScheme.secondary,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colorScheme.primary.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.info_outline,
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'i',
+                                style: TextStyle(
                                   color: Colors.white,
-                                  size: 28,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Text(
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
                                   'Process Overview',
                                   style: theme.textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 22,
-                                    letterSpacing: -0.5,
+                                    fontSize: 18,
+                                    color: AppTheme.primaryColor,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid.',
-                            style: theme.textTheme.bodyLarge?.copyWith(
-                              height: 1.6,
+                                const SizedBox(height: 8),
+                                Text(
+                                  'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
+                                  textAlign: TextAlign.justify,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.primaryColor.withValues(alpha: 0.8),
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
                             ),
-                            textAlign: TextAlign.justify,
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 32),
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.secondary.withValues(alpha: 0.02),
+                    // Required Documents Section
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.folder_outlined,
+                              color: colorScheme.onSurfaceVariant,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Required Documents',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.face,
+                          title: 'Selfie/Photo',
+                          description: 'Passport-style photo with white background',
+                          iconColor: const Color(0xFF7C3AED),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.badge,
+                          title: 'Aadhaar Card',
+                          description: 'Front and back sides required',
+                          iconColor: AppTheme.successColor,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.credit_card,
+                          title: 'PAN Card',
+                          description: 'Front side required',
+                          iconColor: const Color(0xFFF59E0B),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.account_balance,
+                          title: 'Bank Statement',
+                          description: 'Last 6 months statement',
+                          iconColor: AppTheme.primaryColor,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.description,
+                          title: 'Salary Slips',
+                          description: 'Last 3 months for income verification',
+                          iconColor: const Color(0xFF0D9488),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildDocumentItem(
+                          context,
+                          icon: Icons.person,
+                          title: 'Personal Information',
+                          description: 'Complete the personal data form',
+                          iconColor: const Color(0xFF7C3AED),
+                        ),
                       ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.secondary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.folder_special,
-                                  color: colorScheme.secondary,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Flexible(
-                                child: Text(
-                                  'Required Documents',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 22,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          _buildDocumentItem(
-                            context,
-                            icon: Icons.face,
-                            title: 'Selfie/Photo',
-                            description: 'Passport-style photo with white background',
-                          ),
-                          const SizedBox(height: 16),
-                          _buildDocumentItem(
-                            context,
-                            icon: Icons.badge,
-                            title: 'Aadhaar Card',
-                            description: 'Front and back sides required',
-                          ),
-                          const SizedBox(height: 16),
-                          _buildDocumentItem(
-                            context,
-                            icon: Icons.credit_card,
-                            title: 'PAN Card',
-                            description: 'Front side required',
-                          ),
-                          const SizedBox(height: 16),
-                          _buildDocumentItem(
-                            context,
-                            icon: Icons.account_balance,
-                            title: 'Bank Statement',
-                            description: 'Last 6 months statement',
-                          ),
-                          const SizedBox(height: 16),
-                          _buildDocumentItem(
-                            context,
-                            icon: Icons.person,
-                            title: 'Personal Information',
-                            description: 'Complete the personal data form',
-                          ),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 32),
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.tertiary.withValues(alpha: 0.02),
+                    // Instructions Section
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.lightbulb_outline,
+                              color: AppTheme.primaryColor,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Instructions',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 20,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildInstructionItem(
+                          context,
+                          'Ensure all documents are clear and readable.',
+                        ),
+                        const SizedBox(height: 12),
+                        _buildInstructionItem(
+                          context,
+                          'Use good lighting when capturing photos.',
+                        ),
+                        const SizedBox(height: 12),
+                        _buildInstructionItem(
+                          context,
+                          'Remove any filters or editing from photos.',
+                        ),
+                        const SizedBox(height: 12),
+                        _buildInstructionItem(
+                          context,
+                          'If uploading PDFs, ensure they are not password protected or provide the password.',
+                        ),
+                        const SizedBox(height: 12),
+                        _buildInstructionItem(
+                          context,
+                          'Slide to submit at the final step to confirm your application.',
+                        ),
                       ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.tertiary.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.lightbulb_outline,
-                                  color: colorScheme.tertiary,
-                                  size: 24,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Flexible(
-                                child: Text(
-                                  'Instructions',
-                                  style: theme.textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 22,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          _buildInstructionItem(
-                            context,
-                            'Ensure all documents are clear and readable',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInstructionItem(
-                            context,
-                            'Use good lighting when capturing photos',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInstructionItem(
-                            context,
-                            'Remove any filters or editing from photos',
-                          ),
-                          const SizedBox(height: 12),
-                          _buildInstructionItem(
-                            context,
-                            'If uploading PDFs, ensure they are not password protected or provide the password',
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
                     ),
                     const SizedBox(height: 32),
+                    // Terms & Conditions
                     Consumer<SubmissionProvider>(
                       builder: (context, provider, _) {
                         final termsAccepted = provider.termsAccepted;
-                        return PremiumCard(
-                          gradientColors: [
-                            Colors.white,
-                            colorScheme.primary.withValues(alpha: 0.02),
-                          ],
-                          child: Row(
-                            children: [
-                              Checkbox(
-                                value: termsAccepted,
-                                onChanged: (value) {
-                                  provider.setTermsAccepted(value ?? false);
-                                },
-                                activeColor: colorScheme.primary,
+                        return Row(
+                          children: [
+                            Checkbox(
+                              value: termsAccepted,
+                              onChanged: (value) {
+                                provider.setTermsAccepted(value ?? false);
+                              },
+                              activeColor: AppTheme.primaryColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
                               ),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () {
-                                    context.push(AppRoutes.termsAndConditions);
-                                  },
-                                  child: RichText(
-                                    text: TextSpan(
-                                      style: theme.textTheme.bodyLarge,
-                                      children: [
-                                        const TextSpan(
-                                          text: 'I accept the ',
+                            ),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () {
+                                  context.push(AppRoutes.termsAndConditions);
+                                },
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: theme.textTheme.bodyLarge,
+                                    children: [
+                                      const TextSpan(
+                                        text: 'I accept the ',
+                                      ),
+                                      TextSpan(
+                                        text: 'Terms & Conditions',
+                                        style: theme.textTheme.bodyLarge?.copyWith(
+                                          color: AppTheme.primaryColor,
+                                          fontWeight: FontWeight.w600,
                                         ),
-                                        TextSpan(
-                                          text: 'Terms & Conditions',
-                                          style: theme.textTheme.bodyLarge?.copyWith(
-                                            color: colorScheme.primary,
-                                            fontWeight: FontWeight.w600,
-                                            decoration: TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -389,72 +305,30 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           isPrimary: termsAccepted && !_isCreatingApplication,
                           onPressed: (termsAccepted && !_isCreatingApplication)
                               ? () async {
-                                  // Check for in-progress applications first
+                                  // Since login is bypassed, skip API calls and navigate directly
                                   try {
-                                    final applications = await _applicationService.getApplications(
-                                      status: 'all',
-                                      limit: 100,
-                                    );
-                                    
-                                    // Check if there's an in-progress application
-                                    final inProgressApps = applications.where(
-                                      (app) => app.isDraft || 
-                                              app.isInProgress || 
-                                              app.isPaused || 
-                                              app.isSubmitted,
-                                    ).toList();
+                                    // Clear old draft data before starting new submission
+                                    final submissionProvider = context.read<SubmissionProvider>();
+                                    await submissionProvider.clearDraft();
+                                    // Reset submission provider state
+                                    submissionProvider.resetSubmission();
 
-                                    // If we found an in-progress application, show dialog
-                                    if (inProgressApps.isNotEmpty && mounted) {
-                                      _showInProgressDialog(context, inProgressApps.first);
-                                      return;
+                                    // Set loan type in submission provider if provided
+                                    if (widget.loanType != null) {
+                                      // Store loan type in submission provider for later use
+                                      debugPrint('Starting submission for loan type: ${widget.loanType}');
+                                    }
+
+                                    // Navigate directly to step 1 (bypassing API calls)
+                                    if (mounted) {
+                                      context.go(AppRoutes.step1Selfie);
                                     }
                                   } catch (e) {
-                                    // Error fetching applications, continue with creating new one
-                                    debugPrint('Error checking for in-progress applications: $e');
-                                  }
-
-                                  // If loan type is provided, create application first
-                                  if (widget.loanType != null) {
-                                    setState(() {
-                                      _isCreatingApplication = true;
-                                    });
-
-                                    try {
-                                      // Clear old draft data before creating new application
-                                      final submissionProvider = context.read<SubmissionProvider>();
-                                      await submissionProvider.clearDraft();
-                                      // Reset submission provider state
-                                      submissionProvider.resetSubmission();
-
-                                      // Create new application with selected loan type
-                                      final application = await _applicationService.createApplication(
-                                        loanType: widget.loanType!,
-                                        currentStep: 1,
-                                        status: 'draft',
-                                      );
-
-                                      // Set application in provider
-                                      if (mounted) {
-                                        context.read<ApplicationProvider>().setApplication(application);
-                                        // Navigate to step 1
-                                        context.go(AppRoutes.step1Selfie);
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        PremiumToast.show(
-                                          context,
-                                          message: 'Failed to create application: ${e.toString()}',
-                                          type: ToastType.error,
-                                        );
-                                        setState(() {
-                                          _isCreatingApplication = false;
-                                        });
-                                      }
+                                    if (mounted) {
+                                      debugPrint('Error starting submission: $e');
+                                      // Even if there's an error, try to navigate
+                                      context.go(AppRoutes.step1Selfie);
                                     }
-                                  } else {
-                                    // No loan type, just navigate (for existing flow)
-                                    context.go(AppRoutes.step1Selfie);
                                   }
                                 }
                               : () {
@@ -613,25 +487,71 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     );
   }
 
+  Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: colorScheme.outline.withValues(alpha: 0.1),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go(AppRoutes.home),
+            color: colorScheme.onSurface,
+          ),
+          const SizedBox(width: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Image.asset(
+                'assets/JSEE_icon.jpg',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'JSEE Solutions',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDocumentItem(
     BuildContext context, {
     required IconData icon,
     required String title,
     required String description,
+    required Color iconColor,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.1),
-          width: 1,
-        ),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -640,17 +560,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  colorScheme.primary.withValues(alpha: 0.15),
-                  colorScheme.secondary.withValues(alpha: 0.1),
-                ],
-              ),
+              color: iconColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: colorScheme.primary, size: 24),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -659,20 +575,26 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
               children: [
                 Text(
                   title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   description,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                  textAlign: TextAlign.justify,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
+          ),
+          Icon(
+            Icons.arrow_forward_ios,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
           ),
         ],
       ),
@@ -703,7 +625,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               height: 1.5,
             ),
-            textAlign: TextAlign.justify,
+            textAlign: TextAlign.left,
           ),
         ),
       ],

@@ -13,17 +13,17 @@ import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
 import 'package:http/http.dart' as http;
-import '../widgets/step_progress_indicator.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
-  const Step2AadhaarScreen({super.key});
+  const Step2AadhaarScreen({super.key, this.fromPreview = false});
+
+  /// When true, Back returns to Preview (e.g. when opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step2AadhaarScreen> createState() => _Step2AadhaarScreenState();
@@ -34,8 +34,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   final FileUploadService _fileUploadService = FileUploadService();
   String? _frontPath;
   String? _backPath;
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
   bool _isSaving = false;
   bool _frontIsPdf = false;
   bool _backIsPdf = false;
@@ -48,6 +46,17 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   bool _backImageFailed = false;
   Uint8List? _frontBytes;
   Uint8List? _backBytes;
+
+  // OCR extracted Aadhaar numbers for cross-validation
+  String? _frontAadhaarNumber;
+  String? _backAadhaarNumber;
+  
+  // OCR extracted name from Aadhaar (for PAN name cross-validation)
+  String? _aadhaarName;
+  
+  // Internal validation flags (secret - not shown to user)
+  bool _frontInternalValid = true;
+  bool _backInternalValid = true;
 
   bool _isValidImageBytes(Uint8List bytes) {
     if (bytes.length < 4) return false;
@@ -207,14 +216,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
-  void _resetDraftState() {
-    if (_isDraftSaved) {
-      setState(() {
-        _isDraftSaved = false;
-      });
-    }
-  }
-
   void _removePdf() {
     setState(() {
       _frontPath = null;
@@ -225,7 +226,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _backPdfPassword = null;
       _frontRotation = 0.0;
       _backRotation = 0.0;
-      _resetDraftState();
+      _frontAadhaarNumber = null;
+      _backAadhaarNumber = null;
+      _aadhaarName = null;
+      _frontInternalValid = true;
+      _backInternalValid = true;
     });
     // Clear Aadhaar data from provider by resetting to empty state
     // The provider will be updated when user uploads new files
@@ -242,7 +247,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _frontIsPdf = false;
       _frontRotation = 0.0;
       _frontPdfPassword = null;
-      _resetDraftState();
+      _frontAadhaarNumber = null;
+      _aadhaarName = null; // Name comes from front side
+      _frontInternalValid = true;
     });
     final provider = context.read<SubmissionProvider>();
     if (provider.submission.aadhaar != null) {
@@ -261,7 +268,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _backIsPdf = false;
       _backRotation = 0.0;
       _backPdfPassword = null;
-      _resetDraftState();
+      _backAadhaarNumber = null;
+      _backInternalValid = true;
     });
     final provider = context.read<SubmissionProvider>();
     if (provider.submission.aadhaar != null) {
@@ -281,7 +289,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _frontPath = image.path;
         _frontIsPdf = false;
         _frontRotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
       
@@ -297,7 +304,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _frontPath = image.path;
         _frontIsPdf = false;
         _frontRotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarFront(image.path, isPdf: false);
       
@@ -313,7 +319,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _backPath = image.path;
         _backIsPdf = false;
         _backRotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
       
@@ -329,7 +334,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         _backPath = image.path;
         _backIsPdf = false;
         _backRotation = 0.0;
-        _resetDraftState();
       });
       context.read<SubmissionProvider>().setAadhaarBack(image.path, isPdf: false);
       
@@ -360,12 +364,30 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final extractedData = <String>[];
         final provider = context.read<SubmissionProvider>();
         
+        // Store the Aadhaar number for cross-validation
+        if (result.hasAadhaarNumber) {
+          if (isFront) {
+            _frontAadhaarNumber = result.aadhaarNumber;
+            _frontInternalValid = result.isInternallyValid;
+          } else {
+            _backAadhaarNumber = result.aadhaarNumber;
+            _backInternalValid = result.isInternallyValid;
+          }
+        }
+        
         if (isFront) {
-          // Front side: Show Aadhaar number and DOB, auto-fill DOB and Aadhaar number
+          // Front side: Show Aadhaar number, Name, and DOB, auto-fill to personal data
           if (result.hasAadhaarNumber) {
             extractedData.add('Aadhaar: ${result.aadhaarNumber}');
             // Auto-fill Aadhaar number to personal data
             provider.updatePersonalDataField(aadhaarNumber: result.aadhaarNumber);
+          }
+          if (result.hasName) {
+            extractedData.add('Name: ${result.name}');
+            // Store name for PAN cross-validation
+            _aadhaarName = result.name;
+            // Auto-fill name to personal data
+            provider.updatePersonalDataField(fullName: result.name);
           }
           if (result.hasDateOfBirth) {
             extractedData.add('DOB: ${result.dateOfBirth}');
@@ -390,6 +412,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             extractedData.add('Address: ${result.address}');
             // Auto-fill address to personal data
             provider.updatePersonalDataField(address: result.address);
+          }
+          
+          // Also store the back side Aadhaar number for cross-validation (extracted above)
+          if (result.hasAadhaarNumber) {
+            extractedData.add('Aadhaar verified: ${result.aadhaarNumber}');
           }
         }
 
@@ -458,7 +485,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           _backIsPdf = true;
           _frontRotation = 0.0;
           _backRotation = 0.0;
-          _resetDraftState();
         });
         final provider = context.read<SubmissionProvider>();
         provider.setAadhaarFront(path, isPdf: true);
@@ -587,6 +613,18 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontPdfPassword': _frontPdfPassword,
           'backPdfPassword': _backPdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
+          // OCR extracted data for verification
+          'frontAadhaarNumber': _frontAadhaarNumber,
+          'backAadhaarNumber': _backAadhaarNumber,
+          'aadhaarName': _aadhaarName, // Name from Aadhaar for PAN cross-validation
+          // Internal validation flags (for admin review - not shown to user)
+          '_internalValidation': {
+            'frontDocumentValid': _frontInternalValid,
+            'backDocumentValid': _backInternalValid,
+            'aadhaarNumbersMatch': _frontAadhaarNumber != null && _backAadhaarNumber != null 
+                ? _frontAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '') == _backAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '')
+                : null,
+          },
         },
       );
 
@@ -612,379 +650,188 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
   }
 
-  Future<void> _proceedToNext() async {
-    if (_frontPath != null && _backPath != null) {
-      if (!_isSaving) {
-        await _saveToBackend();
-      }
-      if (mounted) {
-        context.go(AppRoutes.step3Pan);
-      }
-    } else {
-      PremiumToast.showWarning(
-        context,
-        'Please upload both front and back sides of Aadhaar card',
-      );
-    }
+  /// Show validation error dialog - user cannot proceed until fixed
+  void _showValidationErrorDialog({
+    required String title,
+    required String message,
+    required String instruction,
+    required IconData icon,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        actionsAlignment: MainAxisAlignment.start,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: const Color(0xFFEF4444), size: 28),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                textAlign: TextAlign.left,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message,
+              textAlign: TextAlign.left,
+              style: const TextStyle(fontSize: 15, color: Color(0xFF475569)),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFBBF24)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.lightbulb_outline, color: Color(0xFFD97706), size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      instruction,
+                      textAlign: TextAlign.left,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF92400E),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: TextButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('OK, I\'ll Fix It', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _saveDraft() async {
-    if (_isSavingDraft || _isDraftSaved) return;
-
-    setState(() {
-      _isSavingDraft = true;
-    });
-
-    final provider = context.read<SubmissionProvider>();
+  Future<void> _proceedToNext() async {
+    if (_frontPath == null || _backPath == null) {
+      _showValidationErrorDialog(
+        title: 'Missing Documents',
+        message: 'You need to upload both the front and back sides of your Aadhaar card to continue.',
+        instruction: 'Please capture or upload both sides of your Aadhaar card.',
+        icon: Icons.photo_library_outlined,
+      );
+      return;
+    }
     
-    // Save current state to provider
-    if (_frontPath != null) {
-      provider.setAadhaarFront(_frontPath!, isPdf: _frontIsPdf);
-    }
-    if (_backPath != null) {
-      provider.setAadhaarBack(_backPath!, isPdf: _backIsPdf);
-    }
-
-    try {
-      final success = await provider.saveDraft();
+    // Strict validation: Check if Aadhaar numbers from front and back match
+    if (_frontAadhaarNumber != null && _backAadhaarNumber != null) {
+      // Normalize both numbers (remove spaces/dashes)
+      final frontNormalized = _frontAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '');
+      final backNormalized = _backAadhaarNumber!.replaceAll(RegExp(r'[\s-]'), '');
       
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
-        PremiumToast.showError(
-          context,
-          'Error saving draft: $e',
+      if (frontNormalized != backNormalized) {
+        _showValidationErrorDialog(
+          title: 'Aadhaar Number Mismatch',
+          message: 'The Aadhaar number on the front side ($frontNormalized) does not match the back side ($backNormalized).',
+          instruction: 'Please ensure you upload the front and back of the SAME Aadhaar card. Re-capture or re-upload the correct images.',
+          icon: Icons.error_outline,
         );
+        return;
       }
+    }
+    
+    if (!_isSaving) {
+      await _saveToBackend();
+    }
+    if (mounted) {
+      context.go(AppRoutes.step3Pan);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
-            ],
-          ),
-        ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: SafeArea(
         child: Column(
           children: [
-            // Consistent Header
+            // Blue Header
             AppHeader(
               title: 'Aadhaar Card',
-              icon: Icons.credit_card,
+              icon: Icons.badge_outlined,
               showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step1Selfie),
+              onBackPressed: () => context.go(widget.fromPreview ? AppRoutes.step6Preview : AppRoutes.step1Selfie),
               showHomeButton: true,
             ),
-            StepProgressIndicator(currentStep: 2, totalSteps: 6),
+            
+            // Progress Indicator
+            _buildProgressIndicator(context),
+            
+            // Content
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.primary.withValues(alpha: 0.03),
-                      ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      colorScheme.primary,
-                                      colorScheme.secondary,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colorScheme.primary.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.badge,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Aadhaar Card Requirements',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Both sides required for verification',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          _buildPremiumRequirement(context, Icons.photo_camera, 'Must include Front & Back'),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(context, Icons.visibility_off, 'No blur or glare'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    // Check if PDF is uploaded (single PDF for both sides)
-                    if (_frontIsPdf && _backIsPdf && _frontPath != null) ...[
-                      // Single PDF preview
-                      _buildSidePreview(
-                        context,
-                        'Aadhaar PDF',
-                        _frontPath!,
-                        onTap: _uploadPdf,
-                        onRemove: _removePdf,
-                        isPdf: true,
-                      ),
-                    ] else if (_frontPath != null && _backPath != null) ...[
-                      // Both images uploaded - show side by side
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          // On small screens, stack vertically; on larger screens, show side by side
-                          if (constraints.maxWidth < 600) {
-                            return Column(
-                              children: [
-                                _buildSidePreview(
-                                  context,
-                                  'Front',
-                                  _frontPath!,
-                                  onTap: _captureFront,
-                                  isPdf: _frontIsPdf,
-                                  onRetake: _captureFront,
-                                  onGallery: _selectFrontFromGallery,
-                                  onRemoveImage: _removeFrontImage,
-                                  isFailed: _frontImageFailed,
-                                  imageBytes: _frontBytes,
-                                ),
-                                const SizedBox(height: 16),
-                                _buildSidePreview(
-                                  context,
-                                  'Back',
-                                  _backPath!,
-                                  onTap: _captureBack,
-                                  isPdf: _backIsPdf,
-                                  onRetake: _captureBack,
-                                  onGallery: _selectBackFromGallery,
-                                  onRemoveImage: _removeBackImage,
-                                  isFailed: _backImageFailed,
-                                  imageBytes: _backBytes,
-                                ),
-                              ],
-                            );
-                          } else {
-                            return Row(
-                              children: [
-                                Expanded(
-                                  child: _buildSidePreview(
-                                    context,
-                                    'Front',
-                                    _frontPath!,
-                                    onTap: _captureFront,
-                                    isPdf: _frontIsPdf,
-                                    onRetake: _captureFront,
-                                    onGallery: _selectFrontFromGallery,
-                                    onRemoveImage: _removeFrontImage,
-                                    isFailed: _frontImageFailed,
-                                    imageBytes: _frontBytes,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildSidePreview(
-                                    context,
-                                    'Back',
-                                    _backPath!,
-                                    onTap: _captureBack,
-                                    isPdf: _backIsPdf,
-                                    onRetake: _captureBack,
-                                    onGallery: _selectBackFromGallery,
-                                    onRemoveImage: _removeBackImage,
-                                    isFailed: _backImageFailed,
-                                    imageBytes: _backBytes,
-                                  ),
-                                ),
-                              ],
-                            );
-                          }
-                        },
-                      ),
-                    ] else ...[
-                      // Single PDF upload button (for both front and back)
-                      if (_frontPath == null && _backPath == null) ...[
-                        PremiumButton(
-                          label: 'Add PDF',
-                          icon: Icons.picture_as_pdf,
-                          isPrimary: false,
-                          onPressed: _uploadPdf,
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                      // Front Side
-                      Text(
-                        'Front Side',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_frontPath != null)
-                        _buildSidePreview(
-                          context, 
-                          'Front', 
-                          _frontPath!, 
-                          onTap: _captureFront,
-                          isPdf: _frontIsPdf,
-                          onRetake: _captureFront,
-                          onGallery: _selectFrontFromGallery,
-                          onRemoveImage: _removeFrontImage,
-                          isFailed: _frontImageFailed,
-                          imageBytes: _frontBytes,
-                        )
-                      else
-                        _buildUploadCard(
-                          context,
-                          'Front Side',
-                          Icons.credit_card,
-                          onCamera: _captureFront,
-                          onGallery: _selectFrontFromGallery,
-                        ),
-                      const SizedBox(height: 24),
-                      // Back Side
-                      Text(
-                        'Back Side',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_backPath != null)
-                        _buildSidePreview(
-                          context, 
-                          'Back', 
-                          _backPath!, 
-                          onTap: _captureBack,
-                          isPdf: _backIsPdf,
-                          onRetake: _captureBack,
-                          onGallery: _selectBackFromGallery,
-                          onRemoveImage: _removeBackImage,
-                          isFailed: _backImageFailed,
-                          imageBytes: _backBytes,
-                        )
-                      else
-                        _buildUploadCard(
-                          context,
-                          'Back Side',
-                          Icons.credit_card,
-                          onCamera: _captureBack,
-                          onGallery: _selectBackFromGallery,
-                        ),
-                    ],
-                    const SizedBox(height: 40),
-                    // Save as Draft and Rotate buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _isDraftSaved ? null : _saveDraft,
-                            icon: _isDraftSaved
-                                ? const Icon(Icons.check_circle)
-                                : (_isSavingDraft
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.save_outlined)),
-                            label: Text(_isDraftSaved
-                                ? 'Draft Saved'
-                                : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              foregroundColor: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : null,
-                              side: BorderSide(
-                                color: _isDraftSaved
-                                    ? AppTheme.successColor
-                                    : colorScheme.primary,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    PremiumButton(
-                      label: 'Continue to PAN Card',
-                      icon: Icons.arrow_forward_rounded,
-                      isPrimary: true,
-                      onPressed: _proceedToNext,
-                    ),
+                    // Requirements Card
+                    _buildRequirementsCard(context),
                     const SizedBox(height: 24),
+                    
+                    // Show PDF card if PDF mode, otherwise show front/back sections
+                    if (_frontIsPdf && _backIsPdf && _frontPath != null)
+                      _buildPdfCardSection(context)
+                    else ...[
+                      // Front Side Section
+                      _buildFrontSideSection(context),
+                      const SizedBox(height: 24),
+                      
+                      // Back Side Section
+                      _buildBackSideSection(context),
+                      
+                      // Single Switch to PDF Button (only show if not in PDF mode)
+                      if (!(_frontIsPdf && _backIsPdf && _frontPath != null)) ...[
+                        const SizedBox(height: 24),
+                        _buildPdfSwitchButton(context),
+                      ],
+                    ],
+                    const SizedBox(height: 32),
+                    
+                    // Action Buttons
+                    _buildActionButtons(context),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -995,128 +842,893 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     );
   }
 
-  Widget _buildPremiumRequirement(BuildContext context, IconData icon, String text) {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Step 1: Completed
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Step 2: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '2',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Steps 3-7: Pending
+          for (int i = 3; i <= 7; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$i',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (i < 7)
+                    Expanded(
+                      child: Container(
+                        height: 2,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementsCard(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFFEFF6FF), // blue-50
+            const Color(0xFFDBEAFE).withValues(alpha: 0.5), // blue-100
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFDBEAFE), // blue-100
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryColor.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.primaryColor,
+                  const Color(0xFF0052CC),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.badge,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Aadhaar Card Requirements',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: const Color(0xFF1E293B), // slate-800
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildRequirementItem(Icons.photo_camera, 'Must Include Front & Back'),
+                const SizedBox(height: 8),
+                _buildRequirementItem(Icons.visibility, 'No blur or glare'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementItem(IconData icon, String text) {
+    final theme = Theme.of(context);
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
+            color: AppTheme.primaryColor.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, size: 20, color: colorScheme.primary),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 16),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF475569), // slate-600
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildSidePreview(
-    BuildContext context,
-    String label,
-    String path, {
-    required VoidCallback onTap,
-    VoidCallback? onRemove,
-    bool isPdf = false,
-    VoidCallback? onRetake,
-    VoidCallback? onGallery,
-    VoidCallback? onRemoveImage,
-    bool isFailed = false,
-    Uint8List? imageBytes,
-  }) {
+  Widget _buildFrontSideSection(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isFront = label == 'Front' || label == 'Aadhaar PDF';
-    final showPdf = (isFront && _frontIsPdf) || (!isFront && _backIsPdf);
-    
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 280,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.primary.withValues(alpha: 0.15),
-                blurRadius: 20,
-                spreadRadius: 1,
-                offset: const Offset(0, 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Front Side',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: _frontPath != null
+                    ? LinearGradient(
+                        colors: [
+                          const Color(0xFF22C55E), // green-500
+                          const Color(0xFF16A34A), // green-600
+                        ],
+                      )
+                    : null,
+                color: _frontPath != null ? null : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: _frontPath != null
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_frontPath != null)
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  if (_frontPath != null) const SizedBox(width: 4),
+                  Text(
+                    _frontPath != null ? 'UPLOADED' : 'PENDING',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _frontPath != null
+                          ? Colors.white
+                          : Colors.grey.shade600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_frontPath != null)
+          _buildImagePreview(context, _frontPath!, isFront: true)
+        else
+          _buildEmptyUploadState(context, 'Click to capture front side'),
+        const SizedBox(height: 12),
+        if (_frontPath != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.sync,
+                  label: 'Retake',
+                  onPressed: _captureFront,
+                  isOutlined: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.file_upload,
+                  label: 'Re-upload',
+                  onPressed: _selectFrontFromGallery,
+                  isOutlined: true,
+                ),
               ),
             ],
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.3),
-              width: 2,
+          ),
+        ] else ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.photo_camera,
+                  label: 'Take Photo',
+                  onPressed: _captureFront,
+                  isPrimary: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.upload,
+                  label: 'Upload',
+                  onPressed: _selectFrontFromGallery,
+                  isOutlined: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBackSideSection(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Back Side',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: _backPath != null
+                    ? null
+                    : Colors.grey.shade200,
+                gradient: _backPath != null
+                    ? LinearGradient(
+                        colors: [
+                          const Color(0xFF22C55E), // green-500
+                          const Color(0xFF16A34A), // green-600
+                        ],
+                      )
+                    : null,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: _backPath != null
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_backPath != null)
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.white,
+                      size: 12,
+                    ),
+                  if (_backPath != null) const SizedBox(width: 4),
+                  Text(
+                    _backPath != null ? 'UPLOADED' : 'PENDING',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _backPath != null
+                          ? Colors.white
+                          : Colors.grey.shade600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_backPath != null)
+          _buildImagePreview(context, _backPath!, isFront: false)
+        else
+          _buildEmptyUploadState(context, 'Click to capture back side'),
+        const SizedBox(height: 12),
+        if (_backPath != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.sync,
+                  label: 'Retake',
+                  onPressed: _captureBack,
+                  isOutlined: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.file_upload,
+                  label: 'Re-upload',
+                  onPressed: _selectBackFromGallery,
+                  isOutlined: true,
+                ),
+              ),
+            ],
+          ),
+        ] else ...[
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.photo_camera,
+                  label: 'Take Photo',
+                  onPressed: _captureBack,
+                  isPrimary: true,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  context,
+                  icon: Icons.upload,
+                  label: 'Upload',
+                  onPressed: _selectBackFromGallery,
+                  isOutlined: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildImagePreview(BuildContext context, String path, {required bool isFront}) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.grey.shade100,
+              Colors.grey.shade50,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            children: [
+              (path.startsWith('http') && (_authToken == null || (isFront ? _frontImageFailed : _backImageFailed)))
+                  ? ((isFront ? _frontImageFailed : _backImageFailed)
+                      ? const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 64))
+                      : const Center(child: CircularProgressIndicator()))
+                  : Transform.rotate(
+                      angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
+                      child: PlatformImage(
+                        imagePath: path,
+                        imageBytes: isFront ? _frontBytes : _backBytes,
+                        fit: BoxFit.cover,
+                        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                      ),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, String label) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.grey.shade200,
+            width: 2,
+          ),
+        ),
+        child: const Center(
+          child: Icon(Icons.add_photo_alternate, size: 48, color: Colors.grey),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyUploadState(BuildContext context, String text) {
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.grey.shade50,
+              Colors.grey.shade100,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.grey.shade300,
+            width: 2,
+            style: BorderStyle.solid,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppTheme.primaryColor.withValues(alpha: 0.1),
+                    AppTheme.primaryColor.withValues(alpha: 0.2),
+                  ],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.add_a_photo,
+                color: AppTheme.primaryColor,
+                size: 32,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    bool isPrimary = false,
+    bool isOutlined = false,
+  }) {
+    final theme = Theme.of(context);
+
+    if (isPrimary) {
+      return Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.primaryColor,
+                  const Color(0xFF0052CC), // royal-blue
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
             ),
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
+        ),
+      );
+    }
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            gradient: isOutlined
+                ? LinearGradient(
+                    colors: [
+                      AppTheme.primaryColor.withValues(alpha: 0.1),
+                      AppTheme.primaryColor.withValues(alpha: 0.05),
+                    ],
+                  )
+                : null,
+            color: isOutlined ? null : Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isOutlined
+                  ? AppTheme.primaryColor
+                  : Colors.grey.shade300,
+              width: 2,
+            ),
+            boxShadow: isOutlined
+                ? [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: isOutlined ? AppTheme.primaryColor : Colors.grey.shade600,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: isOutlined ? AppTheme.primaryColor : Colors.grey.shade600,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPdfCardSection(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Aadhaar Card PDF',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF22C55E), // green-500
+                    const Color(0xFF16A34A), // green-600
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: Colors.white,
+                    size: 12,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'UPLOADED',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // PDF Preview Card
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  const Color(0xFFEFF6FF), // blue-50
+                  const Color(0xFFDBEAFE), // blue-100
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Stack(
               children: [
-                showPdf
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.picture_as_pdf,
-                              size: 60,
-                              color: colorScheme.primary,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'PDF',
-                              style: theme.textTheme.bodyLarge?.copyWith(
-                                color: colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.picture_as_pdf,
+                        size: 64,
+                        color: AppTheme.primaryColor.withValues(alpha: 0.6),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'PDF',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.primaryColor,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Delete button
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: const Color(0xFFEF4444),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: () {
+                        _removePdf();
+                      },
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
                             ),
                           ],
                         ),
-                      )
-                    : ((path.startsWith('http') && (_authToken == null || isFailed))
-                        ? Center(child: isFailed
-                            ? const Icon(Icons.broken_image, color: Colors.grey)
-                            : const CircularProgressIndicator())
-                        : Transform.rotate(
-                        angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
-                        child: PlatformImage(
-                          imagePath: path, 
-                          imageBytes: imageBytes,
-                          fit: BoxFit.cover,
-                          headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 16,
                         ),
-                      )),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      label,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
-                    ),
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.1),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1124,154 +1736,228 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             ),
           ),
         ),
-        // Action buttons below preview
-        if (!showPdf && onRetake != null && onGallery != null) ...[
-          const SizedBox(height: 16),
-          Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: PremiumButton(
-                      label: 'Retake',
-                      icon: Icons.camera_alt,
-                      isPrimary: false,
-                      onPressed: onRetake,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: PremiumButton(
-                      label: 'Re-upload from Gallery',
-                      icon: Icons.photo_library,
-                      isPrimary: false,
-                      onPressed: onGallery,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: PremiumButton(
-                  label: 'Switch to PDF Upload',
-                  icon: Icons.picture_as_pdf,
-                  isPrimary: false,
-                  onPressed: () {
-                    // Remove current image(s) and trigger PDF upload
-                    if (label == 'Front') {
-                      _removeFrontImage();
-                    } else if (label == 'Back') {
-                      _removeBackImage();
-                    }
-                    // Trigger PDF upload dialog after a short delay to allow state update
-                    Future.delayed(const Duration(milliseconds: 200), () {
-                      if (mounted) {
-                        _uploadPdf();
-                      }
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-        ] else if (showPdf && onRemove != null) ...[
-          const SizedBox(height: 16),
-          Column(
-            children: [
-              SizedBox(
-                width: double.infinity,
-                child: PremiumButton(
-                  label: 'Change PDF',
-                  icon: Icons.picture_as_pdf,
-                  isPrimary: false,
-                  onPressed: onTap,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: PremiumButton(
-                  label: 'Switch to Photo Upload',
-                  icon: Icons.camera_alt,
-                  isPrimary: false,
-                  onPressed: () {
-                    // Remove PDF and allow photo upload
-                    onRemove();
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
+        const SizedBox(height: 12),
+        // Change PDF Button
+        _buildActionButton(
+          context,
+          icon: Icons.file_upload,
+          label: 'Change PDF',
+          onPressed: _uploadPdf,
+          isOutlined: true,
+        ),
+        const SizedBox(height: 12),
+        // Switch to Photos Button
+        _buildPhotosSwitchButton(context),
       ],
     );
   }
 
-  Widget _buildUploadCard(
-    BuildContext context,
-    String title,
-    IconData icon, {
-    required VoidCallback onCamera,
-    required VoidCallback onGallery,
-  }) {
+  Widget _buildPdfSwitchButton(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return PremiumCard(
-      gradientColors: [
-        Colors.white,
-        colorScheme.primary.withValues(alpha: 0.02),
-      ],
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  colorScheme.primary.withValues(alpha: 0.1),
-                  colorScheme.secondary.withValues(alpha: 0.05),
-                ],
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () {
+          // Clear both front and back images before switching to PDF
+          _removeFrontImage();
+          _removeBackImage();
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) {
+              _uploadPdf();
+            }
+          });
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFFDC2626).withValues(alpha: 0.1), // red-600
+                const Color(0xFFEF4444).withValues(alpha: 0.05), // red-500
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFDC2626).withValues(alpha: 0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
               ),
-            ),
-            child: Icon(icon, size: 48, color: colorScheme.primary),
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Stack buttons vertically for better fit
-          Column(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(
-                width: double.infinity,
-                child: PremiumButton(
-                  label: 'Camera',
-                  icon: Icons.camera_alt,
-                  isPrimary: false,
-                  onPressed: onCamera,
-                ),
+              Icon(
+                Icons.picture_as_pdf,
+                color: const Color(0xFFDC2626), // red-600
+                size: 22,
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: PremiumButton(
-                  label: 'Gallery',
-                  icon: Icons.photo_library,
-                  isPrimary: false,
-                  onPressed: onGallery,
+              const SizedBox(width: 10),
+              Text(
+                'Switch to PDF Upload',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFFDC2626), // red-600
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
+
+  Widget _buildPhotosSwitchButton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () {
+          _switchToPhotos();
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppTheme.primaryColor.withValues(alpha: 0.1),
+                AppTheme.primaryColor.withValues(alpha: 0.05),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppTheme.primaryColor.withValues(alpha: 0.3),
+              width: 2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.photo_camera,
+                color: AppTheme.primaryColor,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Switch to Photos',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _switchToPhotos() {
+    setState(() {
+      // Clear PDF mode
+      _frontPath = null;
+      _backPath = null;
+      _frontIsPdf = false;
+      _backIsPdf = false;
+      _frontPdfPassword = null;
+      _backPdfPassword = null;
+      _frontRotation = 0.0;
+      _backRotation = 0.0;
+      _frontAadhaarNumber = null;
+      _backAadhaarNumber = null;
+      _aadhaarName = null;
+      _frontInternalValid = true;
+      _backInternalValid = true;
+    });
+    // Clear from provider
+    final provider = context.read<SubmissionProvider>();
+    if (provider.submission.aadhaar != null) {
+      provider.submission.aadhaar = null;
+    }
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        // Continue to PAN Card
+        Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            onTap: _proceedToNext,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppTheme.primaryColor,
+                    const Color(0xFF0052CC), // royal-blue
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Continue to PAN Card',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
 }
 

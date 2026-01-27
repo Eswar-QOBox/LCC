@@ -22,6 +22,9 @@ class AppRoutes {
   // After Submission
   static const String submissionSuccess = '/submission-success';
   static const String pdfDownload = '/pdf-download';
+  
+  // Tools
+  static const String loanCalculator = '/loan-calculator';
 
   /// Get the route for a specific step number
   static String getStepRoute(int step) {

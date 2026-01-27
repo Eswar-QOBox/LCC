@@ -12,12 +12,9 @@ import '../utils/blob_helper.dart';
 import '../widgets/platform_image.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
-import '../widgets/step_progress_indicator.dart';
-import '../widgets/premium_card.dart';
-import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 
@@ -34,8 +31,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   List<String> _pages = [];
   String? _pdfPassword;
   bool _isPdf = false;
-  bool _isDraftSaved = false;
-  bool _isSavingDraft = false;
   bool _isSaving = false;
   DateTime? _statementEndDate;
   DateTime? _calculatedStartDate;
@@ -367,7 +362,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           _isPdf = true;
           _pageFailures = [false];
           _pageBytes = [null];
-          _resetDraftState();
         });
         context
             .read<SubmissionProvider>()
@@ -387,7 +381,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         _pageFailures.removeAt(index);
         _pageBytes.removeAt(index);
       }
-      _resetDraftState();
     });
     context
         .read<SubmissionProvider>()
@@ -462,14 +455,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     }
   }
 
-  void _resetDraftState() {
-    if (_isDraftSaved) {
-      setState(() {
-        _isDraftSaved = false;
-      });
-    }
-  }
-
   String _formatDateWithYear(DateTime date) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -478,556 +463,47 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  Future<void> _saveDraft() async {
-    if (_isSavingDraft || _isDraftSaved) return;
-
-    setState(() {
-      _isSavingDraft = true;
-    });
-
-    final provider = context.read<SubmissionProvider>();
-    
-    // Save current state to provider
-    if (_pages.isNotEmpty) {
-      provider.setBankStatementPages(_pages, isPdf: _isPdf);
-    }
-    if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-      provider.setBankStatementPassword(_pdfPassword!);
-    }
-
-    try {
-      final success = await provider.saveDraft();
-      
-      if (mounted) {
-        if (success) {
-          setState(() {
-            _isDraftSaved = true;
-            _isSavingDraft = false;
-          });
-          PremiumToast.showSuccess(
-            context,
-            'Draft saved successfully!',
-            duration: const Duration(seconds: 2),
-          );
-        } else {
-          setState(() {
-            _isSavingDraft = false;
-          });
-          PremiumToast.showError(
-            context,
-            'Failed to save draft. Please try again.',
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isSavingDraft = false;
-        });
-        PremiumToast.showError(
-          context,
-          'Error saving draft: $e',
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
-            ],
-          ),
-        ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: SafeArea(
         child: Column(
           children: [
-            // Consistent Header
+            // Royal Blue Header
             AppHeader(
               title: 'Bank Statement',
               icon: Icons.account_balance,
               showBackButton: true,
-              onBackPressed: () async {
-                // Save current state to provider before navigating back
-                final provider = context.read<SubmissionProvider>();
-                if (_pages.isNotEmpty) {
-                  provider.setBankStatementPages(_pages, isPdf: _isPdf);
-                }
-                if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-                  provider.setBankStatementPassword(_pdfPassword!);
-                }
-                // Auto-save draft when going back
-                await provider.saveDraft();
-                if (mounted) {
-                  context.go(AppRoutes.step3Pan);
-                }
-              },
+              onBackPressed: () => context.go(AppRoutes.step3Pan),
               showHomeButton: true,
             ),
-            StepProgressIndicator(currentStep: 4, totalSteps: 6),
+            
+            // Progress Indicator
+            _buildProgressIndicator(context),
+            
+            // Content
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    PremiumCard(
-                      gradientColors: [
-                        Colors.white,
-                        colorScheme.primary.withValues(alpha: 0.03),
-                      ],
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      colorScheme.primary,
-                                      colorScheme.secondary,
-                                    ],
-                                  ),
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colorScheme.primary.withValues(alpha: 0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.account_balance,
-                                  color: Colors.white,
-                                  size: 28,
-                                ),
-                              ),
-                              const SizedBox(width: 20),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Bank Statement Requirements',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                        letterSpacing: -0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      'Last 6 months from today',
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          _buildPremiumRequirement(context, Icons.calendar_today, 'Must be last 6 months'),
-                          const SizedBox(height: 12),
-                          _buildPremiumRequirement(context, Icons.lock_outline, 'PDF password supported'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Required Date Range Alert (Red Highlighted)
+                    // Requirements Card
+                    _buildRequirementsCard(context),
+                    const SizedBox(height: 20),
+                    
+                    // Required Statement Period Card
                     if (_statementEndDate != null && _calculatedStartDate != null)
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              const Color(0xFFFFEBEE), // Light red
-                              const Color(0xFFFFCDD2), // Lighter red
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: const Color(0xFFD32F2F), // Red
-                            width: 2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFD32F2F).withValues(alpha: 0.2),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFD32F2F),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.calendar_month,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Text(
-                                    'Required Statement Period',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFFB71C1C), // Dark red
-                                      fontSize: 20,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFFD32F2F).withValues(alpha: 0.3),
-                                ),
-                              ),
-                              child: Column(
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.warning_rounded,
-                                        color: Color(0xFFD32F2F),
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Important',
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFFD32F2F),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  RichText(
-                                    text: TextSpan(
-                                      style: theme.textTheme.bodyLarge?.copyWith(
-                                        height: 1.6,
-                                        color: Colors.black87,
-                                      ),
-                                      children: [
-                                        const TextSpan(
-                                          text: 'From ',
-                                          style: TextStyle(fontWeight: FontWeight.normal),
-                                        ),
-                                        TextSpan(
-                                          text: _formatDateWithYear(_calculatedStartDate!),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFFD32F2F),
-                                            fontSize: 17,
-                                          ),
-                                        ),
-                                        const TextSpan(
-                                          text: ' to ',
-                                          style: TextStyle(fontWeight: FontWeight.normal),
-                                        ),
-                                        TextSpan(
-                                          text: _formatDateWithYear(_statementEndDate!),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFFD32F2F),
-                                            fontSize: 17,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'you need to submit your bank statement',
-                                    style: theme.textTheme.bodyLarge?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFFD32F2F),
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFEBEE),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.info_outline,
-                                          size: 16,
-                                          color: Color(0xFFD32F2F),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          '${_calculatedStartDate!.difference(_statementEndDate!).inDays.abs()} days (≈6 months)',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: const Color(0xFFB71C1C),
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(height: 32),
-                    if (_pages.isEmpty) ...[
-                      PremiumCard(
-                        gradientColors: [
-                          Colors.white,
-                          colorScheme.primary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(32),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    colorScheme.primary.withValues(alpha: 0.1),
-                                    colorScheme.secondary.withValues(alpha: 0.05),
-                                  ],
-                                ),
-                              ),
-                              child: Icon(
-                                Icons.description_outlined,
-                                size: 64,
-                                color: colorScheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'Upload Bank Statement',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 24,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Upload PDF file (last 6 months)',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                            PremiumButton(
-                              label: 'Upload PDF',
-                              icon: Icons.picture_as_pdf,
-                              isPrimary: true,
-                              onPressed: _uploadPdf,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else ...[
-                      PremiumCard(
-                        gradientColors: [
-                          Colors.white,
-                          colorScheme.primary.withValues(alpha: 0.02),
-                        ],
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Uploaded Pages',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 22,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${_pages.length} ${_pages.length == 1 ? 'page' : 'pages'}',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        AppTheme.successColor.withValues(alpha: 0.2),
-                                        AppTheme.successColor.withValues(alpha: 0.1),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.check_circle, size: 18, color: AppTheme.successColor),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Ready',
-                                        style: TextStyle(
-                                          color: AppTheme.successColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      GridView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 16,
-                          mainAxisSpacing: 16,
-                          childAspectRatio: 0.75,
-                        ),
-                        itemCount: _pages.length,
-                        itemBuilder: (context, index) {
-                          return _buildPremiumPageCard(context, index);
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      PremiumButton(
-                        label: _isPdf ? 'Change PDF' : 'Upload PDF',
-                        icon: Icons.picture_as_pdf,
-                        isPrimary: false,
-                        onPressed: _uploadPdf,
-                      ),
-                    ],
-                    if (_pdfPassword != null) ...[
-                      const SizedBox(height: 24),
-                      PremiumCard(
-                        gradientColors: [
-                          AppTheme.accentColor.withValues(alpha: 0.1),
-                          AppTheme.accentColor.withValues(alpha: 0.05),
-                        ],
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentColor,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.lock, color: Colors.white, size: 24),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'PDF Password Protected',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                      color: AppTheme.accentColor,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Password: ${'●' * _pdfPassword!.length}',
-                                    style: theme.textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 40),
-                    // Save as Draft button
-                    Builder(
-                      builder: (context) {
-                        final colorScheme = Theme.of(context).colorScheme;
-                        return OutlinedButton.icon(
-                          onPressed: _isDraftSaved ? null : _saveDraft,
-                          icon: _isDraftSaved
-                              ? const Icon(Icons.check_circle)
-                              : (_isSavingDraft
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : const Icon(Icons.save_outlined)),
-                          label: Text(_isDraftSaved
-                              ? 'Draft Saved'
-                              : (_isSavingDraft ? 'Saving...' : 'Save as Draft')),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            foregroundColor: _isDraftSaved
-                                ? AppTheme.successColor
-                                : null,
-                            side: BorderSide(
-                              color: _isDraftSaved
-                                  ? AppTheme.successColor
-                                  : colorScheme.primary,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    PremiumButton(
-                      label: 'Continue to Salary Slips',
-                      icon: Icons.arrow_forward_rounded,
-                      isPrimary: true,
-                      onPressed: _proceedToNext,
-                    ),
-                    const SizedBox(height: 24),
+                      _buildRequiredPeriodCard(context),
+                    const SizedBox(height: 20),
+                    
+                    // Uploaded Pages Section
+                    if (_pages.isNotEmpty)
+                      _buildUploadedPagesSection(context)
+                    else
+                      _buildEmptyUploadState(context),
+                    const SizedBox(height: 100), // Space for footer
                   ],
                 ),
               ),
@@ -1035,141 +511,786 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           ],
         ),
       ),
+      bottomNavigationBar: _buildFooter(context),
     );
   }
 
-  Widget _buildPremiumRequirement(BuildContext context, IconData icon, String text) {
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Steps 1-3: Completed
+          for (int i = 1; i <= 3; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Step 4: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '4',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Steps 5-7: Pending
+          for (int i = 5; i <= 7; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$i',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (i < 7)
+                    Expanded(
+                      child: Container(
+                        height: 2,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementsCard(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFFEFF6FF), // blue-50
+            Color(0xFFDBEAFE), // blue-100/50
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFDBEAFE).withValues(alpha: 0.5),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.account_balance,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Bank Statement Requirements',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Last 6 months from today',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          _buildRequirementItem(Icons.calendar_today, 'Must be last 6 months'),
+          const SizedBox(height: 16),
+          _buildRequirementItem(Icons.lock, 'PDF password supported'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequirementItem(IconData icon, String text) {
+    final theme = Theme.of(context);
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
+            color: const Color(0xFFDBEAFE), // blue-100
+            shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 20, color: colorScheme.primary),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 18),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF334155), // slate-700
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildPremiumPageCard(BuildContext context, int index) {
+  Widget _buildRequiredPeriodCard(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
+    final days = _statementEndDate!.difference(_calculatedStartDate!).inDays.abs();
+
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.primary.withValues(alpha: 0.15),
-            blurRadius: 15,
-            spreadRadius: 1,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        color: const Color(0xFFFFEBEE).withValues(alpha: 0.3), // red-50/30
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: colorScheme.primary.withValues(alpha: 0.2),
-          width: 1.5,
+          color: const Color(0xFFFFCDD2).withValues(alpha: 0.3), // red-200/30
+          width: 1,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18.5),
-        child: Stack(
-          children: [
-            _isPdf && index == 0
-                ? Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          colorScheme.primary.withValues(alpha: 0.1),
-                          colorScheme.secondary.withValues(alpha: 0.05),
-                        ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD32F2F), // red-600
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.event,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Required Statement Period',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: const Color(0xFFB71C1C), // red-700
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: const Color(0xFFFFCDD2).withValues(alpha: 0.2),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.warning,
+                      color: Color(0xFFD32F2F),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'IMPORTANT',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFD32F2F),
+                        letterSpacing: 1.0,
                       ),
                     ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.picture_as_pdf, size: 40, color: colorScheme.primary),
-                          const SizedBox(height: 8),
-                          Text(
-                            'PDF',
-                            style: TextStyle(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                RichText(
+                  textAlign: TextAlign.center,
+                  text: TextSpan(
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 14,
+                      color: const Color(0xFF475569),
+                      height: 1.5,
                     ),
-                  )
-                : ((_pages[index].startsWith('http') && (_authToken == null || (index < _pageFailures.length && _pageFailures[index])))
-                    ? Center(child: (index < _pageFailures.length && _pageFailures[index])
-                        ? const Icon(Icons.broken_image, color: Colors.grey)
-                        : const CircularProgressIndicator())
-                    : PlatformImage(
-                    imagePath: _pages[index], 
-                    imageBytes: (index < _pageBytes.length) ? _pageBytes[index] : null,
-                    fit: BoxFit.cover,
-                    headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
-                  )),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: GestureDetector(
-                onTap: () => _removePage(index),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppTheme.errorColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.errorColor.withValues(alpha: 0.4),
-                        blurRadius: 8,
-                        spreadRadius: 1,
+                    children: [
+                      const TextSpan(text: 'From '),
+                      TextSpan(
+                        text: _formatDateWithYear(_calculatedStartDate!),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      const TextSpan(text: ' to '),
+                      TextSpan(
+                        text: _formatDateWithYear(_statementEndDate!),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B),
+                        ),
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'you need to submit your bank statement',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFFD32F2F),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEBEE), // red-50
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.schedule,
+                        color: Color(0xFFD32F2F),
+                        size: 12,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$days DAYS (≈6 MONTHS)',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFD32F2F),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUploadedPagesSection(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.grey.shade100,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Uploaded Pages',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_pages.length} ${_pages.length == 1 ? 'page' : 'pages'}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 12,
+                      color: Colors.grey.shade400,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4), // emerald-50
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Color(0xFF22C55E), // emerald-600
+                      size: 12,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'READY',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF22C55E),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // PDF Preview Cards
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            alignment: WrapAlignment.center,
+            children: List.generate(_pages.length, (index) {
+              return _buildPdfCard(context, index);
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPdfCard(BuildContext context, int index) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: 160,
+      height: 213, // aspect ratio 3:4
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF), // blue-50
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFDBEAFE), // blue-100
+          width: 2,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.picture_as_pdf,
+                  size: 60,
+                  color: Color(0xFF3B82F6), // blue-500
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'PDF',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF2563EB), // blue-600
+                    letterSpacing: 2.0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Delete button
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Material(
+              color: const Color(0xFFEF4444), // red-500
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: () => _removePage(index),
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.close,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
               ),
             ),
-            Positioned(
-              bottom: 8,
-              left: 8,
+          ),
+          // Page number badge
+          Positioned(
+            bottom: 12,
+            left: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade800.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Page ${index + 1}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade100, width: 1),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Change PDF Button
+          if (_pages.isNotEmpty)
+            Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                onTap: _uploadPdf,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.file_upload, color: AppTheme.primaryColor, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Change PDF',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: AppTheme.primaryColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_pages.isNotEmpty) const SizedBox(height: 12),
+          // Continue Button
+          Material(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              onTap: _proceedToNext,
+              borderRadius: BorderRadius.circular(20),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                height: 64,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.black.withValues(alpha: 0.5),
+                      AppTheme.primaryColor,
+                      const Color(0xFF0052CC), // royal-blue
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  'Page ${index + 1}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Continue to Salary Slips',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
+          const SizedBox(height: 16),
+          // Indicator bar
+          Container(
+            width: 128,
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyUploadState(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.grey.shade200,
+          width: 1,
         ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.description_outlined,
+            size: 64,
+            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Upload Bank Statement',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Upload PDF file (last 6 months)',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Material(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              onTap: _uploadPdf,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 32),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.picture_as_pdf, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Upload PDF',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

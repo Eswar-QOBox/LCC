@@ -10,11 +10,11 @@ import '../providers/application_provider.dart';
 import '../providers/submission_provider.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 import '../widgets/platform_image.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
-import '../widgets/step_progress_indicator.dart';
 import '../utils/api_config.dart';
 
 void main() {
@@ -391,7 +391,30 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   }
 
   void _editStep(BuildContext context, String route) {
-    context.go(route);
+    // When editing Aadhaar from Preview, pass ?from=preview so Back returns to Preview
+    final target = route == AppRoutes.step2Aadhaar
+        ? '${AppRoutes.step2Aadhaar}?from=preview'
+        : route;
+    context.go(target);
+  }
+
+  /// Build full URL from relative path (same logic as _loadExistingData)
+  String? _buildFullUrlForSelfie(String? path) {
+    if (path == null || path.isEmpty) return null;
+    String p = path;
+    if (p.startsWith('baseUrl')) {
+      p = p.replaceFirst('baseUrl', ApiConfig.baseUrl);
+    }
+    if (p.startsWith('http://localhost:5000')) {
+      p = p.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
+    }
+    if (p.startsWith('http') || p.startsWith('blob:')) return p;
+    if (p.startsWith('/uploads/') && !p.contains('/uploads/files/')) {
+      p = p.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+    } else if (!p.startsWith('/api/')) {
+      p = '/api/v1$p';
+    }
+    return '${ApiConfig.baseUrl}$p';
   }
 
   /// Get selfie path from either SubmissionProvider (local) or ApplicationProvider (backend)
@@ -403,7 +426,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       return localSelfiePath;
     }
 
-    // Fallback to application-backed selfie data
+    // Fallback to application-backed selfie data (use same effectivePath logic as _loadExistingData)
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return null;
 
@@ -419,19 +442,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       try {
         if (application.step1Selfie is Map<String, dynamic>) {
           final stepData = application.step1Selfie as Map<String, dynamic>;
-          final path = stepData['imagePath'] as String?;
-          if (kDebugMode) {
-            print('_getSelfiePath: Found path: $path');
+          final imagePath = stepData['imagePath'] as String?;
+          final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+          final relativeUrl = uploadedFile?['url'] as String?;
+          final effectivePath = _buildFullUrlForSelfie(relativeUrl) ?? _buildFullUrlForSelfie(imagePath);
+          if (kDebugMode && effectivePath != null) {
+            print('_getSelfiePath: effectivePath = $effectivePath');
           }
-          return path;
+          return effectivePath;
         } else if (application.step1Selfie is String) {
-          // Handle case where step1Selfie is directly a string path
-          if (kDebugMode) {
-            print(
-              '_getSelfiePath: step1Selfie is a String: ${application.step1Selfie}',
-            );
-          }
-          return application.step1Selfie as String;
+          return _buildFullUrlForSelfie(application.step1Selfie as String) ?? application.step1Selfie as String;
         }
       } catch (e) {
         if (kDebugMode) {
@@ -593,86 +613,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         ),
         child: Column(
           children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white,
-                    colorScheme.primary.withValues(alpha: 0.03),
-                  ],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: AppBar(
-                title: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [colorScheme.primary, colorScheme.secondary],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_outline,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      'Review & Submit',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 20,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                foregroundColor: colorScheme.onSurface,
-                leading: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                    onPressed: () => context.go(AppRoutes.step5_1SalarySlips),
-                    color: colorScheme.primary,
-                  ),
-                ),
-                actions: const [],
-              ),
+            AppHeader(
+              title: 'Review & Submit',
+              icon: Icons.check_circle_outline,
+              showBackButton: true,
+              onBackPressed: () => context.go(AppRoutes.step5PersonalData),
+              showHomeButton: true,
             ),
-            StepProgressIndicator(currentStep: 6, totalSteps: 6),
+            _buildProgressIndicator(context),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
@@ -1769,6 +1717,83 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     ? AppTheme.successColor
                     : Colors.grey.shade700,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Steps 1-6: Completed
+          for (int i = 1; i <= 6; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.check,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Step 7: Current
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppTheme.primaryColor,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  spreadRadius: 4,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '7',
+                style: TextStyle(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
             ),
           ),

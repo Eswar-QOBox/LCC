@@ -22,6 +22,7 @@ import 'screens/step5_1_salary_slips_screen.dart';
 import 'screens/step6_preview_screen.dart';
 import 'screens/submission_success_screen.dart';
 import 'screens/pdf_download_screen.dart';
+import 'screens/loan_calculator_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -97,7 +98,10 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.step2Aadhaar,
-      builder: (context, state) => const Step2AadhaarScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step2AadhaarScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step3Pan,
@@ -126,6 +130,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.pdfDownload,
       builder: (context, state) => const PdfDownloadScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.loanCalculator,
+      builder: (context, state) => const LoanCalculatorScreen(),
     ),
   ],
 );

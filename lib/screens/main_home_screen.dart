@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
@@ -62,7 +63,6 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360; // Small phones like iPhone SE
-    final isVerySmallScreen = screenWidth < 320; // Very small devices
     
     // Use shorter labels for small screens
     final labels = isSmallScreen
@@ -86,106 +86,148 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-            if (index == 1) {
-              _refreshPendingApplications();
-            }
-          },
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: AppTheme.primaryColor,
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.white.withValues(alpha: 0.7),
-          showSelectedLabels: !isVerySmallScreen,
-          showUnselectedLabels: !isVerySmallScreen,
-          selectedLabelStyle: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: isSmallScreen ? 10 : 11,
-          ),
-          unselectedLabelStyle: TextStyle(
-            fontWeight: FontWeight.w500,
-            fontSize: isSmallScreen ? 10 : 11,
-          ),
-          iconSize: isSmallScreen ? 22 : 24,
-          items: [
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.home),
-              activeIcon: const Icon(Icons.home),
-              label: labels[0],
-              tooltip: AppStrings.navHome,
-            ),
-            BottomNavigationBarItem(
-              icon: _buildBadgeIcon(
-                icon: Icons.folder_outlined,
-                showDot: _hasPendingApplications,
+      bottomNavigationBar: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.8),
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
+                  width: 1,
+                ),
               ),
-              activeIcon: _buildBadgeIcon(
-                icon: Icons.folder,
-                showDot: _hasPendingApplications,
-              ),
-              label: labels[1],
-              tooltip: AppStrings.navApplications,
             ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.description_outlined),
-              activeIcon: const Icon(Icons.description),
-              label: labels[2],
-              tooltip: AppStrings.navDocuments,
+            padding: EdgeInsets.only(
+              top: 12,
+              bottom: MediaQuery.of(context).padding.bottom + 8,
             ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.calculate_outlined),
-              activeIcon: const Icon(Icons.calculate),
-              label: labels[3],
-              tooltip: AppStrings.navCalculator,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(
+                  context,
+                  icon: Icons.home,
+                  activeIcon: Icons.home,
+                  label: labels[0],
+                  isActive: _currentIndex == 0,
+                  onTap: () => _setIndex(0),
+                ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.assignment_outlined,
+                  activeIcon: Icons.assignment,
+                  label: labels[1],
+                  isActive: _currentIndex == 1,
+                  onTap: () => _setIndex(1),
+                  showBadge: _hasPendingApplications,
+                ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.folder_outlined,
+                  activeIcon: Icons.folder,
+                  label: labels[2],
+                  isActive: _currentIndex == 2,
+                  onTap: () => _setIndex(2),
+                ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.calculate_outlined,
+                  activeIcon: Icons.calculate,
+                  label: labels[3],
+                  isActive: _currentIndex == 3,
+                  onTap: () => _setIndex(3),
+                ),
+                _buildNavItem(
+                  context,
+                  icon: Icons.person_outline,
+                  activeIcon: Icons.person,
+                  label: labels[4],
+                  isActive: _currentIndex == 4,
+                  onTap: () => _setIndex(4),
+                ),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.settings_outlined),
-              activeIcon: const Icon(Icons.settings),
-              label: labels[4],
-              tooltip: AppStrings.navAccounts,
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildBadgeIcon({
+  void _setIndex(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+    if (index == 1) {
+      _refreshPendingApplications();
+    }
+  }
+
+  Widget _buildNavItem(
+    BuildContext context, {
     required IconData icon,
-    required bool showDot,
+    required IconData activeIcon,
+    required String label,
+    required bool isActive,
+    required VoidCallback onTap,
+    bool showBadge = false,
   }) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(icon),
-        if (showDot)
-          Positioned(
-            right: -2,
-            top: -2,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    isActive ? activeIcon : icon,
+                    color: isActive
+                        ? AppTheme.primaryColor
+                        : colorScheme.onSurfaceVariant,
+                    size: 24,
+                  ),
+                  if (showBadge)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: AppTheme.errorColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.surface,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-            ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 10,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                  color: isActive
+                      ? AppTheme.primaryColor
+                      : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 }

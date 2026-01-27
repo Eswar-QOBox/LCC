@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -76,237 +77,236 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.08),
-              colorScheme.secondary.withValues(alpha: 0.04),
-              Colors.white,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header with Gradient
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.primary,
-                      colorScheme.primary.withValues(alpha: 0.85),
-                      colorScheme.secondary.withValues(alpha: 0.9),
-                    ],
-                  ),
+      backgroundColor: const Color(0xFFF4F7FA),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header Section
+            _buildHeader(context),
+            
+            // Tabs Section
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
                 ),
-                child: Column(
-                  children: [
-                    // App Bar
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 20.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.25),
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicatorColor: AppTheme.primaryColor,
+                indicatorWeight: 3,
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: AppTheme.primaryColor,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                labelStyle: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+                unselectedLabelStyle: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                tabs: const [
+                  Tab(
+                    text: AppStrings.tabApplied,
+                    height: 48,
+                  ),
+                  Tab(
+                    text: AppStrings.tabApproved,
+                    height: 48,
+                  ),
+                  Tab(
+                    text: AppStrings.tabIncomplete,
+                    height: 48,
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            Expanded(
+              child: _isLoading
+                  ? _buildLoadingState()
+                  : _error != null
+                      ? ListView(
+                          padding: const EdgeInsets.all(24),
+                          children: [
+                            PremiumCard(
+                              gradientColors: [
+                                Colors.white,
+                                AppTheme.errorColor.withValues(alpha: 0.05),
                               ],
-                            ),
-                            child: const Icon(
-                              Icons.folder_open,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  AppStrings.applicationsTitle,
-                                  style: theme.textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Track and manage your loan applications',
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.9),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!_isLoading && _error == null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
+                              child: Column(
                                 children: [
-                                  const Icon(
-                                    Icons.article,
-                                    color: Colors.white,
-                                    size: 16,
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 64,
+                                    color: AppTheme.errorColor,
                                   ),
-                                  const SizedBox(width: 6),
+                                  const SizedBox(height: 16),
                                   Text(
-                                    '${_applications.length}',
-                                    style: theme.textTheme.titleSmall?.copyWith(
-                                      color: Colors.white,
+                                    AppStrings.errorLoadingApplications,
+                                    style: theme.textTheme.titleLarge?.copyWith(
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _error!,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  PremiumButton(
+                                    label: AppStrings.retry,
+                                    icon: Icons.refresh,
+                                    isPrimary: false,
+                                    onPressed: _loadApplications,
+                                  ),
                                 ],
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                    // Tabs
-                    Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(24),
-                          topRight: Radius.circular(24),
+                          ],
+                        )
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            // Submitted Tab (Submitted/In Progress)
+                            _buildApplicationsList(
+                              context,
+                              _getAppliedApplications(),
+                            ),
+                            // Approved Tab
+                            _buildApplicationsList(
+                              context,
+                              _getApprovedApplications(),
+                            ),
+                            // Incomplete Tab (Draft)
+                            _buildApplicationsList(
+                              context,
+                              _getIncompleteApplications(),
+                            ),
+                          ],
                         ),
-                      ),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 4),
-                          TabBar(
-                            controller: _tabController,
-                            indicatorColor: colorScheme.primary,
-                            indicatorWeight: 3,
-                            indicatorSize: TabBarIndicatorSize.tab,
-                            labelColor: colorScheme.primary,
-                            unselectedLabelColor: colorScheme.onSurfaceVariant,
-                            labelStyle: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                            ),
-                            unselectedLabelStyle: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            tabs: const [
-                              Tab(
-                                text: AppStrings.tabApplied,
-                                height: 48,
-                              ),
-                              Tab(
-                                text: AppStrings.tabApproved,
-                                height: 48,
-                              ),
-                              Tab(
-                                text: AppStrings.tabIncomplete,
-                                height: 48,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppTheme.primaryColor,
+            const Color(0xFF0052CC), // royal-blue
+          ],
+        ),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(24),
+          bottomRight: Radius.circular(24),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.folder_open,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppStrings.applicationsTitle,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    fontSize: 22,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Track and manage your loan applications',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!_isLoading && _error == null)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.3),
+                  width: 1,
                 ),
               ),
-
-              // Content
-              Expanded(
-                child: _isLoading
-                    ? _buildLoadingState()
-                    : _error != null
-                        ? ListView(
-                            padding: const EdgeInsets.all(24),
-                            children: [
-                              PremiumCard(
-                                gradientColors: [
-                                  Colors.white,
-                                  AppTheme.errorColor.withValues(alpha: 0.05),
-                                ],
-                                child: Column(
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline,
-                                      size: 64,
-                                      color: AppTheme.errorColor,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      AppStrings.errorLoadingApplications,
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      _error!,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: colorScheme.onSurfaceVariant,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    PremiumButton(
-                                      label: AppStrings.retry,
-                                      icon: Icons.refresh,
-                                      isPrimary: false,
-                                      onPressed: _loadApplications,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          )
-                        : TabBarView(
-                            controller: _tabController,
-                            children: [
-                              // Submitted Tab (Submitted/In Progress)
-                              _buildApplicationsList(
-                                context,
-                                _getAppliedApplications(),
-                              ),
-                              // Approved Tab
-                              _buildApplicationsList(
-                                context,
-                                _getApprovedApplications(),
-                              ),
-                              // Incomplete Tab (Draft)
-                              _buildApplicationsList(
-                                context,
-                                _getIncompleteApplications(),
-                              ),
-                            ],
-                          ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.article,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${_applications.length}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }

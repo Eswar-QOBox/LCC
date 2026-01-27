@@ -13,10 +13,9 @@ import '../services/file_upload_service.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
 import '../widgets/platform_image.dart';
-import '../widgets/step_progress_indicator.dart';
 import '../widgets/premium_toast.dart';
-import '../widgets/app_header.dart';
 import '../utils/app_theme.dart';
+import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 
@@ -78,6 +77,19 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         );
       }
     }
+  }
+
+  /// Called when user taps Retake: clear current photo (and validation) then open camera.
+  /// Ensures "Retake" works after first capture.
+  void _retakePhoto() {
+    if (!mounted) return;
+    setState(() {
+      _imagePath = null;
+      _imageBytes = null;
+      _validationResult = null;
+      _networkImageFailed = false;
+    });
+    _captureFromCamera();
   }
 
   Future<void> _selectFromGallery() async {
@@ -393,6 +405,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     }
 
     final application = appProvider.currentApplication!;
+    final submissionProvider = context.read<SubmissionProvider>();
     debugPrint('📷 Selfie Screen: step1Selfie = ${application.step1Selfie}');
     
     // Always load existing selfie if it exists in backend
@@ -435,7 +448,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         );
       }
 
-      if (effectivePath != null && effectivePath.isNotEmpty) {
+      if (effectivePath != null && effectivePath.isNotEmpty && mounted) {
         setState(() {
           _imagePath = effectivePath;
           // Mark as already validated since it was saved
@@ -443,7 +456,6 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         });
 
         // Also sync to SubmissionProvider
-        final submissionProvider = context.read<SubmissionProvider>();
         submissionProvider.setSelfie(effectivePath);
 
         // Try to load image bytes from URL for display
@@ -520,508 +532,105 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           debugPrint('Could not load selfie image bytes: $e');
         }
       }
+    } else {
+      // Backend has no step1Selfie (e.g. after returning from Aadhaar step) — use SubmissionProvider
+      // so the selfie is not lost when navigating Preview → Edit Aadhaar → Back (to Selfie)
+      final existingSelfiePath = submissionProvider.submission.selfiePath;
+      if (existingSelfiePath != null && existingSelfiePath.isNotEmpty && mounted) {
+        debugPrint('📷 Selfie Screen: Restoring selfie from SubmissionProvider: $existingSelfiePath');
+        setState(() {
+          _imagePath = existingSelfiePath;
+          _validationResult = SelfieValidationResult(isValid: true, errors: []);
+        });
+        if (existingSelfiePath.startsWith('http')) {
+          try {
+            final storage = StorageService.instance;
+            final accessToken = await storage.getAccessToken();
+            if (accessToken != null && mounted) {
+              setState(() => _authToken = accessToken);
+              final response = await http.get(Uri.parse(existingSelfiePath), headers: {'Authorization': 'Bearer $accessToken'});
+              if (response.statusCode == 200 && mounted && _isValidImageBytes(response.bodyBytes)) {
+                setState(() { _imageBytes = response.bodyBytes; _networkImageFailed = false; });
+              } else if (mounted) {
+                setState(() => _networkImageFailed = true);
+              }
+            }
+          } catch (_) {
+            debugPrint('Could not load selfie bytes from SubmissionProvider path');
+          }
+        } else {
+          try {
+            final imageFile = XFile(existingSelfiePath);
+            final bytes = await imageFile.readAsBytes();
+            if (mounted) setState(() => _imageBytes = bytes);
+          } catch (_) {}
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primary.withValues(alpha: 0.05),
-              colorScheme.secondary.withValues(alpha: 0.02),
-              Colors.white,
-            ],
-          ),
-        ),
+      backgroundColor: Colors.white,
+      body: SafeArea(
         child: Column(
           children: [
-            // Consistent Header
+            // Blue Header
             AppHeader(
               title: 'Identity Verification',
-              icon: Icons.face,
+              icon: Icons.account_circle,
               showBackButton: true,
               onBackPressed: () => context.go(AppRoutes.home),
               showHomeButton: true,
             ),
             
-            // Progress Indicator (below AppBar)
-            const StepProgressIndicator(currentStep: 1, totalSteps: 6),
+            // Progress Indicator with numbered circles
+            _buildProgressIndicator(context),
             
             // Content
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Requirements Card with Gradient
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                            colors: [
-                              colorScheme.surface,
-                              colorScheme.primary.withValues(alpha: 0.03),
-                            ],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.1),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        colorScheme.primary,
-                                        colorScheme.secondary,
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(
-                                    Icons.info_outline,
-                                    color: colorScheme.onPrimary,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Flexible(
-                                  child: Text(
-                                    'Requirements',
-                                    style: theme.textTheme.titleLarge?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 22,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 20),
-                            _buildRequirementItem('White background (passport style)'),
-                            _buildRequirementItem('Face clearly visible'),
-                            _buildRequirementItem('Good lighting'),
-                            _buildRequirementItem('No filters / editing'),
-                            _buildRequirementItem('No shadows'),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    if (_imagePath != null) ...[
-                      // Image Preview with Enhanced Design
-                      Container(
-                        height: 350,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_validationResult?.isValid == true
-                                      ? AppTheme.successColor
-                                      : colorScheme.primary)
-                                  .withValues(alpha: 0.3),
-                              blurRadius: 20,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                          border: Border.all(
-                            color: _validationResult?.isValid == true
-                                ? AppTheme.successColor
-                                : colorScheme.primary.withValues(alpha: 0.5),
-                            width: _validationResult?.isValid == true ? 3 : 2,
+                    // Requirements Card
+                    _buildRequirementsCard(context),
+                    const SizedBox(height: 24),
+                    // Selfie Display Area
+                    _buildSelfieDisplayArea(context),
+                    const SizedBox(height: 16),
+                    
+                    // Capture / Retake and Gallery Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildActionButton(
+                            context,
+                            icon: Icons.photo_camera,
+                            label: _imagePath != null ? 'Retake' : 'Capture',
+                            onPressed: _imagePath != null ? _retakePhoto : _captureFromCamera,
                           ),
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(17),
-                          child: Stack(
-                            children: [
-                                ((_imagePath!.startsWith('http') && (_authToken == null || _networkImageFailed))
-                                    ? Center(child: _networkImageFailed 
-                                        ? const Icon(Icons.broken_image, color: Colors.grey) 
-                                        : const CircularProgressIndicator())
-                                    : PlatformImage(
-                                  imagePath: _imagePath!,
-                                  imageBytes: _imageBytes,
-                                  fit: BoxFit.cover,
-                                  headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
-                                )),
-                              // Overlay gradient
-                              Container(
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.transparent,
-                                      Colors.black.withValues(alpha: 0.1),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildActionButton(
+                            context,
+                            icon: Icons.collections,
+                            label: 'Gallery',
+                            onPressed: _selectFromGallery,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      if (_validationResult != null) ...[
-                        if (_validationResult!.isValid)
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppTheme.successColor.withValues(alpha: 0.1),
-                                  AppTheme.successColor.withValues(alpha: 0.05),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: AppTheme.successColor,
-                                width: 2,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.successColor,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.check_circle,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Validation Passed!',
-                                        style: theme.textTheme.titleMedium?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.successColor,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Your selfie meets all requirements',
-                                        style: theme.textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppTheme.errorColor.withValues(alpha: 0.1),
-                                  AppTheme.errorColor.withValues(alpha: 0.05),
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: AppTheme.errorColor,
-                                width: 2,
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.errorColor,
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Icon(
-                                        Icons.error,
-                                        color: colorScheme.onError,
-                                        size: 24,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Text(
-                                      'Validation Failed',
-                                      style: theme.textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                        color: AppTheme.errorColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (_validationResult!.errors.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  ..._validationResult!.errors.map(
-                                    (error) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.circle,
-                                            size: 6,
-                                            color: AppTheme.errorColor,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(child: Text(error)),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        const SizedBox(height: 20),
                       ],
-                      // Action Buttons
-                      Column(
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: colorScheme.primary,
-                                  width: 2,
-                                ),
-                              ),
-                              child: OutlinedButton.icon(
-                                onPressed: _captureFromCamera,
-                                icon: const Icon(Icons.camera_alt),
-                                label: const Text('Retake'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: colorScheme.primary,
-                                  width: 2,
-                                ),
-                              ),
-                              child: OutlinedButton.icon(
-                                onPressed: _selectFromGallery,
-                                icon: const Icon(Icons.photo_library),
-                                label: const Text('Gallery'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                ),
-                              ),
-                            ),
-                          ),
-                          // Only show validation button if not yet validated successfully
-                          if (_validationResult?.isValid != true) ...[
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      colorScheme.primary,
-                                      colorScheme.secondary,
-                                    ],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colorScheme.primary.withValues(alpha: 0.4),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: ElevatedButton.icon(
-                                  onPressed: _isValidating ? null : _validateImage,
-                                  icon: _isValidating
-                                      ? SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.verified,
-                                          color: Colors.white,
-                                        ),
-                                  label: const Text(
-                                    'Validate',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    backgroundColor: Colors.transparent,
-                                    shadowColor: Colors.transparent,
-                                    disabledBackgroundColor: Colors.transparent,
-                                    disabledForegroundColor: Colors.white.withValues(alpha: 0.7),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ] else ...[
-                      // Capture Options with Enhanced Design
-                      Container(
-                        padding: const EdgeInsets.all(32),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white,
-                              colorScheme.primary.withValues(alpha: 0.05),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: colorScheme.primary.withValues(alpha: 0.2),
-                            width: 2,
-                          ),
-                        ),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.add_photo_alternate,
-                              size: 80,
-                              color: colorScheme.primary.withValues(alpha: 0.5),
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              'Capture Your Selfie',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Please use the camera to capture a live selfie',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                            const SizedBox(height: 32),
-                            Column(
-                              children: [
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: _buildCaptureButton(
-                                    context,
-                                    icon: Icons.camera_alt,
-                                    label: 'Camera',
-                                    onPressed: _captureFromCamera,
-                                    isPrimary: true,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: _buildCaptureButton(
-                                    context,
-                                    icon: Icons.photo_library,
-                                    label: 'Gallery',
-                                    onPressed: _selectFromGallery,
-                                    isPrimary: false,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 32),
-                    // Next Button with Gradient
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: LinearGradient(
-                          colors: [
-                            colorScheme.primary,
-                            colorScheme.secondary,
-                          ],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: _proceedToNext,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              'Next: Aadhaar Card',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Icon(Icons.arrow_forward, color: colorScheme.onPrimary),
-                          ],
-                        ),
-                      ),
                     ),
+                    const SizedBox(height: 16),
+                    
+                    // Validate Photo Button (only show if image exists and not validated)
+                    if (_imagePath != null && _validationResult?.isValid != true)
+                      _buildValidateButton(context),
+                    
+                    const SizedBox(height: 100), // Space for footer
                   ],
                 ),
               ),
@@ -1029,102 +638,427 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           ],
         ),
       ),
+      bottomNavigationBar: _buildFooter(context),
     );
   }
 
-  Widget _buildCaptureButton(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-    bool isPrimary = false,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    
-    if (isPrimary) {
-      return Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(
-            colors: [colorScheme.primary, colorScheme.secondary],
+  Widget _buildProgressIndicator(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
+      child: Row(
+        children: [
+          // Step 1: Current
+          Expanded(
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppTheme.primaryColor,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                        blurRadius: 12,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      '1',
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    height: 2,
+                    color: Colors.grey.shade200,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                ),
+              ],
+            ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: colorScheme.primary.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
+          // Steps 2-7: Pending
+          for (int i = 2; i <= 7; i++) ...[
+            Expanded(
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '$i',
+                        style: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (i < 7)
+                    Expanded(
+                      child: Container(
+                        height: 2,
+                        color: Colors.grey.shade200,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
-        ),
-        child: ElevatedButton.icon(
-          onPressed: onPressed,
-          icon: Icon(icon, color: colorScheme.onPrimary, size: 28),
-          label: Text(
-            label,
-            style: TextStyle(
-              color: colorScheme.onPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 18,
-            ),
-          ),
-          style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 25, horizontal: 24),
-            backgroundColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-          ),
-        ),
-      );
-    }
-    
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colorScheme.primary, width: 2),
+        ],
       ),
-      child: OutlinedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, color: colorScheme.primary),
-        label: Text(
-          label,
-          style: TextStyle(
-            color: colorScheme.primary,
-            fontWeight: FontWeight.w600,
+    );
+  }
+
+  Widget _buildRequirementsCard(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F9FF), // sky-50
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: const Color(0xFFE0F2FE), // sky-100
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.info,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Requirements',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  color: const Color(0xFF1E293B), // slate-800
+                ),
+              ),
+            ],
           ),
-        ),
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 18),
-        ),
+          const SizedBox(height: 16),
+          _buildRequirementItem('White background (passport style)'),
+          const SizedBox(height: 12),
+          _buildRequirementItem('Face clearly visible'),
+          const SizedBox(height: 12),
+          _buildRequirementItem('Good lighting'),
+          const SizedBox(height: 12),
+          _buildRequirementItem('No filters / editing'),
+          const SizedBox(height: 12),
+          _buildRequirementItem('No shadows'),
+        ],
       ),
     );
   }
 
   Widget _buildRequirementItem(String text) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: colorScheme.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.check_circle,
-              size: 20,
-              color: colorScheme.primary,
+    final theme = Theme.of(context);
+    
+    return Row(
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: const Color(0xFFBAE6FD), // sky-200
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.check,
+            size: 16,
+            color: AppTheme.primaryColor,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF475569), // slate-600
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: Theme.of(context).textTheme.bodyLarge,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelfieDisplayArea(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(32),
+          border: Border.all(
+            color: Colors.grey.shade50,
+            width: 4,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Stack(
+            children: [
+              // Image or placeholder
+              _imagePath != null
+                  ? Center(
+                      child: (_imagePath!.startsWith('http') && (_authToken == null || _networkImageFailed))
+                          ? (_networkImageFailed
+                              ? const Icon(Icons.broken_image, color: Colors.grey, size: 64)
+                              : const CircularProgressIndicator())
+                          : PlatformImage(
+                              imagePath: _imagePath!,
+                              imageBytes: _imageBytes,
+                              fit: BoxFit.cover,
+                              headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                            ),
+                    )
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_photo_alternate,
+                            size: 64,
+                            color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Capture your selfie',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: AppTheme.primaryColor.withValues(alpha: 0.2),
+              width: 2,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: AppTheme.primaryColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.primaryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValidateButton(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: AppTheme.primaryColor,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: _isValidating ? null : _validateImage,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+          decoration: BoxDecoration(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primaryColor.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_isValidating)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                const Icon(Icons.verified, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Validate Photo',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white,
+            Colors.white.withValues(alpha: 0.95),
+            Colors.white,
+          ],
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Material(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(24),
+            child: InkWell(
+              onTap: _imagePath != null && _validationResult?.isValid == true
+                  ? _proceedToNext
+                  : null,
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Next: Aadhaar Card',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward, color: Colors.white, size: 20),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: 128,
+            height: 6,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade400.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
         ],
       ),
     );
   }
+
 }

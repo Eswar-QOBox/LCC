@@ -32,30 +32,27 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _navigateToNext() async {
-    // Wait for minimum splash duration (2 seconds) and auth check
+    // Wait for minimum splash duration (2 seconds)
     await Future.delayed(const Duration(seconds: 2));
 
     if (!mounted) return;
 
+    // Check authentication status
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
+    
     // Wait for auth check to complete if still loading
-    if (authProvider.isLoading) {
-      // Wait for auth check to complete (with timeout)
-      int attempts = 0;
-      while (authProvider.isLoading && attempts < 50 && mounted) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        attempts++;
-      }
+    while (authProvider.isLoading) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted) return;
     }
-
-    if (!mounted) return;
 
     // Navigate based on authentication status
     if (authProvider.isAuthenticated) {
+      // User is logged in - go to home
       context.go(AppRoutes.home);
     } else {
-      context.go(AppRoutes.onboarding);
+      // User is not logged in - go to login
+      context.go(AppRoutes.login);
     }
   }
 
