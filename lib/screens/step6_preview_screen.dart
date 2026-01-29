@@ -175,6 +175,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         return path;
       }
 
+      // Some backends return file URLs like /api/v1/uploads/<category>/<file>
+      // but the actual file-serving route is /api/v1/uploads/files/<category>/<file>.
+      // Normalize that here so previews work (notably Salary Slips).
+      if (path.startsWith('/api/v1/uploads/') &&
+          !path.startsWith('/api/v1/uploads/files/')) {
+        path = path.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
+      }
+
       // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
       String apiPath = path;
       if (apiPath.startsWith('/uploads/') &&
@@ -310,7 +318,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (uploadedSalarySlips != null && uploadedSalarySlips.isNotEmpty) {
         for (var upload in uploadedSalarySlips) {
           if (upload is Map<String, dynamic>) {
-            final url = buildFullUrl(upload['url'] as String?);
+            final raw = (upload['url'] as String?) ?? (upload['path'] as String?);
+            final url = buildFullUrl(raw);
             if (url != null && url.isNotEmpty) {
               effectiveSalarySlips.add(url);
             }
