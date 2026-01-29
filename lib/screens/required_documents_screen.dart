@@ -13,6 +13,7 @@ import '../utils/app_theme.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
+import '../utils/local_file_persist.dart';
 
 class RequiredDocumentsScreen extends StatefulWidget {
   const RequiredDocumentsScreen({super.key});
@@ -347,6 +348,13 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         if (croppedPath != null && croppedPath.isNotEmpty) {
           finalPath = croppedPath;
         }
+        // Persist to stable temp location so later operations don't lose the file.
+        finalPath = await persistLocalPathIfNeeded(
+          finalPath,
+          preferredExtension: 'jpg',
+          subdir: 'lcc_required_documents',
+          prefix: 'doc_${requirement.id}',
+        );
       }
 
       // Upload document
@@ -424,7 +432,14 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         sourcePath: path,
         compressQuality: 90,
         uiSettings: [
-          AndroidUiSettings(toolbarTitle: 'Crop Document'),
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Document',
+            toolbarColor: AppTheme.primaryColor,
+            toolbarWidgetColor: Colors.white,
+            hideBottomControls: false,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
           IOSUiSettings(title: 'Crop Document'),
         ],
       );
@@ -688,13 +703,26 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             ],
           ),
           const SizedBox(height: 16),
-          ...documents.map((doc) => _buildDocumentItem(context, doc)),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: 1.25,
+            ),
+            itemCount: documents.length,
+            itemBuilder: (context, index) {
+              return _buildDocumentCard(context, documents[index]);
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildDocumentItem(
+  Widget _buildDocumentCard(
     BuildContext context,
     DocumentRequirement requirement,
   ) {
@@ -706,6 +734,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     IconData statusIcon;
     Color statusColor;
     String statusText;
+    Color borderColor;
 
     switch (status) {
       case DocumentStatus.uploaded:
@@ -715,101 +744,122 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         statusText = status == DocumentStatus.verified
             ? AppStrings.verified
             : 'Uploaded';
+        borderColor = AppTheme.successColor.withValues(alpha: 0.25);
         break;
       case DocumentStatus.uploading:
         statusIcon = Icons.upload;
         statusColor = AppTheme.infoColor;
         statusText = AppStrings.uploading;
+        borderColor = AppTheme.infoColor.withValues(alpha: 0.25);
         break;
       case DocumentStatus.rejected:
         statusIcon = Icons.cancel;
         statusColor = AppTheme.errorColor;
         statusText = AppStrings.rejected;
+        borderColor = AppTheme.errorColor.withValues(alpha: 0.25);
         break;
       case DocumentStatus.pending:
         statusIcon = Icons.pending;
         statusColor = AppTheme.warningColor;
         statusText = AppStrings.pending;
+        borderColor = AppTheme.warningColor.withValues(alpha: 0.25);
         break;
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
+    final canUpload = status != DocumentStatus.uploading;
+    final isPrimaryAction =
+        status == DocumentStatus.pending || status == DocumentStatus.rejected;
+    final buttonLabel = status == DocumentStatus.pending ||
+            status == DocumentStatus.rejected
+        ? AppStrings.upload
+        : AppStrings.reupload;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: borderColor, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      requirement.label,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (requirement.isCustom) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Custom',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onPrimaryContainer,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  requirement.label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(statusIcon, size: 16, color: statusColor),
-                    const SizedBox(width: 4),
-                    Text(
-                      statusText,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: statusColor,
-                        fontWeight: FontWeight.w500,
-                      ),
+              ),
+              if (requirement.isCustom) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Custom',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
-                  ],
+                  ),
                 ),
               ],
-            ),
+            ],
           ),
-          if (status != DocumentStatus.uploading)
-            Flexible(
-              child: PremiumButton(
-                label:
-                    status == DocumentStatus.pending ||
-                        status == DocumentStatus.rejected
-                    ? AppStrings.upload
-                    : AppStrings.reupload,
-                icon: Icons.upload,
-                isPrimary:
-                    status == DocumentStatus.pending ||
-                    status == DocumentStatus.rejected,
-                onPressed: isUploading
-                    ? null
-                    : () => _uploadDocument(requirement),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(statusIcon, size: 16, color: statusColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  statusText,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const Spacer(),
+          if (!canUpload)
+            const Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
           else
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2),
+            SizedBox(
+              width: double.infinity,
+              child: PremiumButton(
+                label: buttonLabel,
+                icon: Icons.upload,
+                isPrimary: isPrimaryAction,
+                onPressed: isUploading ? null : () => _uploadDocument(requirement),
+              ),
             ),
         ],
       ),

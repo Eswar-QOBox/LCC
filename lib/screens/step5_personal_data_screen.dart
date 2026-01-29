@@ -37,6 +37,9 @@ class Step5PersonalDataScreen extends StatefulWidget {
 class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isSaving = false;
+
+  // If true, user says current address differs from Aadhaar address.
+  bool _addressDifferentFromAadhaar = false;
   
   // Track expanded sections - first section expanded by default
   bool _basicInfoExpanded = true;
@@ -91,6 +94,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   // Residence Information Controllers
   final _countryOfResidenceController = TextEditingController();
   final _residenceAddressController = TextEditingController();
+  final _currentResidenceAddressController = TextEditingController();
   final _residenceTypeController = TextEditingController();
   final _residenceStabilityController = TextEditingController();
   
@@ -155,6 +159,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _personalEmailIdController.addListener(updateSummary);
     _countryOfResidenceController.addListener(updateSummary);
     _residenceAddressController.addListener(updateSummary);
+    _currentResidenceAddressController.addListener(updateSummary);
     _residenceTypeController.addListener(updateSummary);
     _residenceStabilityController.addListener(updateSummary);
     _companyNameController.addListener(updateSummary);
@@ -189,7 +194,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     try {
       // First try to load from backend
       final appProvider = context.read<ApplicationProvider>();
-      if (appProvider.hasApplication && appProvider.currentApplication!.step5PersonalData != null) {
+      if (appProvider.hasApplication &&
+          appProvider.currentApplication!.step5PersonalData != null) {
         final stepData = appProvider.currentApplication!.step5PersonalData as Map<String, dynamic>;
         _nameAsPerAadhaarController.text = stepData['nameAsPerAadhaar'] ?? '';
         _panNoController.text = stepData['panNo'] ?? '';
@@ -201,6 +207,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         }
         _countryOfResidenceController.text = stepData['countryOfResidence'] ?? '';
         _residenceAddressController.text = stepData['residenceAddress'] ?? '';
+        _addressDifferentFromAadhaar = stepData['addressDifferentFromAadhaar'] as bool? ?? false;
+        _currentResidenceAddressController.text = stepData['currentResidenceAddress'] ?? '';
         _residenceTypeController.text = stepData['residenceType'] ?? '';
         _residenceStabilityController.text = stepData['residenceStability'] ?? '';
         _companyNameController.text = stepData['companyName'] ?? '';
@@ -230,7 +238,6 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         _reference2NameController.text = stepData['reference2Name'] ?? '';
         _reference2AddressController.text = stepData['reference2Address'] ?? '';
         _reference2ContactController.text = stepData['reference2Contact'] ?? '';
-        return;
       }
       
       // Fallback to provider
@@ -246,6 +253,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       
       _countryOfResidenceController.text = data.countryOfResidence ?? '';
       _residenceAddressController.text = data.residenceAddress ?? '';
+      _addressDifferentFromAadhaar = data.addressDifferentFromAadhaar ?? false;
+      _currentResidenceAddressController.text = data.currentResidenceAddress ?? '';
       _residenceTypeController.text = data.residenceType ?? '';
       _residenceStabilityController.text = data.residenceStability ?? '';
       
@@ -281,6 +290,37 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       _reference2AddressController.text = data.reference2Address ?? '';
       _reference2ContactController.text = data.reference2Contact ?? '';
       }
+
+      // Even if backend personal data exists, always prefer doc-extracted values
+      // from the in-memory provider (Aadhaar/PAN OCR) so uploads refresh Personal Details.
+      if (data != null) {
+        final name = data.nameAsPerAadhaar;
+        if (name != null && name.trim().isNotEmpty) {
+          _nameAsPerAadhaarController.text = name;
+        }
+        final pan = data.panNo;
+        if (pan != null && pan.trim().isNotEmpty) {
+          _panNoController.text = pan;
+        }
+        final aadhaar = data.aadhaarNumber;
+        if (aadhaar != null && aadhaar.trim().isNotEmpty) {
+          _aadhaarNumberController.text = aadhaar;
+        }
+        if (data.dateOfBirth != null) {
+          _dateOfBirth = data.dateOfBirth;
+        }
+        final address = data.residenceAddress;
+        if (address != null && address.trim().isNotEmpty) {
+          _residenceAddressController.text = address;
+        }
+        if (data.addressDifferentFromAadhaar != null) {
+          _addressDifferentFromAadhaar = data.addressDifferentFromAadhaar!;
+        }
+        final father = data.fatherName;
+        if (father != null && father.trim().isNotEmpty) {
+          _fatherNameController.text = father;
+        }
+      }
     } catch (e) {
       // Silently handle errors during data loading
       // Data will remain empty if loading fails
@@ -296,6 +336,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _personalEmailIdController.dispose();
     _countryOfResidenceController.dispose();
     _residenceAddressController.dispose();
+    _currentResidenceAddressController.dispose();
     _residenceTypeController.dispose();
     _residenceStabilityController.dispose();
     _companyNameController.dispose();
@@ -407,6 +448,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         residenceAddress: _residenceAddressController.text.trim().isEmpty 
             ? null 
             : _residenceAddressController.text.trim(),
+        addressDifferentFromAadhaar: _addressDifferentFromAadhaar,
+        currentResidenceAddress: _addressDifferentFromAadhaar
+            ? (_currentResidenceAddressController.text.trim().isEmpty
+                ? null
+                : _currentResidenceAddressController.text.trim())
+            : null,
         residenceType: _residenceTypeController.text.trim().isEmpty 
             ? null 
             : _residenceTypeController.text.trim(),
@@ -499,6 +546,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         debugPrint('   Mobile: "${personalData.mobileNumber ?? "null"}"');
         debugPrint('   Email: "${personalData.personalEmailId ?? "null"}"');
         debugPrint('   Address: "${personalData.residenceAddress ?? "null"}"');
+        debugPrint('   AddressDifferent: ${personalData.addressDifferentFromAadhaar == true}');
+        debugPrint('   CurrentAddress: "${personalData.currentResidenceAddress ?? "null"}"');
       } else {
         debugPrint('✅ PERSONAL DATA COMPLETE');
       }
@@ -522,6 +571,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'personalEmailId': personalData.personalEmailId,
             'countryOfResidence': personalData.countryOfResidence,
             'residenceAddress': personalData.residenceAddress,
+            'addressDifferentFromAadhaar': personalData.addressDifferentFromAadhaar,
+            'currentResidenceAddress': personalData.currentResidenceAddress,
             'residenceType': personalData.residenceType,
             'residenceStability': personalData.residenceStability,
             'companyName': personalData.companyName,
@@ -832,6 +883,53 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 return null;
                               },
                             ),
+                            if (_addressDifferentFromAadhaar) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFDBEAFE)),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(Icons.info_outline, size: 18, color: AppTheme.primaryColor),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'You marked your current address as different from Aadhaar. Please enter the current/address-proof address below.',
+                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              color: const Color(0xFF475569),
+                                              height: 1.3,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _currentResidenceAddressController,
+                                label: 'Current / Address-proof Address',
+                                icon: Icons.home_work,
+                                isRequired: true,
+                                maxLines: 3,
+                                validator: (value) {
+                                  if (!_addressDifferentFromAadhaar) return null;
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter your current/address-proof address';
+                                  }
+                                  if (value.trim().length < 10) {
+                                    return 'Address must be at least 10 characters';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
                             const SizedBox(height: 16),
                             _buildPremiumTextField(
                               context,
@@ -1886,6 +1984,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     if (_residenceAddressController.text.isNotEmpty) {
       final address = _residenceAddressController.text;
       parts.add(address.length > 30 ? '${address.substring(0, 30)}...' : address);
+    }
+    if (_addressDifferentFromAadhaar && _currentResidenceAddressController.text.isNotEmpty) {
+      parts.add('Current addr: yes');
+    } else if (_addressDifferentFromAadhaar) {
+      parts.add('Current addr: pending');
     }
     if (_residenceTypeController.text.isNotEmpty) {
       parts.add(_residenceTypeController.text);

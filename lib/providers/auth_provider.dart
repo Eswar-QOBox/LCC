@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../models/user.dart';
+import '../models/document_submission.dart';
 import '../services/auth_service.dart';
 import '../services/storage_service.dart';
 import '../utils/auth_errors.dart';
@@ -8,11 +9,13 @@ class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   
   User? _user;
+  PersonalData? _profilePersonalData;
   bool _isLoading = false;
   String? _errorMessage;
   bool _isAuthenticated = false;
 
   User? get user => _user;
+  PersonalData? get profilePersonalData => _profilePersonalData;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _isAuthenticated;
@@ -76,6 +79,17 @@ class AuthProvider with ChangeNotifier {
       final result = await _authService.login(email, password);
       _user = result['user'] as User;
       _isAuthenticated = true;
+      _profilePersonalData = null;
+
+      // Best effort: hydrate profile details from /auth/me
+      try {
+        final me = await _authService.getMe();
+        _user = me.user;
+        _profilePersonalData = me.personalData;
+      } catch (_) {
+        // Ignore; keep the user from login response
+      }
+
       _isLoading = false;
       notifyListeners();
       return true;
@@ -87,6 +101,7 @@ class AuthProvider with ChangeNotifier {
       }
       _isLoading = false;
       _isAuthenticated = false;
+      _profilePersonalData = null;
       notifyListeners();
       return false;
     }
@@ -99,7 +114,9 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _user = await _authService.getCurrentUser();
+      final me = await _authService.getMe();
+      _user = me.user;
+      _profilePersonalData = me.personalData;
       _isAuthenticated = true;
       _isLoading = false;
       notifyListeners();
@@ -112,6 +129,7 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       _isAuthenticated = false;
       _user = null;
+      _profilePersonalData = null;
       notifyListeners();
       rethrow;
     }
@@ -125,6 +143,7 @@ class AuthProvider with ChangeNotifier {
     try {
       await _authService.logout();
       _user = null;
+      _profilePersonalData = null;
       _isAuthenticated = false;
       _errorMessage = null;
     } catch (e) {

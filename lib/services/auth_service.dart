@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
 import '../models/user.dart';
+import '../models/document_submission.dart';
+import '../models/me_response.dart';
 import '../services/api_client.dart';
 import '../services/storage_service.dart';
+import '../utils/api_config.dart';
 import '../utils/auth_errors.dart';
 
 class AuthService {
@@ -270,16 +273,28 @@ class AuthService {
     }
   }
 
-  /// Get current authenticated user
-  Future<User> getCurrentUser() async {
+  /// Get current authenticated user + profile personalData (nullable)
+  Future<MeResponse> getMe() async {
     try {
-      final response = await _apiClient.get('/api/v1/auth/me');
+      final response = await _apiClient.get(ApiConfig.meEndpoint);
 
       if (response.statusCode == 200) {
         final data = response.data;
         if (data['success'] == true) {
           final userJson = data['data']['user'] as Map<String, dynamic>;
-          return User.fromJson(userJson);
+          final personalDataRaw = data['data']['personalData'];
+          PersonalData? personalData;
+
+          if (personalDataRaw is Map) {
+            personalData = PersonalData.fromJson(
+              Map<String, dynamic>.from(personalDataRaw),
+            );
+          }
+
+          return MeResponse(
+            user: User.fromJson(userJson),
+            personalData: personalData,
+          );
         }
       }
 
@@ -368,6 +383,12 @@ class AuthService {
         message: e.toString(),
       );
     }
+  }
+
+  /// Get current authenticated user
+  Future<User> getCurrentUser() async {
+    final me = await getMe();
+    return me.user;
   }
 
   /// Logout - clear tokens

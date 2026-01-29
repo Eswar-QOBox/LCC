@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,7 @@ class SubmissionProvider with ChangeNotifier {
   bool _isInitialized = false;
   static const String _draftKey = 'submission_draft';
   static const String _termsAcceptedKey = 'terms_accepted_draft';
+  static const int _requiredSalarySlipCount = SalarySlips.requiredSlipCount;
 
   DocumentSubmission get submission => _submission;
   bool get termsAccepted => _termsAccepted;
@@ -80,8 +82,24 @@ class SubmissionProvider with ChangeNotifier {
   void setSalarySlips(List<String> slips, {bool isPdf = false}) {
     _submission.salarySlips ??= SalarySlips(isPdf: isPdf);
     // Convert list of paths to SalarySlipItem list
-    _submission.salarySlips!.slipItems = slips.map((path) => SalarySlipItem(path: path, isPdf: isPdf)).toList();
-    _submission.salarySlips!.isPdf = isPdf;
+    _submission.salarySlips!.slipItems = slips
+        .map(
+          (path) => SalarySlipItem(
+            path: path,
+            isPdf: isPdf || path.toLowerCase().endsWith('.pdf'),
+          ),
+        )
+        .toList();
+    _submission.salarySlips!.isPdf =
+        _submission.salarySlips!.slipItems.any((i) => i.isPdf);
+    notifyListeners();
+  }
+
+  void setSalarySlipItems(List<SalarySlipItem> items) {
+    _submission.salarySlips ??= SalarySlips();
+    _submission.salarySlips!.slipItems = List<SalarySlipItem>.from(items);
+    _submission.salarySlips!.isPdf =
+        _submission.salarySlips!.slipItems.any((i) => i.isPdf);
     notifyListeners();
   }
 
@@ -91,6 +109,32 @@ class SubmissionProvider with ChangeNotifier {
       SalarySlipItem(path: path, slipDate: slipDate, isPdf: isPdf),
     );
     notifyListeners();
+  }
+
+  void setSalarySlipAt(int index, String path, {DateTime? slipDate, bool isPdf = false}) {
+    _submission.salarySlips ??= SalarySlips();
+    if (index < 0) return;
+
+    // Ensure we have enough "slots" up to [index].
+    while (_submission.salarySlips!.slipItems.length <= index) {
+      _submission.salarySlips!.slipItems.add(
+        SalarySlipItem(path: '', slipDate: null, isPdf: false),
+      );
+    }
+
+    if (index < _submission.salarySlips!.slipItems.length) {
+      _submission.salarySlips!.slipItems[index] = SalarySlipItem(
+        path: path,
+        slipDate: slipDate,
+        isPdf: isPdf,
+      );
+      _submission.salarySlips!.isPdf =
+          _submission.salarySlips!.slipItems.any((i) => i.isPdf);
+      notifyListeners();
+      return;
+    }
+
+    // Unreachable due to while loop above.
   }
 
   void updateSalarySlipDate(int index, DateTime? slipDate) {
@@ -106,10 +150,15 @@ class SubmissionProvider with ChangeNotifier {
     if (_submission.salarySlips != null && 
         index >= 0 && 
         index < _submission.salarySlips!.slipItems.length) {
-      _submission.salarySlips!.slipItems.removeAt(index);
-      if (_submission.salarySlips!.slipItems.isEmpty) {
-        _submission.salarySlips = null;
-      }
+      // Clear the slot instead of shifting other items.
+      final existingDate = _submission.salarySlips!.slipItems[index].slipDate;
+      _submission.salarySlips!.slipItems[index] = SalarySlipItem(
+        path: '',
+        slipDate: existingDate,
+        isPdf: false,
+      );
+      _submission.salarySlips!.isPdf =
+          _submission.salarySlips!.slipItems.any((i) => i.isPdf);
       notifyListeners();
     }
   }
@@ -124,18 +173,23 @@ class SubmissionProvider with ChangeNotifier {
   void setPersonalData(PersonalData data) {
     _submission.personalData = data;
     notifyListeners();
+    unawaited(saveDraft());
   }
 
   void updatePersonalDataField({
     String? fullName,
     DateTime? dateOfBirth,
     String? address,
+    bool? addressDifferentFromAadhaar,
+    String? currentResidenceAddress,
     String? mobile,
     String? email,
     String? employmentStatus,
     String? incomeDetails,
     String? panNo,
     String? aadhaarNumber,
+    String? fatherName,
+    String? motherName,
   }) {
     _submission.personalData ??= PersonalData();
     // Map legacy fields to new fields for backward compatibility
@@ -144,6 +198,13 @@ class SubmissionProvider with ChangeNotifier {
       _submission.personalData!.dateOfBirth = dateOfBirth;
     }
     if (address != null) _submission.personalData!.residenceAddress = address;
+    if (addressDifferentFromAadhaar != null) {
+      _submission.personalData!.addressDifferentFromAadhaar =
+          addressDifferentFromAadhaar;
+    }
+    if (currentResidenceAddress != null) {
+      _submission.personalData!.currentResidenceAddress = currentResidenceAddress;
+    }
     if (mobile != null) _submission.personalData!.mobileNumber = mobile;
     if (email != null) _submission.personalData!.personalEmailId = email;
     if (employmentStatus != null) {
@@ -154,7 +215,10 @@ class SubmissionProvider with ChangeNotifier {
     }
     if (panNo != null) _submission.personalData!.panNo = panNo;
     if (aadhaarNumber != null) _submission.personalData!.aadhaarNumber = aadhaarNumber;
+    if (fatherName != null) _submission.personalData!.fatherName = fatherName;
+    if (motherName != null) _submission.personalData!.motherName = motherName;
     notifyListeners();
+    unawaited(saveDraft());
   }
 
   // Submission
@@ -314,20 +378,33 @@ class SubmissionProvider with ChangeNotifier {
 
     // Validate Salary Slips
     if (_submission.salarySlips != null && _submission.salarySlips!.slipItems.isNotEmpty) {
-      final validSlipItems = <SalarySlipItem>[];
-      for (final slipItem in _submission.salarySlips!.slipItems) {
+      for (int i = 0; i < _submission.salarySlips!.slipItems.length; i++) {
+        final slipItem = _submission.salarySlips!.slipItems[i];
+        if (!slipItem.hasFile) continue;
         final file = io.File(slipItem.path);
-        if (await file.exists()) {
-          validSlipItems.add(slipItem);
-        } else {
+        if (!await file.exists()) {
           debugPrint('⚠️ Salary slip file not found: ${slipItem.path}');
+          _submission.salarySlips!.slipItems[i] = SalarySlipItem(
+            path: '',
+            slipDate: slipItem.slipDate,
+            isPdf: false,
+          );
           hasInvalidFiles = true;
         }
       }
-      _submission.salarySlips!.slipItems = validSlipItems;
-      // If no valid slips, clear the salary slips
-      if (_submission.salarySlips!.slipItems.isEmpty) {
+
+      // Ensure we always have a stable number of slots (helps UI keep cards stable).
+      while (_submission.salarySlips!.slipItems.length < _requiredSalarySlipCount) {
+        _submission.salarySlips!.slipItems.add(
+          SalarySlipItem(path: '', slipDate: null, isPdf: false),
+        );
+      }
+
+      if (_submission.salarySlips!.slipItems.every((i) => !i.hasFile)) {
         _submission.salarySlips = null;
+      } else {
+        _submission.salarySlips!.isPdf =
+            _submission.salarySlips!.slipItems.any((i) => i.isPdf);
       }
     }
 
@@ -402,6 +479,8 @@ class SubmissionProvider with ChangeNotifier {
               'personalEmailId': submission.personalData!.personalEmailId,
               'countryOfResidence': submission.personalData!.countryOfResidence,
               'residenceAddress': submission.personalData!.residenceAddress,
+              'addressDifferentFromAadhaar': submission.personalData!.addressDifferentFromAadhaar,
+              'currentResidenceAddress': submission.personalData!.currentResidenceAddress,
               'residenceType': submission.personalData!.residenceType,
               'residenceStability': submission.personalData!.residenceStability,
               'companyName': submission.personalData!.companyName,
@@ -498,6 +577,8 @@ class SubmissionProvider with ChangeNotifier {
         personalEmailId: personalData['personalEmailId'] as String?,
         countryOfResidence: personalData['countryOfResidence'] as String?,
         residenceAddress: personalData['residenceAddress'] as String?,
+        addressDifferentFromAadhaar: personalData['addressDifferentFromAadhaar'] as bool?,
+        currentResidenceAddress: personalData['currentResidenceAddress'] as String?,
         residenceType: personalData['residenceType'] as String?,
         residenceStability: personalData['residenceStability'] as String?,
         companyName: personalData['companyName'] as String?,

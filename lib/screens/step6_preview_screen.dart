@@ -346,6 +346,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           print('Preview: De-duplicated Salary Slips: ${effectiveSalarySlips.length} -> ${uniqueSlips.length}');
         }
 
+        // Preserve per-item PDF state (avoid marking all slips as PDF).
         submissionProvider.setSalarySlips(
           uniqueSlips,
           isPdf: salaryIsPdf,

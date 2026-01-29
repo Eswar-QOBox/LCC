@@ -1,0 +1,165 @@
+# Profile Details API (Settings Screen)
+
+This document defines the backend contract needed by the application team to render the **Settings → Profile Details** screen using **DB-backed** data.
+
+## Authentication
+
+- **Type**: Bearer JWT access token
+- **Header**: `Authorization: Bearer <access_token>`
+
+## Endpoint (implemented)
+
+### Get current user + profile details
+
+- **Method**: `GET`
+- **Path**: `/api/v1/auth/me`
+- **Auth**: Required
+
+#### Response envelope
+
+All responses follow the standard envelope:
+
+- `success`: boolean
+- `data`: object (on success)
+- `error`: object (on failure)
+- `meta`: object (`requestId`, `timestamp`)
+
+#### Success response (200)
+
+- `data.user`: existing user object (backward compatible)
+- `data.personalData`: **nullable** object containing profile details (PersonalData)
+
+Example:
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "b1e5c5c6-7f1e-4d3a-9e8b-6a2f4b2c8a10",
+      "email": "919876543210@phone.local",
+      "name": "User",
+      "role": "user",
+      "is_active": true,
+      "created_at": "2026-01-29T10:00:00Z",
+      "updated_at": "2026-01-29T10:00:00Z",
+      "last_login": "2026-01-29T10:05:00Z"
+    },
+    "personalData": {
+      "nameAsPerAadhaar": "John Doe",
+      "mobileNumber": "919876543210",
+      "personalEmailId": "john@example.com",
+      "dateOfBirth": "1995-01-01T00:00:00Z",
+      "panNo": "ABCDE1234F",
+      "residenceAddress": "123 Main Street, City",
+      "occupation": "Salaried"
+    }
+  },
+  "meta": {
+    "requestId": "123e4567-e89b-12d3-a456-426614174000",
+    "timestamp": "2026-01-29T10:06:00Z"
+  }
+}
+```
+
+#### Error responses
+
+- **401**: missing/invalid/expired token
+- **404**: authenticated but user not found
+- **500**: unexpected server error
+
+## `PersonalData` object (profile details)
+
+### Naming and types
+
+- **Field names**: camelCase (must match the app’s `PersonalData` model)
+- **Dates**: ISO-8601 datetime strings
+- **Optional fields**: may be `null` or omitted (backend currently may return `null` if no profile exists)
+
+### Fields displayed by the current Settings UI
+
+| Field | Type |
+|---|---|
+| `nameAsPerAadhaar` | string |
+| `mobileNumber` | string |
+| `personalEmailId` | string |
+| `dateOfBirth` | datetime string |
+| `panNo` | string |
+| `residenceAddress` | string |
+| `occupation` | string |
+
+### Full supported field list
+
+#### Basic Information
+
+| Field | Type |
+|---|---|
+| `nameAsPerAadhaar` | string |
+| `dateOfBirth` | datetime string |
+| `panNo` | string |
+| `aadhaarNumber` | string |
+| `mobileNumber` | string |
+| `personalEmailId` | string |
+
+#### Residence Information
+
+| Field | Type |
+|---|---|
+| `countryOfResidence` | string |
+| `residenceAddress` | string |
+| `residenceType` | string |
+| `residenceStability` | string |
+
+#### Company Information
+
+| Field | Type |
+|---|---|
+| `companyName` | string |
+| `companyAddress` | string |
+
+#### Personal Details
+
+| Field | Type |
+|---|---|
+| `nationality` | string |
+| `countryOfBirth` | string |
+| `occupation` | string |
+| `educationalQualification` | string |
+| `workType` | string |
+| `industry` | string |
+| `annualIncome` | string |
+| `totalWorkExperience` | string |
+| `currentCompanyExperience` | string |
+| `loanAmount` | string |
+| `loanTenure` | string |
+| `loanAmountTenure` | string |
+| `monthlyIncome` | string |
+| `currentEmi` | string |
+| `existingLoans` | string |
+| `creditScore` | string |
+
+#### Family Information
+
+| Field | Type |
+|---|---|
+| `maritalStatus` | string |
+| `spouseName` | string |
+| `fatherName` | string |
+| `motherName` | string |
+
+#### Reference Details
+
+| Field | Type |
+|---|---|
+| `reference1Name` | string |
+| `reference1Address` | string |
+| `reference1Contact` | string |
+| `reference2Name` | string |
+| `reference2Address` | string |
+| `reference2Contact` | string |
+
+## Notes (backend source of truth)
+
+- **Source of truth**: DB (currently derived from the most recent loan application that contains `step5_personal_data`)
+- **Behavior when missing**: `personalData` is returned as `null`
+

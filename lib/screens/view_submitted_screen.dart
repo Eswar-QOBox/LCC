@@ -197,7 +197,7 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     _dataRow(
                       'Salary Slips',
                       submission.salarySlips?.isComplete == true
-                          ? '${submission.salarySlips!.slipItems.length} slip(s)'
+                          ? '${submission.salarySlips!.uploadedCount} slip(s)'
                           : '—',
                     ),
                     const SizedBox(height: 24),

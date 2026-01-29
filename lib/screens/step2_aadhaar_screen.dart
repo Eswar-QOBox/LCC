@@ -20,6 +20,7 @@ import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 import 'aadhaar_grid_capture_screen.dart';
+import '../utils/local_file_persist.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
   const Step2AadhaarScreen({super.key, this.fromPreview = false});
@@ -62,6 +63,27 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   bool _frontInternalValid = true;
   bool _backInternalValid = true;
 
+  // OCR completeness flags (used to enforce "must extract")
+  bool _frontOcrComplete = false;
+  bool _backOcrComplete = false;
+  String? _frontOcrIssue;
+  String? _backOcrIssue;
+
+  void _syncOcrFlagsFromProvider() {
+    final data = context.read<SubmissionProvider>().submission.personalData;
+    if (data == null) return;
+    final hasName = (data.nameAsPerAadhaar ?? '').trim().isNotEmpty;
+    final hasAadhaar = (data.aadhaarNumber ?? '').trim().isNotEmpty;
+    final hasDob = data.dateOfBirth != null;
+    final hasAddress = (data.residenceAddress ?? '').trim().isNotEmpty;
+
+    _frontOcrComplete = hasName && hasAadhaar && hasDob;
+    _backOcrComplete = hasAddress;
+  }
+
+  // Address proof flow: if true, user says their current address differs from Aadhaar address.
+  bool _addressDifferentFromAadhaar = false;
+
   bool _isValidImageBytes(Uint8List bytes) {
     if (bytes.length < 4) return false;
     // Check for common image headers
@@ -101,7 +123,13 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         if (path.isNotEmpty && mounted) {
           // Apply as front if missing, else back
           final isFront = _frontPath == null || _frontPath!.isEmpty;
-          await _applySideImage(path, isFront: isFront);
+          final storedPath = await persistLocalPathIfNeeded(
+            path,
+            preferredExtension: 'jpg',
+            subdir: 'lcc_aadhaar',
+            prefix: isFront ? 'aadhaar_front' : 'aadhaar_back',
+          );
+          await _applySideImage(storedPath, isFront: isFront);
         }
       } else if (response.exception != null) {
         debugPrint('[Aadhaar] retrieveLostData exception: ${response.exception}');
@@ -135,6 +163,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       final backIsPdf = stepData['backIsPdf'] as bool? ?? false;
       final frontPdfPassword = stepData['frontPdfPassword'] as String?;
       final backPdfPassword = stepData['backPdfPassword'] as String?;
+      final addressDifferentFromAadhaar = stepData['addressDifferentFromAadhaar'] as bool? ?? false;
+      final frontAadhaarNumber = stepData['frontAadhaarNumber'] as String?;
+      final backAadhaarNumber = stepData['backAadhaarNumber'] as String?;
+      final aadhaarName = stepData['aadhaarName'] as String?;
+      final aadhaarFrontRawText = stepData['aadhaarFrontRawText'] as String?;
 
       // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
@@ -188,6 +221,33 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         context
             .read<SubmissionProvider>()
             .setAadhaarBack(effectiveBack, isPdf: backIsPdf);
+      }
+
+      // Load address toggle state (for Step 5 conditional field)
+      if (mounted) {
+        setState(() {
+          _addressDifferentFromAadhaar = addressDifferentFromAadhaar;
+          _frontAadhaarNumber = frontAadhaarNumber;
+          _backAadhaarNumber = backAadhaarNumber;
+          _aadhaarName = aadhaarName;
+          _aadhaarFrontRawText = aadhaarFrontRawText;
+          _syncOcrFlagsFromProvider();
+        });
+        final provider = context.read<SubmissionProvider>();
+        provider.updatePersonalDataField(
+          addressDifferentFromAadhaar: addressDifferentFromAadhaar,
+        );
+        if (frontAadhaarNumber != null && frontAadhaarNumber.trim().isNotEmpty) {
+          provider.updatePersonalDataField(aadhaarNumber: frontAadhaarNumber);
+        }
+        if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
+          provider.updatePersonalDataField(fullName: aadhaarName);
+        }
+
+        // If personal data already has the extracted values, mark OCR as complete.
+        setState(() {
+          _syncOcrFlagsFromProvider();
+        });
       }
       
       // Fetch front image if network URL
@@ -262,6 +322,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _aadhaarFrontRawText = null;
       _frontInternalValid = true;
       _backInternalValid = true;
+      _addressDifferentFromAadhaar = false;
     });
     // Clear Aadhaar data from provider by resetting to empty state
     // The provider will be updated when user uploads new files
@@ -326,7 +387,19 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         sourcePath: path,
         compressQuality: 90,
         uiSettings: [
-          AndroidUiSettings(toolbarTitle: 'Crop Aadhaar'),
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Aadhaar',
+            toolbarColor: AppTheme.primaryColor,
+            toolbarWidgetColor: Colors.white,
+            statusBarColor: AppTheme.primaryColor,
+            activeControlsWidgetColor: AppTheme.primaryColor,
+            hideBottomControls: false,
+            showCropGrid: true,
+            cropGridStrokeWidth: 2,
+            cropFrameStrokeWidth: 3,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
           IOSUiSettings(title: 'Crop Aadhaar'),
         ],
       );
@@ -389,7 +462,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         debugPrint('[Aadhaar] _captureFront pickImage returned: image=${image != null} path=${image?.path} mounted=$mounted');
         if (image != null && mounted) {
           final path = await _cropImage(image.path);
-          if (path != null && mounted) await _applySideImage(path, isFront: true);
+          if (path != null && mounted) {
+            final storedPath = await persistLocalPathIfNeeded(
+              path,
+              preferredExtension: 'jpg',
+              subdir: 'lcc_aadhaar',
+              prefix: 'aadhaar_front',
+            );
+            if (mounted) await _applySideImage(storedPath, isFront: true);
+          }
         }
         return;
       }
@@ -403,7 +484,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       debugPrint('[Aadhaar] _captureFront AadhaarGridCaptureScreen returned: result=${result != null} path=${result?.path} mounted=$mounted');
       if (result != null && mounted) {
         final path = await _cropImage(result.path);
-        if (path != null && mounted) await _applySideImage(path, isFront: true);
+        if (path != null && mounted) {
+          final storedPath = await persistLocalPathIfNeeded(
+            path,
+            preferredExtension: 'jpg',
+            subdir: 'lcc_aadhaar',
+            prefix: 'aadhaar_front',
+          );
+          if (mounted) await _applySideImage(storedPath, isFront: true);
+        }
       }
     } catch (e, st) {
       debugPrint('[Aadhaar] _captureFront CAUGHT: $e');
@@ -415,7 +504,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
       final path = await _cropImage(image.path);
-      if (path != null && mounted) await _applySideImage(path, isFront: true);
+      if (path != null && mounted) {
+        final storedPath = await persistLocalPathIfNeeded(
+          path,
+          preferredExtension: 'jpg',
+          subdir: 'lcc_aadhaar',
+          prefix: 'aadhaar_front',
+        );
+        if (mounted) await _applySideImage(storedPath, isFront: true);
+      }
     }
   }
 
@@ -431,7 +528,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         debugPrint('[Aadhaar] _captureBack pickImage returned: image=${image != null} path=${image?.path} mounted=$mounted');
         if (image != null && mounted) {
           final path = await _cropImage(image.path);
-          if (path != null && mounted) await _applySideImage(path, isFront: false);
+          if (path != null && mounted) {
+            final storedPath = await persistLocalPathIfNeeded(
+              path,
+              preferredExtension: 'jpg',
+              subdir: 'lcc_aadhaar',
+              prefix: 'aadhaar_back',
+            );
+            if (mounted) await _applySideImage(storedPath, isFront: false);
+          }
         }
         return;
       }
@@ -444,7 +549,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       debugPrint('[Aadhaar] _captureBack AadhaarGridCaptureScreen returned: result=${result != null} path=${result?.path} mounted=$mounted');
       if (result != null && mounted) {
         final path = await _cropImage(result.path);
-        if (path != null && mounted) await _applySideImage(path, isFront: false);
+        if (path != null && mounted) {
+          final storedPath = await persistLocalPathIfNeeded(
+            path,
+            preferredExtension: 'jpg',
+            subdir: 'lcc_aadhaar',
+            prefix: 'aadhaar_back',
+          );
+          if (mounted) await _applySideImage(storedPath, isFront: false);
+        }
       }
     } catch (e, st) {
       debugPrint('[Aadhaar] _captureBack CAUGHT: $e');
@@ -456,7 +569,15 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
       final path = await _cropImage(image.path);
-      if (path != null && mounted) await _applySideImage(path, isFront: false);
+      if (path != null && mounted) {
+        final storedPath = await persistLocalPathIfNeeded(
+          path,
+          preferredExtension: 'jpg',
+          subdir: 'lcc_aadhaar',
+          prefix: 'aadhaar_back',
+        );
+        if (mounted) await _applySideImage(storedPath, isFront: false);
+      }
     }
   }
 
@@ -534,6 +655,23 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               debugPrint('Error parsing DOB: $e');
             }
           }
+
+          final missing = <String>[];
+          if (!result.hasAadhaarNumber) missing.add('Aadhaar Number');
+          if (!result.hasName) missing.add('Name');
+          if (!result.hasDateOfBirth) missing.add('DOB');
+          setState(() {
+            _frontOcrComplete = missing.isEmpty;
+            _frontOcrIssue =
+                missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
+          });
+          if (missing.isNotEmpty && mounted) {
+            PremiumToast.showWarning(
+              context,
+              'Aadhaar front OCR incomplete: ${missing.join(', ')}',
+              duration: const Duration(seconds: 3),
+            );
+          }
         } else {
           // Back side: Show address, auto-fill address
           if (result.hasAddress) {
@@ -545,6 +683,21 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           // Also store the back side Aadhaar number for cross-validation (extracted above)
           if (result.hasAadhaarNumber) {
             extractedData.add('Aadhaar verified: ${result.aadhaarNumber}');
+          }
+
+          final missing = <String>[];
+          if (!result.hasAddress) missing.add('Address');
+          setState(() {
+            _backOcrComplete = missing.isEmpty;
+            _backOcrIssue =
+                missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
+          });
+          if (missing.isNotEmpty && mounted) {
+            PremiumToast.showWarning(
+              context,
+              'Aadhaar back OCR incomplete: ${missing.join(', ')}',
+              duration: const Duration(seconds: 3),
+            );
           }
         }
 
@@ -567,12 +720,29 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           result.errorMessage ?? 'Could not extract text from image',
           duration: const Duration(seconds: 3),
         );
+        setState(() {
+          if (isFront) {
+            _frontOcrComplete = false;
+            _frontOcrIssue = result.errorMessage ?? 'OCR failed';
+          } else {
+            _backOcrComplete = false;
+            _backOcrIssue = result.errorMessage ?? 'OCR failed';
+          }
+        });
       }
     } catch (e, st) {
       if (mounted) {
         debugPrint('[Aadhaar] _performAadhaarOCR CAUGHT: $e');
         debugPrint('[Aadhaar] _performAadhaarOCR STACK: $st');
-        // Don't show error toast - OCR is optional feature
+        setState(() {
+          if (isFront) {
+            _frontOcrComplete = false;
+            _frontOcrIssue = 'OCR failed';
+          } else {
+            _backOcrComplete = false;
+            _backOcrIssue = 'OCR failed';
+          }
+        });
       }
     }
   }
@@ -602,7 +772,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           return;
         }
-        path = result.files.single.path!;
+        path = await persistLocalPathIfNeeded(
+          result.files.single.path!,
+          preferredExtension: 'pdf',
+          subdir: 'lcc_aadhaar',
+          prefix: 'aadhaar_pdf',
+        );
       }
       
       if (mounted) {
@@ -614,10 +789,17 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           _backIsPdf = true;
           _frontRotation = 0.0;
           _backRotation = 0.0;
+          _frontOcrComplete = false;
+          _backOcrComplete = false;
         });
         final provider = context.read<SubmissionProvider>();
         provider.setAadhaarFront(path, isPdf: true);
         provider.setAadhaarBack(path, isPdf: true);
+        PremiumToast.showInfo(
+          context,
+          'For best accuracy, please upload Aadhaar photos (PDF OCR not supported).',
+          duration: const Duration(seconds: 3),
+        );
         _showPasswordDialogIfNeeded('both');
       }
     }
@@ -739,6 +921,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'backAadhaarNumber': _backAadhaarNumber,
           'aadhaarName': _aadhaarName,
           'aadhaarFrontRawText': _aadhaarFrontRawText,
+          'addressDifferentFromAadhaar': _addressDifferentFromAadhaar,
           '_internalValidation': {
             'frontDocumentValid': _frontInternalValid,
             'backDocumentValid': _backInternalValid,
@@ -874,6 +1057,19 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       );
       return;
     }
+
+    if (!_frontOcrComplete || !_backOcrComplete) {
+      final issues = <String>[];
+      if (!_frontOcrComplete) issues.add('Front: ${_frontOcrIssue ?? 'missing required fields'}');
+      if (!_backOcrComplete) issues.add('Back: ${_backOcrIssue ?? 'missing required fields'}');
+      _showValidationErrorDialog(
+        title: 'Aadhaar OCR Incomplete',
+        message: 'Please fix Aadhaar OCR before continuing.\n\n${issues.join('\n')}',
+        instruction: 'Re-capture / re-upload with better lighting and crop tightly.',
+        icon: Icons.document_scanner_outlined,
+      );
+      return;
+    }
     
     // Strict validation: Check if Aadhaar numbers from front and back match
     if (_frontAadhaarNumber != null && _backAadhaarNumber != null) {
@@ -939,6 +1135,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       
                       // Back Side Section
                       _buildBackSideSection(context),
+
+                      // Address proof toggle (shown after back side section)
+                      const SizedBox(height: 16),
+                      _buildAddressDifferentToggle(context),
                       
                       // Single Switch to PDF Button (only show if not in PDF mode)
                       if (!(_frontIsPdf && _backIsPdf && _frontPath != null)) ...[
@@ -1446,6 +1646,103 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     );
   }
 
+  Widget _buildAddressDifferentToggle(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.primaryColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.home_work_outlined,
+              color: AppTheme.primaryColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Address different from Aadhaar?',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _addressDifferentFromAadhaar
+                      ? 'You will be asked to enter your current/address-proof address in Personal Details.'
+                      : 'If your current address is different, turn this on to enter it later.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: const Color(0xFF64748B),
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            value: _addressDifferentFromAadhaar,
+            onChanged: _isSaving
+                ? null
+                : (value) {
+                    setState(() {
+                      _addressDifferentFromAadhaar = value;
+                    });
+                    final provider = context.read<SubmissionProvider>();
+                    if (value) {
+                      provider.updatePersonalDataField(
+                        addressDifferentFromAadhaar: true,
+                      );
+                    } else {
+                      // If user switches back to "same as Aadhaar", clear the separate address field.
+                      provider.updatePersonalDataField(
+                        addressDifferentFromAadhaar: false,
+                        currentResidenceAddress: '',
+                      );
+                    }
+                    if (!value) {
+                      PremiumToast.showInfo(
+                        context,
+                        'Using Aadhaar address as current address.',
+                        duration: const Duration(seconds: 2),
+                      );
+                    } else {
+                      PremiumToast.showInfo(
+                        context,
+                        'You can enter current address in Personal Details.',
+                        duration: const Duration(seconds: 2),
+                      );
+                    }
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildImagePreview(BuildContext context, String path, {required bool isFront}) {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -1492,25 +1789,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                     ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context, String label) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.grey.shade200,
-            width: 2,
-          ),
-        ),
-        child: const Center(
-          child: Icon(Icons.add_photo_alternate, size: 48, color: Colors.grey),
         ),
       ),
     );

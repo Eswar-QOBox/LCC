@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,7 @@ import '../widgets/slide_to_confirm.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
+import '../services/storage_service.dart';
 import '../models/loan_application.dart';
 import '../utils/app_theme.dart';
 
@@ -312,34 +314,50 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   if (!mounted) return;
                                   setState(() => _isCreatingApplication = true);
                                   try {
-                                    // Before creating a new application, check existing ones.
-                                    final existingApps =
-                                        await _applicationService.getApplications(
-                                      status: 'all',
-                                      limit: 50,
-                                    );
+                                    // Testing-only: optionally bypass the "only one in-progress application" rule.
+                                    var allowMultipleApplications = false;
+                                    if (!kReleaseMode) {
+                                      try {
+                                        final storage = StorageService.instance;
+                                        allowMultipleApplications = await storage
+                                            .getAllowMultipleApplicationsTesting();
+                                      } catch (_) {
+                                        allowMultipleApplications = false;
+                                      }
+                                    }
 
-                                    final hasApproved = existingApps
-                                        .any((app) => app.isApproved);
+                                    if (!allowMultipleApplications) {
+                                      // Before creating a new application, check existing ones.
+                                      final existingApps =
+                                          await _applicationService.getApplications(
+                                        status: 'all',
+                                        limit: 50,
+                                      );
 
-                                    // Any submitted/in-progress applications that are NOT approved yet
-                                    final blockingApps = existingApps.where(
-                                      (app) =>
-                                          app.isSubmitted ||
-                                          app.isInProgress ||
-                                          app.isPaused,
-                                    );
+                                      final hasApproved = existingApps
+                                          .any((app) => app.isApproved);
 
-                                    if (!hasApproved &&
-                                        blockingApps.isNotEmpty) {
-                                      // Show \"talk to our agent\" style dialog and do NOT create a new app
-                                      final latest = List<LoanApplication>.from(
-                                              blockingApps)
-                                          ..sort((a, b) => b.updatedAt
-                                              .compareTo(a.updatedAt));
-                                      _showInProgressDialog(
-                                          context, latest.first);
-                                      return;
+                                      // Any submitted/in-progress applications that are NOT approved yet
+                                      final blockingApps = existingApps.where(
+                                        (app) =>
+                                            app.isSubmitted ||
+                                            app.isInProgress ||
+                                            app.isPaused,
+                                      );
+
+                                      if (!hasApproved &&
+                                          blockingApps.isNotEmpty) {
+                                        // Show "talk to our agent" style dialog and do NOT create a new app
+                                        final latest =
+                                            List<LoanApplication>.from(blockingApps)
+                                              ..sort(
+                                                (a, b) => b.updatedAt
+                                                    .compareTo(a.updatedAt),
+                                              );
+                                        _showInProgressDialog(
+                                            context, latest.first);
+                                        return;
+                                      }
                                     }
 
                                     // Clear old draft data before starting new submission

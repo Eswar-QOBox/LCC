@@ -553,9 +553,12 @@ class PdfGenerationService {
               ? '${submission.bankStatement!.pages.length} page${submission.bankStatement!.pages.length == 1 ? '' : 's'} uploaded' 
               : 'Not uploaded'),
             _buildSimpleDocRow('Bank Statement Format', submission.bankStatement?.isPdf == true ? 'PDF' : 'Image'),
-            _buildSimpleDocRow('Salary Slips', submission.salarySlips?.slipItems.isNotEmpty == true 
-              ? '${submission.salarySlips!.slipItems.length} slip${submission.salarySlips!.slipItems.length == 1 ? '' : 's'} uploaded' 
-              : 'Not uploaded'),
+            _buildSimpleDocRow(
+              'Salary Slips',
+              (submission.salarySlips?.uploadedCount ?? 0) > 0
+                  ? '${submission.salarySlips!.uploadedCount} slip${submission.salarySlips!.uploadedCount == 1 ? '' : 's'} uploaded'
+                  : 'Not uploaded',
+            ),
             _buildSimpleDocRow('Salary Slips Format', submission.salarySlips?.isPdf == true ? 'PDF' : 'Image'),
             
             pw.SizedBox(height: 30),

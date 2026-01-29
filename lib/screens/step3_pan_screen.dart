@@ -20,6 +20,7 @@ import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 import 'pan_horizontal_card_capture_screen.dart';
+import '../utils/local_file_persist.dart';
 
 class Step3PanScreen extends StatefulWidget {
   const Step3PanScreen({super.key});
@@ -43,6 +44,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   // OCR extracted PAN number
   String? _extractedPanNumber;
   String? _extractedName;
+  String? _extractedFatherName;
   
   // Aadhaar name loaded from previous step (for cross-validation)
   String? _aadhaarName;
@@ -52,6 +54,202 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   // Internal validation flag (secret - not shown to user)
   bool _internalDocumentValid = true;
 
+  // OCR completeness flag (used to enforce "must extract")
+  bool _panOcrComplete = false;
+  String? _panOcrIssue;
+
+  String _normalizeForNameCompare(String input) {
+    return input
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  List<String> _nameTokens(String input) {
+    final n = _normalizeForNameCompare(input);
+    if (n.isEmpty) return const [];
+    return n.split(' ').where((w) => w.isNotEmpty).toList();
+  }
+
+  static const Set<String> _commonSurnameLikeTokens = {
+    'KUMAR',
+    'KUMARI',
+    'SINGH',
+    'DEVI',
+    'RAO',
+    'REDDY',
+    'SHARMA',
+    'PATEL',
+    'GUPTA',
+    'YADAV',
+    'DAS',
+    'KHAN',
+    'BIBI',
+    'BEGUM',
+    'LAL',
+    'CHAND',
+    'PRASAD',
+    'NAIR',
+    'MENON',
+    'PILLAI',
+    'IYER',
+    'JAIN',
+  };
+
+  int _editDistance(String a, String b) {
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+    final m = a.length;
+    final n = b.length;
+    final prev = List<int>.generate(n + 1, (j) => j);
+    final curr = List<int>.filled(n + 1, 0);
+    for (int i = 1; i <= m; i++) {
+      curr[0] = i;
+      for (int j = 1; j <= n; j++) {
+        final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+        final del = prev[j] + 1;
+        final ins = curr[j - 1] + 1;
+        final sub = prev[j - 1] + cost;
+        curr[j] = del < ins ? (del < sub ? del : sub) : (ins < sub ? ins : sub);
+      }
+      for (int j = 0; j <= n; j++) {
+        prev[j] = curr[j];
+      }
+    }
+    return prev[n];
+  }
+
+  bool _tokenMatches(String a, String b) {
+    // exact
+    if (a == b) return true;
+    // initial match: "M" vs "MARKAPURAM"
+    if (a.length == 1 && b.startsWith(a)) return true;
+    if (b.length == 1 && a.startsWith(b)) return true;
+    // prefix match for truncated words: "MARKAP" vs "MARKAPURAM"
+    if (a.length >= 3 && b.length >= 3) {
+      if (a.startsWith(b) || b.startsWith(a)) return true;
+    }
+    // minor OCR typo tolerance for longer tokens
+    if (a.length >= 5 && b.length >= 5) {
+      final d = _editDistance(a, b);
+      if (d <= 1) return true;
+    }
+    return false;
+  }
+
+  ({int matches, double ratio, Set<String> matchedLongTokens, bool initialMatched, bool aadhaarHasInitial, bool candidateHasInitial})
+      _nameMatchQuality(String aadhaarName, String candidate) {
+    final aToks = _nameTokens(aadhaarName);
+    final cToks = _nameTokens(candidate);
+    if (aToks.isEmpty || cToks.isEmpty) {
+      return (
+        matches: 0,
+        ratio: 0,
+        matchedLongTokens: <String>{},
+        initialMatched: false,
+        aadhaarHasInitial: false,
+        candidateHasInitial: false,
+      );
+    }
+
+    final used = List<bool>.filled(cToks.length, false);
+    int matchCount = 0;
+    bool initialMatched = false;
+    final matchedLongTokens = <String>{};
+    final aadhaarHasInitial = aToks.any((t) => t.length == 1);
+    final candidateHasInitial = cToks.any((t) => t.length == 1);
+    for (final a in aToks) {
+      for (int j = 0; j < cToks.length; j++) {
+        if (used[j]) continue;
+        if (_tokenMatches(a, cToks[j])) {
+          used[j] = true;
+          matchCount++;
+          if (a.length == 1 || cToks[j].length == 1) {
+            initialMatched = true;
+          }
+          final longToken = (a.length >= 3) ? a : (cToks[j].length >= 3 ? cToks[j] : null);
+          if (longToken != null) matchedLongTokens.add(longToken);
+          break;
+        }
+      }
+    }
+
+    final denom = aToks.length > cToks.length ? aToks.length : cToks.length;
+    final ratio = denom == 0 ? 0.0 : (matchCount / denom);
+    return (
+      matches: matchCount,
+      ratio: ratio,
+      matchedLongTokens: matchedLongTokens,
+      initialMatched: initialMatched,
+      aadhaarHasInitial: aadhaarHasInitial,
+      candidateHasInitial: candidateHasInitial,
+    );
+  }
+
+  bool _isAadhaarPanNameMatch(String aadhaarName, String panName) {
+    // Adaptive strictness:
+    // - For longer names (>=3 tokens), require >=2 matches to avoid false positives.
+    // - For short names (1-2 tokens), allow >=1 *strong* match (non-common token),
+    //   and require initials to match only when BOTH sides have initials.
+    final q = _nameMatchQuality(aadhaarName, panName);
+    final aLen = _nameTokens(aadhaarName).length;
+    final pLen = _nameTokens(panName).length;
+    final maxLen = aLen > pLen ? aLen : pLen;
+
+    final hasStrongToken = q.matchedLongTokens.any((t) =>
+        t.length >= 4 && !_commonSurnameLikeTokens.contains(t));
+    if (!hasStrongToken) return false;
+
+    if (maxLen >= 3) {
+      return q.matches >= 2 && q.ratio >= 0.5;
+    }
+
+    // maxLen 1 or 2
+    if (q.matches < 1 || q.ratio < 0.5) return false;
+
+    // If both contain initials, enforce initial match; otherwise allow (OCR may drop the initial).
+    if (q.aadhaarHasInitial && q.candidateHasInitial && !q.initialMatched) {
+      return false;
+    }
+    return true;
+  }
+
+  /// PAN OCR can sometimes swap "Name" and "Father's Name" depending on how labels were read.
+  /// If Aadhaar name matches the PAN fatherName more than panName, swap them.
+  void _maybeSwapPanNameAndFatherNameUsingAadhaar() {
+    final aadhaar = _aadhaarName;
+    final panName = _extractedName;
+    final father = _extractedFatherName;
+    if (aadhaar == null ||
+        aadhaar.trim().isEmpty ||
+        panName == null ||
+        panName.trim().isEmpty ||
+        father == null ||
+        father.trim().isEmpty) {
+      return;
+    }
+
+    final qName = _nameMatchQuality(aadhaar, panName);
+    final qFather = _nameMatchQuality(aadhaar, father);
+
+    // Prefer the candidate with more matches; if tie, prefer higher ratio.
+    final fatherIsBetter = (qFather.matches > qName.matches) ||
+        (qFather.matches == qName.matches && qFather.ratio > qName.ratio);
+
+    if (fatherIsBetter) {
+      final tmp = _extractedName;
+      _extractedName = _extractedFatherName;
+      _extractedFatherName = tmp;
+      debugPrint(
+        'PAN: swapped extractedName/extractedFatherName based on Aadhaar match '
+        '(name=${qName.matches}/${qName.ratio.toStringAsFixed(2)}, '
+        'father=${qFather.matches}/${qFather.ratio.toStringAsFixed(2)})',
+      );
+    }
+  }
+
   bool _isValidImageBytes(Uint8List bytes) {
     if (bytes.length < 4) return false;
     // Check for common image headers
@@ -60,6 +258,35 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true; // GIF
     if (bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return true; // WebP
     return false;
+  }
+
+  Future<String> _cropPanImageIfPossible(String path) async {
+    if (kIsWeb) return path;
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: path,
+        compressQuality: 90,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop PAN',
+            toolbarColor: AppTheme.primaryColor,
+            toolbarWidgetColor: Colors.white,
+            statusBarColor: AppTheme.primaryColor,
+            activeControlsWidgetColor: AppTheme.primaryColor,
+            hideBottomControls: false,
+            showCropGrid: true,
+            cropGridStrokeWidth: 2,
+            cropFrameStrokeWidth: 3,
+            initAspectRatio: CropAspectRatioPreset.original,
+            lockAspectRatio: false,
+          ),
+          IOSUiSettings(title: 'Crop PAN'),
+        ],
+      );
+      return cropped?.path ?? path;
+    } catch (_) {
+      return path;
+    }
   }
 
   @override
@@ -96,6 +323,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       final stepData = application.step3Pan as Map<String, dynamic>;
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final frontPath = stepData['frontPath'] as String?;
+      final extractedPanNumber = stepData['extractedPanNumber'] as String?;
+      final extractedName = stepData['extractedName'] as String?;
+      final extractedFatherName = stepData['extractedFatherName'] as String?;
       
       // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
@@ -128,9 +358,28 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _frontPath = effectiveFront;
           _isPdf = stepData['isPdf'] as bool? ?? false;
           _pdfPassword = stepData['pdfPassword'] as String?;
+          _extractedPanNumber = extractedPanNumber;
+          _extractedName = extractedName;
+          _extractedFatherName = extractedFatherName;
+          _panOcrComplete =
+              (extractedPanNumber ?? '').trim().isNotEmpty &&
+              (extractedName ?? '').trim().isNotEmpty &&
+              (extractedFatherName ?? '').trim().isNotEmpty;
         });
         // Also update SubmissionProvider
         context.read<SubmissionProvider>().setPanFront(effectiveFront, isPdf: stepData['isPdf'] as bool? ?? false);
+
+        // Keep Personal Details in sync whenever PAN is uploaded/loaded.
+        final provider = context.read<SubmissionProvider>();
+        if (extractedPanNumber != null && extractedPanNumber.trim().isNotEmpty) {
+          provider.updatePersonalDataField(panNo: extractedPanNumber);
+        }
+        if (extractedName != null && extractedName.trim().isNotEmpty) {
+          provider.updatePersonalDataField(fullName: extractedName);
+        }
+        if (extractedFatherName != null && extractedFatherName.trim().isNotEmpty) {
+          provider.updatePersonalDataField(fatherName: extractedFatherName);
+        }
 
         // Fetch image if network URL and not PDF
         if (effectiveFront.startsWith('http') && accessToken != null && (!_isPdf)) {
@@ -175,6 +424,24 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         debugPrint('Loaded Aadhaar front raw text for PAN name validation (length: ${_aadhaarFrontRawText!.length})');
       }
     }
+
+    // Fallback: if step2 isn't saved yet, still validate using provider auto-filled name.
+    _refreshAadhaarValidationContextFromProvider();
+
+    // If PAN names were loaded from backend, fix potential swap using Aadhaar.
+    if (mounted) {
+      setState(() {
+        _maybeSwapPanNameAndFatherNameUsingAadhaar();
+      });
+      // Ensure Personal Details reflects the corrected fields.
+      final provider = context.read<SubmissionProvider>();
+      if ((_extractedName ?? '').trim().isNotEmpty) {
+        provider.updatePersonalDataField(fullName: _extractedName);
+      }
+      if ((_extractedFatherName ?? '').trim().isNotEmpty) {
+        provider.updatePersonalDataField(fatherName: _extractedFatherName);
+      }
+    }
   }
 
   /// Saves draft to DB. Returns true only if save succeeded; then safe to go to next step.
@@ -211,6 +478,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           'savedAt': DateTime.now().toIso8601String(),
           'extractedPanNumber': _extractedPanNumber,
           'extractedName': _extractedName,
+          'extractedFatherName': _extractedFatherName,
           'aadhaarNameUsedForValidation': _aadhaarName,
           '_internalValidation': {
             'documentValid': _internalDocumentValid,
@@ -246,14 +514,21 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         requestFullMetadata: false,
       );
       if (image != null && mounted) {
+        final croppedPath = await _cropPanImageIfPossible(image.path);
+        final storedPath = await persistLocalPathIfNeeded(
+          croppedPath,
+          preferredExtension: 'jpg',
+          subdir: 'lcc_pan',
+          prefix: 'pan',
+        );
         setState(() {
-          _frontPath = image.path;
+          _frontPath = storedPath;
           _frontBytes = null;
           _isPdf = false;
           _rotation = 0.0;
         });
-        context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
-        await _performPanOCR(image.path);
+        context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+        await _performPanOCR(storedPath);
       }
       return;
     }
@@ -264,45 +539,44 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       ),
     );
     if (result != null && mounted) {
+      final croppedPath = await _cropPanImageIfPossible(result.path);
+      final storedPath = await persistLocalPathIfNeeded(
+        croppedPath,
+        preferredExtension: 'jpg',
+        subdir: 'lcc_pan',
+        prefix: 'pan',
+      );
       setState(() {
-        _frontPath = result.path;
+        _frontPath = storedPath;
         _frontBytes = null;
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(result.path, isPdf: false);
-      await _performPanOCR(result.path);
+      context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+      await _performPanOCR(storedPath);
     }
   }
 
   Future<void> _selectFromGallery() async {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
-      String workingPath = image.path;
-      if (!kIsWeb) {
-        final cropped = await ImageCropper().cropImage(
-          sourcePath: image.path,
-          compressQuality: 90,
-          uiSettings: [
-            AndroidUiSettings(toolbarTitle: 'Crop PAN'),
-            IOSUiSettings(title: 'Crop PAN'),
-          ],
-        );
-        final croppedPath = cropped?.path;
-        if (croppedPath != null && croppedPath.isNotEmpty) {
-          workingPath = croppedPath;
-        }
-      }
+      final croppedPath = await _cropPanImageIfPossible(image.path);
+      final storedPath = await persistLocalPathIfNeeded(
+        croppedPath,
+        preferredExtension: 'jpg',
+        subdir: 'lcc_pan',
+        prefix: 'pan',
+      );
 
       setState(() {
-        _frontPath = workingPath;
+        _frontPath = storedPath;
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(workingPath, isPdf: false);
+      context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
       
       // Perform OCR on PAN card
-      await _performPanOCR(workingPath);
+      await _performPanOCR(storedPath);
     }
   }
 
@@ -331,18 +605,51 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         // Store extracted data and internal validation flag
         _extractedPanNumber = result.panNumber;
         _extractedName = result.name;
+        _extractedFatherName = result.fatherName;
         _internalDocumentValid = result.isInternallyValid;
+
+        // Ensure Aadhaar name context is available for later validation.
+        _refreshAadhaarValidationContextFromProvider();
+        _maybeSwapPanNameAndFatherNameUsingAadhaar();
+
+        final missing = <String>[];
+        if (!result.hasPanNumber) missing.add('PAN Number');
+        if (!result.hasName) missing.add('Name');
+        if (!result.hasFatherName) missing.add('Father Name');
+        setState(() {
+          _panOcrComplete = missing.isEmpty;
+          _panOcrIssue = missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
+        });
+        if (missing.isNotEmpty && mounted) {
+          PremiumToast.showWarning(
+            context,
+            'PAN OCR incomplete: ${missing.join(', ')}',
+            duration: const Duration(seconds: 3),
+          );
+        }
         
         if (result.hasPanNumber) {
           extractedData.add('PAN: ${result.panNumber}');
           // Auto-fill PAN number to personal data
           provider.updatePersonalDataField(panNo: result.panNumber);
         }
-        if (result.hasName) {
-          extractedData.add('Name: ${result.name}');
+        if ((_extractedName ?? '').trim().isNotEmpty) {
+          extractedData.add('Name: $_extractedName');
           // Auto-fill name to personal data
-          provider.updatePersonalDataField(fullName: result.name);
+          // Use post-processed values (in case of swap).
+          provider.updatePersonalDataField(fullName: _extractedName);
         }
+        if ((_extractedFatherName ?? '').trim().isNotEmpty) {
+          extractedData.add('Father: $_extractedFatherName');
+          // Auto-fill father/parent name to personal data
+          // Use post-processed values (in case of swap).
+          provider.updatePersonalDataField(fatherName: _extractedFatherName);
+        }
+
+        debugPrint(
+          'PAN post-processed - PAN: ${_extractedPanNumber ?? '-'}, '
+          'Name: ${_extractedName ?? '-'}, Father: ${_extractedFatherName ?? '-'}',
+        );
 
         if (extractedData.isNotEmpty) {
           PremiumToast.showSuccess(
@@ -363,11 +670,18 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           result.errorMessage ?? 'Could not extract text from image',
           duration: const Duration(seconds: 3),
         );
+        setState(() {
+          _panOcrComplete = false;
+          _panOcrIssue = result.errorMessage ?? 'OCR failed';
+        });
       }
     } catch (e) {
       if (mounted) {
         debugPrint('OCR Error: $e');
-        // Don't show error toast - OCR is optional feature
+        setState(() {
+          _panOcrComplete = false;
+          _panOcrIssue = 'OCR failed';
+        });
       }
     }
   }
@@ -397,7 +711,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           }
           return;
         }
-        path = result.files.single.path!;
+        path = await persistLocalPathIfNeeded(
+          result.files.single.path!,
+          preferredExtension: 'pdf',
+          subdir: 'lcc_pan',
+          prefix: 'pan_pdf',
+        );
       }
       
       if (mounted) {
@@ -405,8 +724,14 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _frontPath = path;
           _isPdf = true;
           _rotation = 0.0;
+          _panOcrComplete = false;
         });
         context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
+        PremiumToast.showInfo(
+          context,
+          'PAN PDF OCR is not supported right now. Please upload a clear PAN photo.',
+          duration: const Duration(seconds: 3),
+        );
         _showPasswordDialogIfNeeded();
       }
     }
@@ -484,22 +809,19 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final words2 = normalized2.split(' ').where((w) => w.length > 1).toSet();
     final commonWords = words1.intersection(words2);
     
-    // At least 2 words should match for names to be considered similar
-    return commonWords.length >= 2;
+    // At least 1 word match is enough (OCR often drops/misreads tokens).
+    return commonWords.isNotEmpty;
   }
 
-  /// Check if at least one word from PAN name appears in Aadhaar front raw text (case-insensitive).
-  /// Handles caps/small differences and partial matches.
-  bool _isPanNamePresentInAadhaarRawText(String panName, String aadhaarRawText) {
-    final rawUpper = aadhaarRawText.toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
-    final words = panName.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty) return false;
-    for (final word in words) {
-      final w = word.trim();
-      if (w.isEmpty) continue;
-      if (rawUpper.contains(w.toUpperCase())) return true;
+  void _refreshAadhaarValidationContextFromProvider() {
+    // If Aadhaar OCR already ran, it updates personalData.nameAsPerAadhaar.
+    final provider = context.read<SubmissionProvider>();
+    final providerName = provider.submission.personalData?.nameAsPerAadhaar;
+    if ((_aadhaarName == null || _aadhaarName!.trim().isEmpty) &&
+        providerName != null &&
+        providerName.trim().isNotEmpty) {
+      _aadhaarName = providerName.trim();
     }
-    return false;
   }
 
   /// Show validation error dialog - user cannot proceed until fixed
@@ -652,26 +974,40 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       );
       return;
     }
+
+    if (!_panOcrComplete) {
+      _showValidationErrorDialog(
+        title: 'PAN OCR Incomplete',
+        message: 'Please fix PAN OCR before continuing.\n\n${_panOcrIssue ?? 'Missing required fields'}',
+        instruction: 'Re-capture / re-upload with better lighting and crop tightly.',
+        icon: Icons.document_scanner_outlined,
+      );
+      return;
+    }
     
-    // Name validation: prefer Aadhaar front raw text (at least one word from PAN name present)
-    if (_extractedName != null && _extractedName!.trim().isNotEmpty) {
-      bool nameValid = false;
-      if (_aadhaarFrontRawText != null && _aadhaarFrontRawText!.trim().isNotEmpty) {
-        nameValid = _isPanNamePresentInAadhaarRawText(_extractedName!, _aadhaarFrontRawText!);
-        debugPrint('PAN name validation (raw text): at least one word present = $nameValid');
-      }
-      if (!nameValid && _aadhaarName != null && _aadhaarName!.trim().isNotEmpty) {
-        nameValid = _areNamesSimilar(_aadhaarName!, _extractedName!);
-        debugPrint('PAN name validation (extracted name): names similar = $nameValid');
-      }
-      if (!nameValid && (_aadhaarFrontRawText != null || _aadhaarName != null)) {
+    // STRICT: Never continue if Aadhaar name doesn't match PAN user name.
+    // Also handle short forms like "M ESWAR KUMAR" vs "MARKAPURAM ESWAR KUMAR".
+    _refreshAadhaarValidationContextFromProvider();
+    _maybeSwapPanNameAndFatherNameUsingAadhaar();
+
+    final aadhaarName = _aadhaarName;
+    final panName = _extractedName;
+    if (aadhaarName != null &&
+        aadhaarName.trim().isNotEmpty &&
+        panName != null &&
+        panName.trim().isNotEmpty) {
+      final ok = _isAadhaarPanNameMatch(aadhaarName, panName);
+      debugPrint('PAN name validation (Aadhaar vs PAN): match=$ok');
+      if (!ok) {
         _showValidationErrorDialog(
           title: 'Name Mismatch Detected',
-          message: 'The name on your Aadhaar card does not match the name on your PAN card. Both documents must belong to the same person.',
-          instruction: 'Please ensure you are uploading YOUR documents. If the names are correct but spelled differently, please contact support.',
+          message:
+              'The name on your Aadhaar card does not match the name on your PAN card.',
+          instruction:
+              'Please re-upload correct documents. If Aadhaar shows initials (e.g., "M ESWAR KUMAR"), re-capture with better crop/clarity.',
           icon: Icons.person_off,
-          aadhaarName: _aadhaarName,
-          panName: _extractedName,
+          aadhaarName: aadhaarName,
+          panName: panName,
         );
         return;
       }
@@ -692,6 +1028,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _pdfPassword = null;
       _extractedPanNumber = null;
       _extractedName = null;
+      _extractedFatherName = null;
       _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
@@ -710,6 +1047,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _pdfPassword = null;
       _extractedPanNumber = null;
       _extractedName = null;
+      _extractedFatherName = null;
       _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
@@ -1586,6 +1924,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _rotation = 0.0;
       _extractedPanNumber = null;
       _extractedName = null;
+      _extractedFatherName = null;
       _internalDocumentValid = true;
     });
     // Clear from provider

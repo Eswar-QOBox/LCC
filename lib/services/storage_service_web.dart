@@ -68,6 +68,19 @@ class StorageServiceWeb implements StorageService {
   }
 
   @override
+  Future<bool> getAllowMultipleApplicationsTesting() async {
+    final prefs = await _preferences;
+    return prefs.getBool(StorageService.allowMultipleApplicationsTestingKey) ??
+        false;
+  }
+
+  @override
+  Future<void> setAllowMultipleApplicationsTesting(bool value) async {
+    final prefs = await _preferences;
+    await prefs.setBool(StorageService.allowMultipleApplicationsTestingKey, value);
+  }
+
+  @override
   Future<void> clearAll() async {
     await deleteAllTokens();
   }

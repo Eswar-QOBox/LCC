@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
@@ -15,6 +16,13 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
   double _loanAmount = 500000;
   double _interestRate = 12.0;
   double _tenureMonths = 60;
+
+  // NOTE: Do not use `late` here. During hot reload, `initState()` is not called,
+  // and late fields would crash with LateInitializationError.
+  final TextEditingController _loanAmountController = TextEditingController();
+  final TextEditingController _interestRateController = TextEditingController();
+  final TextEditingController _tenureMonthsController = TextEditingController();
+  bool _isProgrammaticTextUpdate = false;
 
   // Calculate EMI using the formula: EMI = P * r * (1+r)^n / ((1+r)^n - 1)
   double get _monthlyEMI {
@@ -36,6 +44,159 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
   double get _totalAmount => _monthlyEMI * _tenureMonths;
   double get _totalInterest => _totalAmount - _loanAmount;
   double get _principalPercentage => _loanAmount / _totalAmount;
+  double get _monthlyRatePercent => _interestRate / 12.0;
+
+  String _formatRupees(num amount) => '₹ ${_formatNumber(amount.round())}';
+
+  List<_AmortizationRow> _buildAmortizationSchedule() {
+    final principal = _loanAmount;
+    final months = _tenureMonths.round();
+    if (principal <= 0 || months <= 0) return const [];
+
+    final monthlyRate = _interestRate / 12 / 100;
+    final emi = _monthlyEMI;
+
+    double balance = principal;
+    final rows = <_AmortizationRow>[];
+
+    for (int i = 1; i <= months; i++) {
+      final interest = monthlyRate == 0 ? 0.0 : balance * monthlyRate;
+      double principalPaid = emi - interest;
+      if (principalPaid < 0) principalPaid = 0;
+
+      balance -= principalPaid;
+      if (balance < 0) balance = 0;
+
+      rows.add(
+        _AmortizationRow(
+          month: i,
+          emi: emi,
+          interest: interest,
+          principal: principalPaid,
+          balance: balance,
+        ),
+      );
+
+      if (balance <= 0) break;
+    }
+
+    return rows;
+  }
+
+  Future<void> _showRepaymentSchedule(BuildContext context) async {
+    final rows = _buildAmortizationSchedule(); // compute once per open
+    if (rows.isEmpty) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              children: [
+                Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Repayment Schedule',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'EMI: ${_formatRupees(_monthlyEMI)} • Tenure: ${_tenureMonths.round()} months • Rate: ${_interestRate.toStringAsFixed(1)}% p.a.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) => Divider(color: Colors.grey.shade200, height: 1),
+                    itemBuilder: (context, index) {
+                      final r = rows[index];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${r.month}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          'EMI: ${_formatRupees(r.emi)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          'Principal: ${_formatRupees(r.principal)}  •  Interest: ${_formatRupees(r.interest)}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              _formatRupees(r.balance),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                            Text(
+                              'balance',
+                              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   String _formatCurrency(double amount) {
     if (amount >= 10000000) {
@@ -66,6 +227,70 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _setControllerText(_loanAmountController, _formatNumber(_loanAmount.round()));
+    _setControllerText(_interestRateController, _interestRate.toStringAsFixed(1));
+    _setControllerText(_tenureMonthsController, _tenureMonths.round().toString());
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    // Hot reload: keep text fields in sync with state.
+    _setControllerText(_loanAmountController, _formatNumber(_loanAmount.round()));
+    _setControllerText(_interestRateController, _interestRate.toStringAsFixed(1));
+    _setControllerText(_tenureMonthsController, _tenureMonths.round().toString());
+  }
+
+  @override
+  void dispose() {
+    _loanAmountController.dispose();
+    _interestRateController.dispose();
+    _tenureMonthsController.dispose();
+    super.dispose();
+  }
+
+  void _setControllerText(TextEditingController controller, String text) {
+    _isProgrammaticTextUpdate = true;
+    controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _isProgrammaticTextUpdate = false;
+  }
+
+  double? _parseNumber(String raw) {
+    final normalized = raw.replaceAll(',', '').trim();
+    if (normalized.isEmpty) return null;
+    return double.tryParse(normalized);
+  }
+
+  void _applyLoanAmountFromText({bool formatAfter = false}) {
+    final parsed = _parseNumber(_loanAmountController.text);
+    if (parsed == null) return;
+    final next = parsed.clamp(10000, 10000000).toDouble();
+    setState(() => _loanAmount = next);
+    if (formatAfter) _setControllerText(_loanAmountController, _formatNumber(_loanAmount.round()));
+  }
+
+  void _applyInterestRateFromText({bool formatAfter = false}) {
+    final parsed = _parseNumber(_interestRateController.text);
+    if (parsed == null) return;
+    final next = parsed.clamp(1, 30).toDouble();
+    setState(() => _interestRate = next);
+    if (formatAfter) _setControllerText(_interestRateController, _interestRate.toStringAsFixed(1));
+  }
+
+  void _applyTenureFromText({bool formatAfter = false}) {
+    final parsed = _parseNumber(_tenureMonthsController.text);
+    if (parsed == null) return;
+    final next = parsed.clamp(3, 360).toDouble();
+    setState(() => _tenureMonths = next);
+    if (formatAfter) _setControllerText(_tenureMonthsController, _tenureMonths.round().toString());
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -92,11 +317,19 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                       maxLabel: '₹ 1Cr',
                       prefix: '₹',
                       suffix: 'INR',
-                      inputValue: _formatNumber(_loanAmount.round()),
+                      controller: _loanAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9,]'))],
+                      onTextChanged: () {
+                        if (_isProgrammaticTextUpdate) return;
+                        _applyLoanAmountFromText(formatAfter: false);
+                      },
+                      onTextEditingComplete: () => _applyLoanAmountFromText(formatAfter: true),
                       onChanged: (value) {
                         setState(() {
                           _loanAmount = value;
                         });
+                        _setControllerText(_loanAmountController, _formatNumber(_loanAmount.round()));
                       },
                       badgeColor: const Color(0xFFDBEAFE),
                       badgeTextColor: AppTheme.primaryColor,
@@ -111,20 +344,31 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                       min: 1,
                       max: 30,
                       divisions: 58,
-                      displayValue: '${_interestRate.toStringAsFixed(1)}%',
+                      displayValue:
+                          '${_interestRate.toStringAsFixed(1)}% p.a.  •  ${_monthlyRatePercent.toStringAsFixed(2)}% p.m.',
                       minLabel: '1%',
                       maxLabel: '30%',
                       prefix: '%',
                       suffix: '% per annum',
-                      inputValue: _interestRate.toStringAsFixed(1),
+                      controller: _interestRateController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                      onTextChanged: () {
+                        if (_isProgrammaticTextUpdate) return;
+                        _applyInterestRateFromText(formatAfter: false);
+                      },
+                      onTextEditingComplete: () => _applyInterestRateFromText(formatAfter: true),
                       onChanged: (value) {
                         setState(() {
                           _interestRate = value;
                         });
+                        _setControllerText(_interestRateController, _interestRate.toStringAsFixed(1));
                       },
                       badgeColor: const Color(0xFFDBEAFE),
                       badgeTextColor: AppTheme.primaryColor,
                       isPrefixIcon: true,
+                      helperText:
+                          'That is about ${_monthlyRatePercent.toStringAsFixed(2)}% per month (p.m.).',
                     ),
                     const SizedBox(height: 24),
 
@@ -140,11 +384,19 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                       maxLabel: '30 years',
                       prefix: 'calendar',
                       suffix: 'months',
-                      inputValue: _tenureMonths.round().toString(),
+                      controller: _tenureMonthsController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: false),
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      onTextChanged: () {
+                        if (_isProgrammaticTextUpdate) return;
+                        _applyTenureFromText(formatAfter: false);
+                      },
+                      onTextEditingComplete: () => _applyTenureFromText(formatAfter: true),
                       onChanged: (value) {
                         setState(() {
                           _tenureMonths = value;
                         });
+                        _setControllerText(_tenureMonthsController, _tenureMonths.round().toString());
                       },
                       badgeColor: const Color(0xFFF3E8FF),
                       badgeTextColor: const Color(0xFF9333EA),
@@ -154,6 +406,34 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
 
                     // Loan Summary Section
                     _buildLoanSummary(context),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showRepaymentSchedule(context),
+                        icon: const Icon(Icons.receipt_long),
+                        label: const Text(
+                          'View Repayment Schedule',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppTheme.primaryColor,
+                          elevation: 0,
+                          side: BorderSide(color: AppTheme.primaryColor.withValues(alpha: 0.35)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'EMI shown is an estimate. Actual EMI may vary based on bank charges.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -272,12 +552,17 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
     required String maxLabel,
     required String prefix,
     required String suffix,
-    required String inputValue,
+    required TextEditingController controller,
+    required TextInputType keyboardType,
+    required List<TextInputFormatter> inputFormatters,
+    required VoidCallback onTextChanged,
+    required VoidCallback onTextEditingComplete,
     required ValueChanged<double> onChanged,
     required Color badgeColor,
     required Color badgeTextColor,
     int? divisions,
     bool isPrefixIcon = false,
+    String? helperText,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,12 +667,20 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
-                  child: Text(
-                    inputValue,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: TextField(
+                    controller: controller,
+                    keyboardType: keyboardType,
+                    inputFormatters: inputFormatters,
+                    onChanged: (_) => onTextChanged(),
+                    onEditingComplete: onTextEditingComplete,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
                     ),
                   ),
                 ),
@@ -405,6 +698,17 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
             ],
           ),
         ),
+        if (helperText != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            helperText,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -672,4 +976,20 @@ class DonutChartPainter extends CustomPainter {
   bool shouldRepaint(covariant DonutChartPainter oldDelegate) {
     return oldDelegate.principalPercentage != principalPercentage;
   }
+}
+
+class _AmortizationRow {
+  final int month;
+  final double emi;
+  final double interest;
+  final double principal;
+  final double balance;
+
+  const _AmortizationRow({
+    required this.month,
+    required this.emi,
+    required this.interest,
+    required this.principal,
+    required this.balance,
+  });
 }

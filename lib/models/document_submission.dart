@@ -57,7 +57,10 @@ class DocumentSubmission {
       }
     }
     if (salarySlips == null || !salarySlips!.isComplete) {
-      missing.add('Salary Slips (${salarySlips == null ? "not uploaded" : "incomplete"})');
+      final count = salarySlips?.uploadedCount ?? 0;
+      missing.add(
+        'Salary Slips (${salarySlips == null ? "not uploaded" : "$count/${SalarySlips.requiredSlipCount}"})',
+      );
     }
     return missing;
   }
@@ -117,9 +120,12 @@ class SalarySlipItem {
     this.slipDate,
     this.isPdf = false,
   });
+
+  bool get hasFile => path.trim().isNotEmpty;
 }
 
 class SalarySlips {
+  static const int requiredSlipCount = 3;
   List<SalarySlipItem> slipItems;
   String? pdfPassword;
   bool isPdf;
@@ -133,7 +139,9 @@ class SalarySlips {
   // Legacy getter for backward compatibility
   List<String> get slips => slipItems.map((item) => item.path).toList();
 
-  bool get isComplete => slipItems.isNotEmpty;
+  int get uploadedCount => slipItems.where((item) => item.hasFile).length;
+
+  bool get isComplete => uploadedCount >= requiredSlipCount;
 }
 
 class PersonalData {
@@ -148,6 +156,10 @@ class PersonalData {
   // Residence Information
   String? countryOfResidence;
   String? residenceAddress;
+  /// If true, user says their current address differs from Aadhaar address.
+  bool? addressDifferentFromAadhaar;
+  /// Current/address-proof address (only required when [addressDifferentFromAadhaar] is true).
+  String? currentResidenceAddress;
   String? residenceType;
   String? residenceStability;
   
@@ -196,6 +208,8 @@ class PersonalData {
     this.personalEmailId,
     this.countryOfResidence,
     this.residenceAddress,
+    this.addressDifferentFromAadhaar,
+    this.currentResidenceAddress,
     this.residenceType,
     this.residenceStability,
     this.companyName,
@@ -228,6 +242,124 @@ class PersonalData {
     this.reference2Contact,
   });
 
+  factory PersonalData.fromJson(Map<String, dynamic> json) {
+    DateTime? parsedDob;
+    final dobRaw = json['dateOfBirth'];
+    if (dobRaw is String) {
+      parsedDob = DateTime.tryParse(dobRaw);
+    }
+
+    return PersonalData(
+      // Basic Information
+      nameAsPerAadhaar: json['nameAsPerAadhaar'] as String?,
+      dateOfBirth: parsedDob,
+      panNo: json['panNo'] as String?,
+      aadhaarNumber: json['aadhaarNumber'] as String?,
+      mobileNumber: json['mobileNumber'] as String?,
+      personalEmailId: json['personalEmailId'] as String?,
+
+      // Residence Information
+      countryOfResidence: json['countryOfResidence'] as String?,
+      residenceAddress: json['residenceAddress'] as String?,
+      addressDifferentFromAadhaar: json['addressDifferentFromAadhaar'] as bool?,
+      currentResidenceAddress: json['currentResidenceAddress'] as String?,
+      residenceType: json['residenceType'] as String?,
+      residenceStability: json['residenceStability'] as String?,
+
+      // Company Information
+      companyName: json['companyName'] as String?,
+      companyAddress: json['companyAddress'] as String?,
+
+      // Personal Details
+      nationality: json['nationality'] as String?,
+      countryOfBirth: json['countryOfBirth'] as String?,
+      occupation: json['occupation'] as String?,
+      educationalQualification: json['educationalQualification'] as String?,
+      workType: json['workType'] as String?,
+      industry: json['industry'] as String?,
+      annualIncome: json['annualIncome'] as String?,
+      totalWorkExperience: json['totalWorkExperience'] as String?,
+      currentCompanyExperience: json['currentCompanyExperience'] as String?,
+      loanAmount: json['loanAmount'] as String?,
+      loanTenure: json['loanTenure'] as String?,
+      loanAmountTenure: json['loanAmountTenure'] as String?,
+      monthlyIncome: json['monthlyIncome'] as String?,
+      currentEmi: json['currentEmi'] as String?,
+      existingLoans: json['existingLoans'] as String?,
+      creditScore: json['creditScore'] as String?,
+
+      // Family Information
+      maritalStatus: json['maritalStatus'] as String?,
+      spouseName: json['spouseName'] as String?,
+      fatherName: json['fatherName'] as String?,
+      motherName: json['motherName'] as String?,
+
+      // Reference Details
+      reference1Name: json['reference1Name'] as String?,
+      reference1Address: json['reference1Address'] as String?,
+      reference1Contact: json['reference1Contact'] as String?,
+      reference2Name: json['reference2Name'] as String?,
+      reference2Address: json['reference2Address'] as String?,
+      reference2Contact: json['reference2Contact'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      // Basic Information
+      'nameAsPerAadhaar': nameAsPerAadhaar,
+      'dateOfBirth': dateOfBirth?.toUtc().toIso8601String(),
+      'panNo': panNo,
+      'aadhaarNumber': aadhaarNumber,
+      'mobileNumber': mobileNumber,
+      'personalEmailId': personalEmailId,
+
+      // Residence Information
+      'countryOfResidence': countryOfResidence,
+      'residenceAddress': residenceAddress,
+      'addressDifferentFromAadhaar': addressDifferentFromAadhaar,
+      'currentResidenceAddress': currentResidenceAddress,
+      'residenceType': residenceType,
+      'residenceStability': residenceStability,
+
+      // Company Information
+      'companyName': companyName,
+      'companyAddress': companyAddress,
+
+      // Personal Details
+      'nationality': nationality,
+      'countryOfBirth': countryOfBirth,
+      'occupation': occupation,
+      'educationalQualification': educationalQualification,
+      'workType': workType,
+      'industry': industry,
+      'annualIncome': annualIncome,
+      'totalWorkExperience': totalWorkExperience,
+      'currentCompanyExperience': currentCompanyExperience,
+      'loanAmount': loanAmount,
+      'loanTenure': loanTenure,
+      'loanAmountTenure': loanAmountTenure,
+      'monthlyIncome': monthlyIncome,
+      'currentEmi': currentEmi,
+      'existingLoans': existingLoans,
+      'creditScore': creditScore,
+
+      // Family Information
+      'maritalStatus': maritalStatus,
+      'spouseName': spouseName,
+      'fatherName': fatherName,
+      'motherName': motherName,
+
+      // Reference Details
+      'reference1Name': reference1Name,
+      'reference1Address': reference1Address,
+      'reference1Contact': reference1Contact,
+      'reference2Name': reference2Name,
+      'reference2Address': reference2Address,
+      'reference2Contact': reference2Contact,
+    };
+  }
+
   // Legacy getters for backward compatibility
   String? get fullName => nameAsPerAadhaar;
   String? get address => residenceAddress;
@@ -236,6 +368,7 @@ class PersonalData {
   String? get employmentStatus => occupation;
 
   bool get isComplete {
+    final needsCurrentAddress = addressDifferentFromAadhaar == true;
     return nameAsPerAadhaar != null &&
         nameAsPerAadhaar!.trim().isNotEmpty &&
         dateOfBirth != null &&
@@ -248,12 +381,16 @@ class PersonalData {
         personalEmailId != null &&
         personalEmailId!.trim().isNotEmpty &&
         residenceAddress != null &&
-        residenceAddress!.trim().isNotEmpty;
+        residenceAddress!.trim().isNotEmpty &&
+        (!needsCurrentAddress ||
+            (currentResidenceAddress != null &&
+                currentResidenceAddress!.trim().isNotEmpty));
   }
 
   /// Debug method to check which fields are missing
   List<String> getMissingFields() {
     final missing = <String>[];
+    final needsCurrentAddress = addressDifferentFromAadhaar == true;
     if (nameAsPerAadhaar == null || nameAsPerAadhaar!.trim().isEmpty) {
       missing.add('Name as per Aadhaar');
     }
@@ -274,6 +411,11 @@ class PersonalData {
     }
     if (residenceAddress == null || residenceAddress!.trim().isEmpty) {
       missing.add('Residence Address');
+    }
+    if (needsCurrentAddress &&
+        (currentResidenceAddress == null ||
+            currentResidenceAddress!.trim().isEmpty)) {
+      missing.add('Current Residence Address');
     }
     return missing;
   }

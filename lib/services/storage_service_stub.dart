@@ -48,6 +48,16 @@ class StorageServiceStub implements StorageService {
   }
 
   @override
+  Future<bool> getAllowMultipleApplicationsTesting() async {
+    return false;
+  }
+
+  @override
+  Future<void> setAllowMultipleApplicationsTesting(bool value) async {
+    throw UnimplementedError('Storage not available on this platform');
+  }
+
+  @override
   Future<void> clearAll() async {
     throw UnimplementedError('Storage not available on this platform');
   }
