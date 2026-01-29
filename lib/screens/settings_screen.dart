@@ -8,7 +8,9 @@ import '../providers/submission_provider.dart';
 import '../providers/auth_provider.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
+import '../widgets/premium_toast.dart';
 import '../models/loan_application.dart';
+import '../models/document_submission.dart';
 import '../services/loan_application_service.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -136,6 +138,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Consumer<SubmissionProvider>(
                       builder: (context, provider, _) {
                         final personalData = provider.submission.personalData;
+                        final authUser =
+                            Provider.of<AuthProvider>(context, listen: false)
+                                .user;
+
+                        // Prefer personal data from Step 5; fall back to auth profile
+                        final effectivePersonalData = personalData ??
+                            (authUser != null
+                                ? PersonalData(
+                                    nameAsPerAadhaar: authUser.name,
+                                    mobileNumber: authUser.email.endsWith(
+                                            '@phone.local')
+                                        ? authUser.email.split('@').first
+                                        : null,
+                                    personalEmailId: authUser.email,
+                                  )
+                                : null);
+
                         return PremiumCard(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,11 +191,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ],
                               ),
                               const SizedBox(height: 24),
-                              if (personalData != null &&
-                                  (personalData.nameAsPerAadhaar != null ||
-                                      personalData.mobileNumber != null ||
-                                      personalData.personalEmailId != null))
-                                ..._buildProfileFields(context, personalData)
+                              if (effectivePersonalData != null &&
+                                  (effectivePersonalData.nameAsPerAadhaar !=
+                                          null ||
+                                      effectivePersonalData.mobileNumber !=
+                                          null ||
+                                      effectivePersonalData.personalEmailId !=
+                                          null))
+                                ..._buildProfileFields(
+                                    context, effectivePersonalData)
                               else
                                 _buildEmptyProfile(context),
                             ],
@@ -545,12 +568,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Navigator.of(context).pop();
 
           // Show error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to logout: ${e.toString()}'),
-              backgroundColor: colorScheme.error,
-            ),
-          );
+          PremiumToast.showError(context, 'Failed to logout: ${e.toString()}');
         }
       }
     }

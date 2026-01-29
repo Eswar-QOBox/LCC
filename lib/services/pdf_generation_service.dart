@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -12,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/document_submission.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import 'storage_service.dart';
 
 class PdfGenerationService {
   /// Generate PDF with all application data
@@ -42,8 +44,9 @@ class PdfGenerationService {
       // Add Personal Data section (always add, using sample if needed)
       _addPersonalDataSection(pdf, submission.personalData ?? _createSamplePersonalData());
       
-      // Add Documents section (references to uploaded files)
-      await _addDocumentsSection(pdf, submission);
+      // Auth token for loading backend image URLs into the PDF
+      final authToken = await StorageService.instance.getAccessToken();
+      await _addDocumentsSection(pdf, submission, authToken: authToken);
       
       // Add Summary section
       _addSummarySection(pdf, submission);
@@ -501,12 +504,12 @@ class PdfGenerationService {
   }
 
   /// Add Documents section (list of uploaded documents with images and detailed summary)
-  Future<void> _addDocumentsSection(pw.Document pdf, DocumentSubmission submission) async {
-    // Load images asynchronously
-    final selfieImage = await _loadImageForPdf(submission.selfiePath);
-    final aadhaarFrontImage = await _loadImageForPdf(submission.aadhaar?.frontPath);
-    final aadhaarBackImage = await _loadImageForPdf(submission.aadhaar?.backPath);
-    final panImage = await _loadImageForPdf(submission.pan?.frontPath);
+  Future<void> _addDocumentsSection(pw.Document pdf, DocumentSubmission submission, {String? authToken}) async {
+    // Load images asynchronously (from local/asset paths or from backend URLs)
+    final selfieImage = await _loadImageForPdf(submission.selfiePath, authToken: authToken);
+    final aadhaarFrontImage = await _loadImageForPdf(submission.aadhaar?.frontPath, authToken: authToken);
+    final aadhaarBackImage = await _loadImageForPdf(submission.aadhaar?.backPath, authToken: authToken);
+    final panImage = await _loadImageForPdf(submission.pan?.frontPath, authToken: authToken);
 
     pdf.addPage(
       pw.MultiPage(
@@ -767,11 +770,25 @@ class PdfGenerationService {
     );
   }
 
-  /// Load image from file path or asset and return PDF-compatible image
-  Future<pw.MemoryImage?> _loadImageForPdf(String? imagePath) async {
+  /// Load image from file path, asset, or HTTP/HTTPS URL; returns PDF-compatible image.
+  Future<pw.MemoryImage?> _loadImageForPdf(String? imagePath, {String? authToken}) async {
     if (imagePath == null || imagePath.isEmpty) return null;
 
     try {
+      // Load from HTTP/HTTPS URL (e.g. backend upload URLs)
+      if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+        final uri = Uri.parse(imagePath);
+        final headers = <String, String>{};
+        if (authToken != null && authToken.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $authToken';
+        }
+        final response = await http.get(uri, headers: headers);
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          return pw.MemoryImage(response.bodyBytes);
+        }
+        return null;
+      }
+
       // Check if it's an asset path (for testing)
       if (imagePath.startsWith('assets/')) {
         final byteData = await rootBundle.load(imagePath);
@@ -785,7 +802,6 @@ class PdfGenerationService {
       }
 
       // For web platform, we can't directly read files from paths
-      // In a real implementation, you'd need to handle web differently
       if (kIsWeb) {
         return null;
       }
@@ -796,8 +812,9 @@ class PdfGenerationService {
         return pw.MemoryImage(bytes);
       }
     } catch (e) {
-      // Silently fail if image can't be loaded
-      print('Failed to load image $imagePath: $e');
+      if (kDebugMode) {
+        print('PdfGenerationService: Failed to load image $imagePath: $e');
+      }
     }
     return null;
   }

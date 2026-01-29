@@ -309,16 +309,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         final bytes = result.files.single.bytes;
         if (bytes == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Unable to read PDF file. Please try again.'),
-                backgroundColor: AppTheme.errorColor,
-                action: SnackBarAction(
-                  label: 'Retry',
-                  textColor: Colors.white,
-                  onPressed: _uploadPdf,
-                ),
-              ),
+            PremiumToast.showError(
+              context,
+              'Unable to read PDF file. Please try again.',
+              actionLabel: 'Retry',
+              onAction: _uploadPdf,
             );
           }
           return;
@@ -329,16 +324,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         // On mobile/desktop, use file path
         if (result.files.single.path == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: const Text('Unable to access file. Please try again.'),
-                backgroundColor: AppTheme.errorColor,
-                action: SnackBarAction(
-                  label: 'Retry',
-                  textColor: Colors.white,
-                  onPressed: _uploadPdf,
-                ),
-              ),
+            PremiumToast.showError(
+              context,
+              'Unable to access file. Please try again.',
+              actionLabel: 'Retry',
+              onAction: _uploadPdf,
             );
           }
           return;

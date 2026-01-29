@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
@@ -79,16 +80,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Unable to capture image. Please try again.'),
-            backgroundColor: AppTheme.errorColor,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _captureFromCamera,
-            ),
-          ),
+        PremiumToast.showError(
+          context,
+          'Unable to capture image. Please try again.',
+          actionLabel: 'Retry',
+          onAction: _captureFromCamera,
         );
       }
     }
@@ -120,16 +116,11 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Unable to select image from gallery. Please try again.'),
-            backgroundColor: AppTheme.errorColor,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _selectFromGallery,
-            ),
-          ),
+        PremiumToast.showError(
+          context,
+          'Unable to select image from gallery. Please try again.',
+          actionLabel: 'Retry',
+          onAction: _selectFromGallery,
         );
       }
     }
@@ -143,19 +134,33 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       // Validate file path
       if (imageFile.path.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Invalid image file. Please select a different image.'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
+          PremiumToast.showError(context, 'Invalid image file. Please select a different image.');
         }
         return;
       }
 
+      // Optional crop on mobile (skip on web)
+      String workingPath = imageFile.path;
+      if (!kIsWeb) {
+        final cropped = await ImageCropper().cropImage(
+          sourcePath: imageFile.path,
+          compressQuality: 90,
+          uiSettings: [
+            AndroidUiSettings(toolbarTitle: 'Crop Selfie'),
+            IOSUiSettings(title: 'Crop Selfie'),
+          ],
+        );
+        final croppedPath = cropped?.path;
+        if (croppedPath != null && croppedPath.isNotEmpty) {
+          workingPath = croppedPath;
+        }
+      }
+
+      final croppedFile = XFile(workingPath);
+
       // Read bytes for validation (works on both web and mobile)
       // Add timeout to prevent hanging on large files
-      final bytes = await imageFile.readAsBytes().timeout(
+      final bytes = await croppedFile.readAsBytes().timeout(
         const Duration(seconds: 30),
         onTimeout: () {
           throw TimeoutException('Image loading timed out');
@@ -167,12 +172,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       // Validate bytes
       if (bytes.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Image file is empty'),
-              backgroundColor: Colors.red,
-            ),
-          );
+          PremiumToast.showError(context, 'Image file is empty');
         }
         return;
       }
@@ -180,19 +180,14 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       // Limit image size to prevent memory issues (max 20MB)
       if (bytes.length > 20 * 1024 * 1024) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Image file is too large. Please select an image smaller than 20MB.'),
-              backgroundColor: AppTheme.errorColor,
-            ),
-          );
+          PremiumToast.showError(context, 'Image file is too large. Please select an image smaller than 20MB.');
         }
         return;
       }
 
       if (mounted) {
         setState(() {
-          _imagePath = imageFile.path;
+          _imagePath = workingPath;
           _imageBytes = bytes;
           // Reset validation when image changes - this will revert border to original color
           _validationResult = null;
@@ -200,19 +195,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Unable to load image. Please try again.'),
-            backgroundColor: AppTheme.errorColor,
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: () {
-                // Retry logic can be added if needed
-              },
-            ),
-          ),
-        );
+        PremiumToast.showError(context, 'Unable to load image. Please try again.');
       }
     }
   }
@@ -220,12 +203,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   Future<void> _validateImage() async {
     if (_imagePath == null || _imageBytes == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Please capture or select an image first'),
-            backgroundColor: AppTheme.errorColor,
-          ),
-        );
+        PremiumToast.showError(context, 'Please capture or select an image first');
       }
       return;
     }
@@ -377,11 +355,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         context.go(AppRoutes.step2Aadhaar);
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please capture and validate your selfie first'),
-        ),
-      );
+      PremiumToast.showInfo(context, 'Please capture and validate your selfie first');
     }
   }
 

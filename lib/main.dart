@@ -22,6 +22,7 @@ import 'screens/step5_1_salary_slips_screen.dart';
 import 'screens/step6_preview_screen.dart';
 import 'screens/submission_success_screen.dart';
 import 'screens/pdf_download_screen.dart';
+import 'screens/view_submitted_screen.dart';
 import 'screens/loan_calculator_screen.dart';
 
 void main() {
@@ -121,7 +122,9 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.step6Preview,
-      builder: (context, state) => const Step6PreviewScreen(),
+      builder: (context, state) => Step6PreviewScreen(
+        mode: state.uri.queryParameters['mode'],
+      ),
     ),
     GoRoute(
       path: AppRoutes.submissionSuccess,
@@ -130,6 +133,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.pdfDownload,
       builder: (context, state) => const PdfDownloadScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.viewSubmitted,
+      builder: (context, state) => const ViewSubmittedScreen(),
     ),
     GoRoute(
       path: AppRoutes.loanCalculator,

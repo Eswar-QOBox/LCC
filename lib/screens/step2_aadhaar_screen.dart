@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +19,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import 'aadhaar_grid_capture_screen.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
   const Step2AadhaarScreen({super.key, this.fromPreview = false});
@@ -54,6 +55,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   
   // OCR extracted name from Aadhaar (for PAN name cross-validation)
   String? _aadhaarName;
+  // Raw text from Aadhaar front (for PAN name validation: at least one word match)
+  String? _aadhaarFrontRawText;
   
   // Internal validation flags (secret - not shown to user)
   bool _frontInternalValid = true;
@@ -81,7 +84,33 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     // Load existing data from backend
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
+      if (!kIsWeb) _recoverLostCameraData();
     });
+  }
+
+  /// If Android killed the app while the camera was open, recover the captured image
+  /// when user returns to this screen (e.g. after relaunch).
+  Future<void> _recoverLostCameraData() async {
+    try {
+      final LostDataResponse response = await _imagePicker.retrieveLostData();
+      if (response.isEmpty || !mounted) return;
+      final files = response.files;
+      if (files != null && files.isNotEmpty) {
+        final path = files.single.path;
+        debugPrint('[Aadhaar] retrieveLostData recovered path=$path');
+        if (path.isNotEmpty && mounted) {
+          // Apply as front if missing, else back
+          final isFront = _frontPath == null || _frontPath!.isEmpty;
+          await _applySideImage(path, isFront: isFront);
+        }
+      } else if (response.exception != null) {
+        debugPrint('[Aadhaar] retrieveLostData exception: ${response.exception}');
+      }
+    } on UnimplementedError {
+      // retrieveLostData is Android-only
+    } catch (e, st) {
+      debugPrint('[Aadhaar] retrieveLostData error: $e $st');
+    }
   }
 
   Future<void> _loadExistingData() async {
@@ -230,6 +259,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _frontAadhaarNumber = null;
       _backAadhaarNumber = null;
       _aadhaarName = null;
+      _aadhaarFrontRawText = null;
       _frontInternalValid = true;
       _backInternalValid = true;
     });
@@ -250,6 +280,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _frontPdfPassword = null;
       _frontAadhaarNumber = null;
       _aadhaarName = null; // Name comes from front side
+      _aadhaarFrontRawText = null;
       _frontInternalValid = true;
     });
     final provider = context.read<SubmissionProvider>();
@@ -284,8 +315,13 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   }
 
   Future<String?> _cropImage(String path) async {
-    if (kIsWeb) return path;
+    debugPrint('[Aadhaar] _cropImage ENTER path=$path kIsWeb=$kIsWeb');
+    if (kIsWeb) {
+      debugPrint('[Aadhaar] _cropImage SKIP (web), returning path');
+      return path;
+    }
     try {
+      debugPrint('[Aadhaar] _cropImage calling ImageCropper().cropImage()');
       final cropped = await ImageCropper().cropImage(
         sourcePath: path,
         compressQuality: 90,
@@ -294,40 +330,84 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           IOSUiSettings(title: 'Crop Aadhaar'),
         ],
       );
-      return cropped?.path ?? path;
-    } catch (_) {
+      final result = cropped?.path ?? path;
+      debugPrint('[Aadhaar] _cropImage DONE cropped.path=${cropped?.path} result=$result');
+      return result;
+    } catch (e, st) {
+      debugPrint('[Aadhaar] _cropImage CAUGHT: $e');
+      debugPrint('[Aadhaar] _cropImage STACK: $st');
       return path;
     }
   }
 
   /// Same logic for front and back: crop path, update state/provider, run OCR.
   Future<void> _applySideImage(String path, {required bool isFront}) async {
-    if (!mounted) return;
-    if (isFront) {
-      setState(() {
-        _frontPath = path;
-        _frontBytes = null;
-        _frontIsPdf = false;
-        _frontRotation = 0.0;
-      });
-      context.read<SubmissionProvider>().setAadhaarFront(path, isPdf: false);
-    } else {
-      setState(() {
-        _backPath = path;
-        _backBytes = null;
-        _backIsPdf = false;
-        _backRotation = 0.0;
-      });
-      context.read<SubmissionProvider>().setAadhaarBack(path, isPdf: false);
+    debugPrint('[Aadhaar] _applySideImage ENTER path=$path isFront=$isFront mounted=$mounted');
+    if (!mounted) {
+      debugPrint('[Aadhaar] _applySideImage EARLY EXIT (!mounted)');
+      return;
     }
-    await _performAadhaarOCR(path, isFront: isFront);
+    try {
+      if (isFront) {
+        debugPrint('[Aadhaar] _applySideImage setState front');
+        setState(() {
+          _frontPath = path;
+          _frontBytes = null;
+          _frontIsPdf = false;
+          _frontRotation = 0.0;
+        });
+        context.read<SubmissionProvider>().setAadhaarFront(path, isPdf: false);
+      } else {
+        debugPrint('[Aadhaar] _applySideImage setState back');
+        setState(() {
+          _backPath = path;
+          _backBytes = null;
+          _backIsPdf = false;
+          _backRotation = 0.0;
+        });
+        context.read<SubmissionProvider>().setAadhaarBack(path, isPdf: false);
+      }
+      debugPrint('[Aadhaar] _applySideImage calling _performAadhaarOCR');
+      await _performAadhaarOCR(path, isFront: isFront);
+      debugPrint('[Aadhaar] _applySideImage DONE');
+    } catch (e, st) {
+      debugPrint('[Aadhaar] _applySideImage CAUGHT: $e');
+      debugPrint('[Aadhaar] _applySideImage STACK: $st');
+      rethrow;
+    }
   }
 
   Future<void> _captureFront() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.camera);
-    if (image != null && mounted) {
-      final path = await _cropImage(image.path);
-      if (path != null && mounted) await _applySideImage(path, isFront: true);
+    debugPrint('[Aadhaar] _captureFront ENTER');
+    try {
+      if (kIsWeb) {
+        debugPrint('[Aadhaar] _captureFront (web) using pickImage(camera)');
+        final image = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          requestFullMetadata: false,
+        );
+        debugPrint('[Aadhaar] _captureFront pickImage returned: image=${image != null} path=${image?.path} mounted=$mounted');
+        if (image != null && mounted) {
+          final path = await _cropImage(image.path);
+          if (path != null && mounted) await _applySideImage(path, isFront: true);
+        }
+        return;
+      }
+      // Use in-app camera so our activity stays in foreground (avoids "Lost connection" when system camera takes over)
+      debugPrint('[Aadhaar] _captureFront (mobile) opening AadhaarGridCaptureScreen');
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const AadhaarGridCaptureScreen(isFront: true),
+        ),
+      );
+      debugPrint('[Aadhaar] _captureFront AadhaarGridCaptureScreen returned: result=${result != null} path=${result?.path} mounted=$mounted');
+      if (result != null && mounted) {
+        final path = await _cropImage(result.path);
+        if (path != null && mounted) await _applySideImage(path, isFront: true);
+      }
+    } catch (e, st) {
+      debugPrint('[Aadhaar] _captureFront CAUGHT: $e');
+      debugPrint('[Aadhaar] _captureFront STACK: $st');
     }
   }
 
@@ -340,10 +420,35 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   }
 
   Future<void> _captureBack() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.camera);
-    if (image != null && mounted) {
-      final path = await _cropImage(image.path);
-      if (path != null && mounted) await _applySideImage(path, isFront: false);
+    debugPrint('[Aadhaar] _captureBack ENTER');
+    try {
+      if (kIsWeb) {
+        debugPrint('[Aadhaar] _captureBack (web) using pickImage(camera)');
+        final image = await _imagePicker.pickImage(
+          source: ImageSource.camera,
+          requestFullMetadata: false,
+        );
+        debugPrint('[Aadhaar] _captureBack pickImage returned: image=${image != null} path=${image?.path} mounted=$mounted');
+        if (image != null && mounted) {
+          final path = await _cropImage(image.path);
+          if (path != null && mounted) await _applySideImage(path, isFront: false);
+        }
+        return;
+      }
+      debugPrint('[Aadhaar] _captureBack (mobile) opening AadhaarGridCaptureScreen');
+      final result = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute<XFile>(
+          builder: (context) => const AadhaarGridCaptureScreen(isFront: false),
+        ),
+      );
+      debugPrint('[Aadhaar] _captureBack AadhaarGridCaptureScreen returned: result=${result != null} path=${result?.path} mounted=$mounted');
+      if (result != null && mounted) {
+        final path = await _cropImage(result.path);
+        if (path != null && mounted) await _applySideImage(path, isFront: false);
+      }
+    } catch (e, st) {
+      debugPrint('[Aadhaar] _captureBack CAUGHT: $e');
+      debugPrint('[Aadhaar] _captureBack STACK: $st');
     }
   }
 
@@ -357,7 +462,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
   /// Perform OCR on Aadhaar image and show extracted data
   Future<void> _performAadhaarOCR(String imagePath, {required bool isFront}) async {
-    if (!mounted) return;
+    debugPrint('[Aadhaar] _performAadhaarOCR ENTER imagePath=$imagePath isFront=$isFront mounted=$mounted');
+    if (!mounted) {
+      debugPrint('[Aadhaar] _performAadhaarOCR EARLY EXIT (!mounted)');
+      return;
+    }
 
     try {
       // Show loading indicator
@@ -369,7 +478,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         );
       }
 
+      debugPrint('[Aadhaar] _performAadhaarOCR calling OcrService.extractAadhaarText');
       final result = await OcrService.extractAadhaarText(imagePath, isFront: isFront);
+      debugPrint('[Aadhaar] _performAadhaarOCR OcrService returned success=${result.success}');
 
       if (!mounted) return;
 
@@ -401,6 +512,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             _aadhaarName = result.name;
             // Auto-fill name to personal data
             provider.updatePersonalDataField(fullName: result.name);
+          }
+          // Store raw text from Aadhaar front for PAN name validation (at least one word match)
+          if (result.fullText != null && result.fullText!.isNotEmpty) {
+            _aadhaarFrontRawText = result.fullText;
           }
           if (result.hasDateOfBirth) {
             extractedData.add('DOB: ${result.dateOfBirth}');
@@ -453,9 +568,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           duration: const Duration(seconds: 3),
         );
       }
-    } catch (e) {
+    } catch (e, st) {
       if (mounted) {
-        debugPrint('OCR Error: $e');
+        debugPrint('[Aadhaar] _performAadhaarOCR CAUGHT: $e');
+        debugPrint('[Aadhaar] _performAadhaarOCR STACK: $st');
         // Don't show error toast - OCR is optional feature
       }
     }
@@ -622,6 +738,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontAadhaarNumber': _frontAadhaarNumber,
           'backAadhaarNumber': _backAadhaarNumber,
           'aadhaarName': _aadhaarName,
+          'aadhaarFrontRawText': _aadhaarFrontRawText,
           '_internalValidation': {
             'frontDocumentValid': _frontInternalValid,
             'backDocumentValid': _backInternalValid,
@@ -1898,6 +2015,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _frontAadhaarNumber = null;
       _backAadhaarNumber = null;
       _aadhaarName = null;
+      _aadhaarFrontRawText = null;
       _frontInternalValid = true;
       _backInternalValid = true;
     });

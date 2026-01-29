@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../utils/app_theme.dart';
+import '../widgets/premium_toast.dart';
 
 /// Full-screen selfie capture with a face grid overlay.
 /// Uses live camera on mobile; on web, falls back to image picker and pops without opening camera.
@@ -83,9 +84,7 @@ class _FaceGridCaptureScreenState extends State<FaceGridCaptureScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isCapturing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Capture failed: $e'), backgroundColor: AppTheme.errorColor),
-        );
+        PremiumToast.showError(context, 'Capture failed: $e');
       }
     }
   }

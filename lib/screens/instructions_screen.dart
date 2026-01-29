@@ -312,6 +312,36 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   if (!mounted) return;
                                   setState(() => _isCreatingApplication = true);
                                   try {
+                                    // Before creating a new application, check existing ones.
+                                    final existingApps =
+                                        await _applicationService.getApplications(
+                                      status: 'all',
+                                      limit: 50,
+                                    );
+
+                                    final hasApproved = existingApps
+                                        .any((app) => app.isApproved);
+
+                                    // Any submitted/in-progress applications that are NOT approved yet
+                                    final blockingApps = existingApps.where(
+                                      (app) =>
+                                          app.isSubmitted ||
+                                          app.isInProgress ||
+                                          app.isPaused,
+                                    );
+
+                                    if (!hasApproved &&
+                                        blockingApps.isNotEmpty) {
+                                      // Show \"talk to our agent\" style dialog and do NOT create a new app
+                                      final latest = List<LoanApplication>.from(
+                                              blockingApps)
+                                          ..sort((a, b) => b.updatedAt
+                                              .compareTo(a.updatedAt));
+                                      _showInProgressDialog(
+                                          context, latest.first);
+                                      return;
+                                    }
+
                                     // Clear old draft data before starting new submission
                                     final submissionProvider =
                                         context.read<SubmissionProvider>();

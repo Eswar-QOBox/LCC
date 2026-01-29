@@ -3,6 +3,9 @@ import '../utils/app_theme.dart';
 
 enum ToastType { success, error, warning, info }
 
+/// Top overlay entry for current toast so we can dismiss it when showing a new one.
+OverlayEntry? _currentTopToastEntry;
+
 class PremiumToast {
   static void show(
     BuildContext context, {
@@ -14,6 +17,7 @@ class PremiumToast {
     VoidCallback? onAction,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
+    final topPadding = MediaQuery.of(context).padding.top;
 
     // Determine colors based on type
     Color backgroundColor;
@@ -48,68 +52,88 @@ class PremiumToast {
         break;
     }
 
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    
-    // Remove any existing snackbars first
-    scaffoldMessenger.clearSnackBars();
+    // Dismiss any existing top toast
+    _currentTopToastEntry?.remove();
+    _currentTopToastEntry = null;
 
-    scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              Icon(
-                icon ?? defaultIcon,
-                color: iconColor,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  message,
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => Positioned(
+        top: topPadding + 8,
+        left: 16,
+        right: 16,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-              if (actionLabel != null && onAction != null) ...[
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () {
-                    scaffoldMessenger.hideCurrentSnackBar();
-                    onAction();
-                  },
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  icon ?? defaultIcon,
+                  color: iconColor,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Text(
-                    actionLabel,
+                    message,
                     style: TextStyle(
                       color: textColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: () {
+                      entry.remove();
+                      _currentTopToastEntry = null;
+                      onAction();
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      actionLabel,
+                      style: TextStyle(
+                        color: textColor,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
-        backgroundColor: backgroundColor,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        elevation: 6,
-        duration: duration,
       ),
     );
+    _currentTopToastEntry = entry;
+    overlay.insert(entry);
+
+    Future.delayed(duration, () {
+      if (_currentTopToastEntry == entry) {
+        entry.remove();
+        _currentTopToastEntry = null;
+      }
+    });
   }
 
   // Convenience methods
@@ -179,5 +203,19 @@ class PremiumToast {
       actionLabel: actionLabel,
       onAction: onAction,
     );
+  }
+
+  /// Show a snackbar-style message at the top (use instead of ScaffoldMessenger.showSnackBar).
+  static void showSnackBarAtTop(
+    BuildContext context,
+    String message, {
+    bool isError = false,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    if (isError) {
+      showError(context, message, duration: duration);
+    } else {
+      showInfo(context, message, duration: duration);
+    }
   }
 }

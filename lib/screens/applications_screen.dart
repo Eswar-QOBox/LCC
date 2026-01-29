@@ -12,6 +12,7 @@ import '../services/loan_application_service.dart';
 import '../providers/application_provider.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 import '../widgets/skeleton_box.dart';
 
 class ApplicationsScreen extends StatefulWidget {
@@ -315,33 +316,27 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     BuildContext context,
     LoanApplication application,
   ) async {
-    // Only allow navigation for incomplete (draft) applications
-    if (!application.isDraft) {
-      return;
-    }
-
     try {
-      // Show loading indicator
       if (!context.mounted) return;
-      
-      // Load the application using the provider
       final appProvider = context.read<ApplicationProvider>();
       await appProvider.loadApplication(application.id);
-      
       if (!context.mounted) return;
-      
-      // Navigate to the appropriate step
+
+      // Draft: go to current step to continue editing
+      if (application.isDraft) {
+        context.go(AppRoutes.getStepRoute(application.currentStep));
+        return;
+      }
+      // Submitted or approved: sync then show View Submitted screen
+      if (application.isSubmitted || application.isApproved) {
+        context.go('${AppRoutes.step6Preview}?mode=viewSubmitted');
+        return;
+      }
+      // Other status (e.g. paused): go to current step
       context.go(AppRoutes.getStepRoute(application.currentStep));
     } catch (e) {
       if (!context.mounted) return;
-      
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load application: ${e.toString()}'),
-          backgroundColor: AppTheme.errorColor,
-        ),
-      );
+      PremiumToast.showError(context, 'Failed to load application: ${e.toString()}');
     }
   }
 
@@ -422,8 +417,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       statusDescription = AppStrings.statusInProgress;
     }
 
+    final isTappable = isIncomplete || application.isSubmitted || application.isApproved;
     return InkWell(
-      onTap: isIncomplete
+      onTap: isTappable
           ? () => _handleApplicationTap(context, application)
           : null,
       borderRadius: BorderRadius.circular(16),
@@ -612,6 +608,44 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                   Expanded(
                     child: Text(
                       'Tap to continue application',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    color: colorScheme.primary,
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if ((application.isSubmitted || application.isApproved) && isTappable) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.primary.withValues(alpha: 0.25),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.download,
+                    color: colorScheme.primary,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tap to view & download PDF',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.primary,
                         fontWeight: FontWeight.w600,

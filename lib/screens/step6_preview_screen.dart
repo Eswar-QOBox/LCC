@@ -30,7 +30,10 @@ void main() {
 }
 
 class Step6PreviewScreen extends StatefulWidget {
-  const Step6PreviewScreen({super.key});
+  const Step6PreviewScreen({super.key, this.mode});
+
+  /// When 'viewSubmitted', sync runs then redirects to ViewSubmittedScreen.
+  final String? mode;
 
   @override
   State<Step6PreviewScreen> createState() => _Step6PreviewScreenState();
@@ -113,7 +116,12 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   /// This ensures data persists across page refreshes on web
   Future<void> _loadExistingData() async {
     final appProvider = context.read<ApplicationProvider>();
-    if (!appProvider.hasApplication) return;
+    if (!appProvider.hasApplication) {
+      if (widget.mode == 'viewSubmitted' && mounted) {
+        context.go(AppRoutes.viewSubmitted);
+      }
+      return;
+    }
 
     // Refresh application data from backend to get the latest saved data
     try {
@@ -349,6 +357,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             ? DateTime.tryParse(stepData['dateOfBirth'] as String)
             : null,
         panNo: stepData['panNo'] as String?,
+        aadhaarNumber: stepData['aadhaarNumber'] as String?,
         mobileNumber: stepData['mobileNumber'] as String?,
         personalEmailId: stepData['personalEmailId'] as String?,
         countryOfResidence: stepData['countryOfResidence'] as String?,
@@ -387,6 +396,11 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
     if (kDebugMode) {
       print('📥 Preview Screen: Loaded existing data from ApplicationProvider');
+    }
+
+    // When opened for "View Submitted", redirect to the dedicated screen after sync
+    if (widget.mode == 'viewSubmitted' && mounted) {
+      context.go(AppRoutes.viewSubmitted);
     }
   }
 
@@ -536,6 +550,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.mode == 'viewSubmitted') {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(color: const Color(0xFF002366)),
+        ),
+      );
+    }
     final provider = context.watch<SubmissionProvider>();
     final appProvider = context.watch<ApplicationProvider>();
     final submission = provider.submission;
@@ -1144,29 +1166,61 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             : null,
                       ),
                     ] else ...[
-                      // Already submitted - show Close button
-                      PremiumCard(
-                        gradientColors: [
-                          colorScheme.primary.withValues(alpha: 0.05),
-                          colorScheme.secondary.withValues(alpha: 0.03),
-                        ],
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () => context.go(AppRoutes.home),
-                            icon: const Icon(Icons.close),
-                            label: const Text('Close'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: colorScheme.surfaceContainerHighest,
-                              foregroundColor: colorScheme.onSurface,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                      // Already submitted - show Download PDF and Close
+                      Row(
+                        children: [
+                          Expanded(
+                            child: PremiumCard(
+                              gradientColors: [
+                                colorScheme.primary.withValues(alpha: 0.08),
+                                colorScheme.secondary.withValues(alpha: 0.04),
+                              ],
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () => context.go(AppRoutes.pdfDownload),
+                                  icon: const Icon(Icons.download),
+                                  label: const Text('Download PDF'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                ),
                               ),
-                              elevation: 0,
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: PremiumCard(
+                              gradientColors: [
+                                colorScheme.primary.withValues(alpha: 0.05),
+                                colorScheme.secondary.withValues(alpha: 0.03),
+                              ],
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () => context.go(AppRoutes.home),
+                                  icon: const Icon(Icons.close),
+                                  label: const Text('Close'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: colorScheme.surfaceContainerHighest,
+                                    foregroundColor: colorScheme.onSurface,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                     const SizedBox(height: 24),
@@ -1319,6 +1373,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     bool isPdf,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Prefer path extension: if path looks like image, always show image; else use isPdf / .pdf
+    final pathWithoutQuery = path.split(RegExp(r'[?#]')).first.toLowerCase();
+    final looksLikeImage = pathWithoutQuery.endsWith('.jpg') ||
+        pathWithoutQuery.endsWith('.jpeg') ||
+        pathWithoutQuery.endsWith('.png') ||
+        pathWithoutQuery.endsWith('.gif') ||
+        pathWithoutQuery.endsWith('.webp');
+    final showAsPdf = !looksLikeImage && (isPdf || pathWithoutQuery.endsWith('.pdf'));
     return Container(
       height: 140,
       decoration: BoxDecoration(
@@ -1339,7 +1401,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         borderRadius: BorderRadius.circular(14.5),
         child: Stack(
           children: [
-            isPdf
+            showAsPdf
                 ? Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -1349,6 +1411,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                         ],
                       ),
                     ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1364,6 +1427,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             style: TextStyle(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Image not available for PDF display',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 11,
                             ),
                           ),
                         ],

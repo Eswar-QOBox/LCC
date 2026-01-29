@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import 'simple_camera_capture_screen.dart';
 import '../models/additional_document.dart';
 import '../services/additional_documents_service.dart';
 import '../providers/auth_provider.dart';
@@ -10,6 +12,7 @@ import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
+import '../widgets/premium_toast.dart';
 
 class RequiredDocumentsScreen extends StatefulWidget {
   const RequiredDocumentsScreen({super.key});
@@ -278,10 +281,21 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       }
 
       if (source == 'camera') {
-        pickedFile = await _imagePicker.pickImage(
-          source: ImageSource.camera,
-          imageQuality: 50,
-        );
+        if (kIsWeb) {
+          // On web, still use system camera
+          pickedFile = await _imagePicker.pickImage(
+            source: ImageSource.camera,
+            imageQuality: 50,
+            requestFullMetadata: false,
+          );
+        } else {
+          // On mobile, use in-app simple camera UI (no grids)
+          pickedFile = await Navigator.of(context).push<XFile?>(
+            MaterialPageRoute(
+              builder: (_) => const SimpleCameraCaptureScreen(),
+            ),
+          );
+        }
       } else if (source == 'gallery') {
         pickedFile = await _imagePicker.pickImage(
           source: ImageSource.gallery,
@@ -324,9 +338,20 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         filePath = pickedFile.name;
       }
 
+      // Optional crop for images on mobile (skip for web / PDFs)
+      String finalPath = filePath;
+      if (!kIsWeb &&
+          !filePath.toLowerCase().endsWith('.pdf') &&
+          (fileBytes == null)) {
+        final croppedPath = await _cropImage(filePath);
+        if (croppedPath != null && croppedPath.isNotEmpty) {
+          finalPath = croppedPath;
+        }
+      }
+
       // Upload document
       await _documentsService.uploadAdditionalDocument(
-        filePath: filePath,
+        filePath: finalPath,
         fileName: pickedFile.name,
         documentType: requirement.id,
         leadId: _leadId!,
@@ -337,12 +362,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       await _loadDocuments();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Document uploaded successfully'),
-            backgroundColor: AppTheme.successColor,
-          ),
-        );
+        PremiumToast.showSuccess(context, 'Document uploaded successfully');
       }
     } catch (e) {
       String errorMessage = e.toString();
@@ -392,9 +412,26 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
 
   void _showError(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: AppTheme.errorColor),
+      PremiumToast.showError(context, message);
+    }
+  }
+
+  /// Simple image cropper for uploaded documents (mobile only).
+  Future<String?> _cropImage(String path) async {
+    if (kIsWeb) return path;
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: path,
+        compressQuality: 90,
+        uiSettings: [
+          AndroidUiSettings(toolbarTitle: 'Crop Document'),
+          IOSUiSettings(title: 'Crop Document'),
+        ],
       );
+      return cropped?.path ?? path;
+    } catch (_) {
+      // If cropping fails, fall back to original image
+      return path;
     }
   }
 

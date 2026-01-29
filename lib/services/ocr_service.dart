@@ -13,13 +13,16 @@ class OcrService {
     Uint8List? imageBytes,
     bool isFront = true,
   }) async {
+    debugPrint('[OcrService] extractAadhaarText ENTER imagePath=$imagePath isFront=$isFront hasBytes=${imageBytes != null}');
     try {
       // Create InputImage from path or bytes
       InputImage inputImage;
-      
+
       if (imageBytes != null) {
+        debugPrint('[OcrService] extractAadhaarText creating temp file from bytes');
         // Use bytes directly (works on all platforms)
         final tempFile = await _createTempFile(imageBytes);
+        debugPrint('[OcrService] extractAadhaarText InputImage.fromFilePath(temp) path=${tempFile.path}');
         inputImage = InputImage.fromFilePath(tempFile.path);
       } else {
         if (kIsWeb) {
@@ -28,15 +31,19 @@ class OcrService {
             errorMessage: 'Web platform requires image bytes',
           );
         }
+        debugPrint('[OcrService] extractAadhaarText InputImage.fromFilePath(imagePath)');
         inputImage = InputImage.fromFilePath(imagePath);
       }
 
+      debugPrint('[OcrService] extractAadhaarText creating TextRecognizer');
       // Initialize text recognizer
       final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
+      debugPrint('[OcrService] extractAadhaarText calling processImage');
       // Process image
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
-      
+      debugPrint('[OcrService] extractAadhaarText processImage returned');
+
       // Close recognizer
       textRecognizer.close();
 
@@ -95,6 +102,12 @@ class OcrService {
           continue;
         }
         
+        // Skip UIDAI helpline (1947 / 1800 180 1947) — often on back side, mistaken for Aadhaar
+        if (_isUidaiHelplineNumber(extracted)) {
+          debugPrint('Skipping - UIDAI helpline number: $extracted');
+          continue;
+        }
+        
         // Valid Aadhaar found!
         aadhaarNumber = extracted;
         debugPrint('Found Aadhaar number: $aadhaarNumber');
@@ -122,6 +135,12 @@ class OcrService {
           // Enrollment numbers often have dates embedded
           if (extracted.contains(RegExp(r'(19|20)\d{2}(0[1-9]|1[0-2])'))) {
             debugPrint('Skipping fallback - contains date pattern: $extracted');
+            continue;
+          }
+          
+          // Skip UIDAI helpline (1947 / 1800 180 1947)
+          if (_isUidaiHelplineNumber(extracted)) {
+            debugPrint('Skipping fallback - UIDAI helpline number: $extracted');
             continue;
           }
           
@@ -359,8 +378,9 @@ class OcrService {
         fullText: recognizedText.text,
         internalDocumentValid: internalDocumentValid,
       );
-    } catch (e) {
-      debugPrint('Aadhaar OCR Error: $e');
+    } catch (e, st) {
+      debugPrint('[OcrService] extractAadhaarText CAUGHT: $e');
+      debugPrint('[OcrService] extractAadhaarText STACK: $st');
       return AadhaarOcrResult(
         success: false,
         errorMessage: 'Failed to extract text: ${e.toString()}',
@@ -474,6 +494,21 @@ class OcrService {
     final tempFile = io.File('${tempDir.path}/temp_image.jpg');
     await tempFile.writeAsBytes(bytes);
     return tempFile;
+  }
+
+  /// True if the digit string looks like UIDAI helpline (1947 / 1800-180-1947), not Aadhaar.
+  static bool _isUidaiHelplineNumber(String digits) {
+    if (digits.length < 4) return false;
+    // Aadhaar never starts with 0 or 1
+    if (digits.startsWith('1800') || digits.startsWith('1947')) return true;
+    // UIDAI toll-free 1800 180 1947 (digits: 18001801947)
+    if (digits.contains('18001801947')) return true;
+    // Variant 1947 1800 180 (digits: 19471800180)
+    if (digits.contains('19471800180')) return true;
+    // "1947 1800 180 1947" as digits = 194718001801947; any 12-digit slice is helpline, not Aadhaar
+    const helplineDigits = '194718001801947';
+    if (digits.length >= 12 && helplineDigits.contains(digits)) return true;
+    return false;
   }
 
   /// Validate Aadhaar format

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +19,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import 'pan_horizontal_card_capture_screen.dart';
 
 class Step3PanScreen extends StatefulWidget {
   const Step3PanScreen({super.key});
@@ -44,6 +46,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   
   // Aadhaar name loaded from previous step (for cross-validation)
   String? _aadhaarName;
+  // Raw text from Aadhaar front (for PAN name validation: at least one word present)
+  String? _aadhaarFrontRawText;
   
   // Internal validation flag (secret - not shown to user)
   bool _internalDocumentValid = true;
@@ -157,13 +161,18 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       }
     }
     
-    // Load Aadhaar name from previous step for cross-validation
+    // Load Aadhaar name and front raw text from previous step for cross-validation
     if (application.step2Aadhaar != null) {
       final aadhaarData = application.step2Aadhaar as Map<String, dynamic>;
       final aadhaarName = aadhaarData['aadhaarName'] as String?;
       if (aadhaarName != null && aadhaarName.isNotEmpty) {
         _aadhaarName = aadhaarName;
         debugPrint('Loaded Aadhaar name for cross-validation: $_aadhaarName');
+      }
+      final aadhaarFrontRawText = aadhaarData['aadhaarFrontRawText'] as String?;
+      if (aadhaarFrontRawText != null && aadhaarFrontRawText.isNotEmpty) {
+        _aadhaarFrontRawText = aadhaarFrontRawText;
+        debugPrint('Loaded Aadhaar front raw text for PAN name validation (length: ${_aadhaarFrontRawText!.length})');
       }
     }
   }
@@ -231,31 +240,69 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   Future<void> _captureFromCamera() async {
-    final image = await _imagePicker.pickImage(source: ImageSource.camera);
-    if (image != null && mounted) {
+    if (kIsWeb) {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        requestFullMetadata: false,
+      );
+      if (image != null && mounted) {
+        setState(() {
+          _frontPath = image.path;
+          _frontBytes = null;
+          _isPdf = false;
+          _rotation = 0.0;
+        });
+        context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
+        await _performPanOCR(image.path);
+      }
+      return;
+    }
+    // Use in-app PAN grid capture so our activity stays in foreground (avoids crash when system camera takes over)
+    final result = await Navigator.of(context).push<XFile>(
+      MaterialPageRoute<XFile>(
+        builder: (context) => const PanHorizontalCardCaptureScreen(),
+      ),
+    );
+    if (result != null && mounted) {
       setState(() {
-        _frontPath = image.path;
+        _frontPath = result.path;
         _frontBytes = null;
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
-      await _performPanOCR(image.path);
+      context.read<SubmissionProvider>().setPanFront(result.path, isPdf: false);
+      await _performPanOCR(result.path);
     }
   }
 
   Future<void> _selectFromGallery() async {
     final image = await _imagePicker.pickImage(source: ImageSource.gallery);
     if (image != null && mounted) {
+      String workingPath = image.path;
+      if (!kIsWeb) {
+        final cropped = await ImageCropper().cropImage(
+          sourcePath: image.path,
+          compressQuality: 90,
+          uiSettings: [
+            AndroidUiSettings(toolbarTitle: 'Crop PAN'),
+            IOSUiSettings(title: 'Crop PAN'),
+          ],
+        );
+        final croppedPath = cropped?.path;
+        if (croppedPath != null && croppedPath.isNotEmpty) {
+          workingPath = croppedPath;
+        }
+      }
+
       setState(() {
-        _frontPath = image.path;
+        _frontPath = workingPath;
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(image.path, isPdf: false);
+      context.read<SubmissionProvider>().setPanFront(workingPath, isPdf: false);
       
       // Perform OCR on PAN card
-      await _performPanOCR(image.path);
+      await _performPanOCR(workingPath);
     }
   }
 
@@ -441,6 +488,20 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     return commonWords.length >= 2;
   }
 
+  /// Check if at least one word from PAN name appears in Aadhaar front raw text (case-insensitive).
+  /// Handles caps/small differences and partial matches.
+  bool _isPanNamePresentInAadhaarRawText(String panName, String aadhaarRawText) {
+    final rawUpper = aadhaarRawText.toUpperCase().replaceAll(RegExp(r'\s+'), ' ');
+    final words = panName.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return false;
+    for (final word in words) {
+      final w = word.trim();
+      if (w.isEmpty) continue;
+      if (rawUpper.contains(w.toUpperCase())) return true;
+    }
+    return false;
+  }
+
   /// Show validation error dialog - user cannot proceed until fixed
   void _showValidationErrorDialog({
     required String title,
@@ -592,9 +653,18 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       return;
     }
     
-    // Strict validation: Check if Aadhaar name and PAN name match
-    if (_aadhaarName != null && _extractedName != null) {
-      if (!_areNamesSimilar(_aadhaarName!, _extractedName!)) {
+    // Name validation: prefer Aadhaar front raw text (at least one word from PAN name present)
+    if (_extractedName != null && _extractedName!.trim().isNotEmpty) {
+      bool nameValid = false;
+      if (_aadhaarFrontRawText != null && _aadhaarFrontRawText!.trim().isNotEmpty) {
+        nameValid = _isPanNamePresentInAadhaarRawText(_extractedName!, _aadhaarFrontRawText!);
+        debugPrint('PAN name validation (raw text): at least one word present = $nameValid');
+      }
+      if (!nameValid && _aadhaarName != null && _aadhaarName!.trim().isNotEmpty) {
+        nameValid = _areNamesSimilar(_aadhaarName!, _extractedName!);
+        debugPrint('PAN name validation (extracted name): names similar = $nameValid');
+      }
+      if (!nameValid && (_aadhaarFrontRawText != null || _aadhaarName != null)) {
         _showValidationErrorDialog(
           title: 'Name Mismatch Detected',
           message: 'The name on your Aadhaar card does not match the name on your PAN card. Both documents must belong to the same person.',

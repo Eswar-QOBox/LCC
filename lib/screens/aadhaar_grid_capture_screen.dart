@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import '../utils/app_theme.dart';
+import '../widgets/premium_toast.dart';
 import '../utils/grid_crop_helper_stub.dart'
     if (dart.library.io) '../utils/grid_crop_helper.dart' as grid_crop;
 
@@ -119,9 +120,7 @@ class _AadhaarGridCaptureScreenState extends State<AadhaarGridCaptureScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isCapturing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Capture failed: $e'), backgroundColor: AppTheme.errorColor),
-        );
+        PremiumToast.showError(context, 'Capture failed: $e');
       }
     }
   }

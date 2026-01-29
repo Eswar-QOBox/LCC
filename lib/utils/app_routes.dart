@@ -22,6 +22,7 @@ class AppRoutes {
   // After Submission
   static const String submissionSuccess = '/submission-success';
   static const String pdfDownload = '/pdf-download';
+  static const String viewSubmitted = '/view-submitted';
   
   // Tools
   static const String loanCalculator = '/loan-calculator';

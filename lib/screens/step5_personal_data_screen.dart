@@ -349,17 +349,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Unable to select date. Please try again.'),
-            backgroundColor: AppTheme.errorColor,
-            duration: const Duration(seconds: 2),
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: _selectDateOfBirth,
-            ),
-          ),
+        PremiumToast.showError(
+          context,
+          'Unable to select date. Please try again.',
+          duration: const Duration(seconds: 2),
+          actionLabel: 'Retry',
+          onAction: _selectDateOfBirth,
         );
       }
     }

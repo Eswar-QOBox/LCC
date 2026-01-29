@@ -50,3 +50,10 @@ android {
 flutter {
     source = "../.."
 }
+
+// App-specific Android dependencies
+dependencies {
+    // Needed by uCrop (used by image_cropper) when downloading images
+    // Provides okhttp3.Call, OkHttpClient, Request, Response, etc. required by R8
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}

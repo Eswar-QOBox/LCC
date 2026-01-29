@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/premium_toast.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -40,12 +41,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             _tempPassword = result['tempPassword'] as String?;
           });
         } else {
-          // Show error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(authProvider.errorMessage ?? 'Failed to process request'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
+          PremiumToast.showError(
+            context,
+            authProvider.errorMessage ?? 'Failed to process request',
           );
         }
       }

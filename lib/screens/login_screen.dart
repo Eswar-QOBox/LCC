@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/premium_toast.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -39,12 +40,9 @@ class _LoginScreenState extends State<LoginScreen> {
           // Navigate to home on successful login
           context.go(AppRoutes.home);
         } else {
-          // Show error message
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(authProvider.errorMessage ?? 'Login failed'),
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
+          PremiumToast.showError(
+            context,
+            authProvider.errorMessage ?? 'Login failed',
           );
         }
       }
