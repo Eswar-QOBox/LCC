@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -11,9 +12,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/document_submission.dart';
+import '../models/additional_document.dart';
+import '../providers/auth_provider.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import 'storage_service.dart';
+import '../utils/api_config.dart';
+import 'additional_documents_service.dart';
 
 class PdfGenerationService {
   /// Generate PDF with all application data
@@ -24,6 +29,14 @@ class PdfGenerationService {
     bool useSampleData = false,
   }) async {
     try {
+      // Best-effort: hydrate missing docs from backend for submitted users
+      // (especially business-loan additional documents which are not stored in application steps).
+      await _hydrateSubmissionForPdfIfNeeded(
+        context: context,
+        submissionProvider: submissionProvider,
+        applicationProvider: applicationProvider,
+      );
+
       // Get all submission data
       DocumentSubmission submission = submissionProvider.submission;
       
@@ -56,6 +69,225 @@ class PdfGenerationService {
       
     } catch (e) {
       throw Exception('Failed to generate PDF: $e');
+    }
+  }
+
+  /// Best-effort hydration so "What's Included" and PDF generation
+  /// can work even when the local draft is missing submitted uploads.
+  Future<void> hydrateSubmissionForPdf({
+    required BuildContext context,
+    required SubmissionProvider submissionProvider,
+    required ApplicationProvider applicationProvider,
+  }) async {
+    await _hydrateSubmissionForPdfIfNeeded(
+      context: context,
+      submissionProvider: submissionProvider,
+      applicationProvider: applicationProvider,
+    );
+  }
+
+  Future<void> _hydrateSubmissionForPdfIfNeeded({
+    required BuildContext context,
+    required SubmissionProvider submissionProvider,
+    required ApplicationProvider applicationProvider,
+  }) async {
+    // Ensure loan type flags exist (needed to decide business/proprietor flow).
+    final app = applicationProvider.currentApplication;
+    if (app != null) {
+      final s = submissionProvider.submission;
+      s.loanType ??= app.loanType;
+      // businessLoanType is stored on submission; if missing, keep as-is (some flows may not set it).
+      // (We don't have a dedicated field on the app model for this in all cases.)
+    }
+
+    final submission = submissionProvider.submission;
+    final isBusinessLoan = (submission.loanType ?? '').toLowerCase().contains('business');
+    final businessLoanType = (submission.businessLoanType ?? '').toLowerCase();
+    final isProprietor = businessLoanType == 'proprietor';
+    final isPartnership = businessLoanType == 'partnership';
+    final isPvtLimited = businessLoanType == 'pvt_limited';
+    if (!isBusinessLoan) return;
+
+    // If business docs already present, don't override.
+    // (Still allow partial hydration when missing.)
+    final docs = submission.businessDocuments;
+
+    // Fetch user's uploaded docs and map to business doc types.
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+    if (user == null) return;
+
+    final service = AdditionalDocumentsService();
+    List<UploadedDocument> uploaded;
+    try {
+      uploaded = await service.getUserDocuments(user.id);
+    } catch (_) {
+      // Best-effort only; if network fails, keep whatever we have.
+      return;
+    }
+
+    String? latestUrlForType(String type) {
+      final matches = uploaded.where((d) => d.documentType == type && (d.url ?? '').trim().isNotEmpty).toList();
+      if (matches.isEmpty) return null;
+      matches.sort((a, b) => b.uploadedAt.compareTo(a.uploadedAt));
+      return matches.first.url;
+    }
+
+    bool isPdfUrl(String? url, String? fallbackName) {
+      final u = (url ?? '').toLowerCase();
+      final n = (fallbackName ?? '').toLowerCase();
+      return u.contains('.pdf') || n.endsWith('.pdf');
+    }
+
+    // Map business additional docs (types used in upload calls).
+    final spouseAadhaarFront = latestUrlForType('custom_spouse_aadhaar_front');
+    final spouseAadhaarBack = latestUrlForType('custom_spouse_aadhaar_back');
+    final spousePan = latestUrlForType('spouse_pan');
+
+    final companyPan = latestUrlForType('custom_applicant_company_pan_card');
+    final partnershipDeed = latestUrlForType('custom_applicant_partnership_deed');
+    final moa = latestUrlForType('custom_applicant_moa');
+    final aoa = latestUrlForType('custom_applicant_aoa');
+    final gst = latestUrlForType('custom_applicant_gst_registration');
+    final labour = latestUrlForType('custom_applicant_labour_certificate');
+    final msme = latestUrlForType('custom_applicant_msme_certificate');
+    final ohp = latestUrlForType('custom_applicant_ohp_own_house_proof');
+
+    // Partnership partner docs (custom_partner_{i}_*).
+    final partnerRe =
+        RegExp(r'^custom_partner_(\d+)_(aadhaar_front|aadhaar_back|pan)$');
+    final Map<int, UploadedDocument> partnerLatest = {};
+    for (final d in uploaded) {
+      final m = partnerRe.firstMatch(d.documentType);
+      if (m == null) continue;
+      final url = (d.url ?? '').trim();
+      if (url.isEmpty) continue;
+      final idx = int.tryParse(m.group(1) ?? '');
+      if (idx == null || idx <= 0) continue;
+      final key = idx * 10 + (m.group(2) == 'aadhaar_front'
+          ? 1
+          : (m.group(2) == 'aadhaar_back' ? 2 : 3));
+      final prev = partnerLatest[key];
+      if (prev == null || d.uploadedAt.isAfter(prev.uploadedAt)) {
+        partnerLatest[key] = d;
+      }
+    }
+    int inferredPartnerCount = 0;
+    for (final key in partnerLatest.keys) {
+      final idx = key ~/ 10;
+      if (idx > inferredPartnerCount) inferredPartnerCount = idx;
+    }
+
+    // If businessLoanType is missing in a submitted session:
+    // - infer "partnership" if partner docs exist
+    // - otherwise infer "proprietor" if spouse docs exist
+    final inferredPartnership =
+        inferredPartnerCount > 0 && !isPartnership && !isPvtLimited && !isProprietor;
+    if (inferredPartnership) {
+      submissionProvider.setBusinessLoanType('partnership');
+    }
+    final inferredPvtLimited = (moa != null || aoa != null) && !isPvtLimited && !isPartnership && !isProprietor;
+    if (inferredPvtLimited) {
+      submissionProvider.setBusinessLoanType('pvt_limited');
+    }
+    final inferredProprietor = (spouseAadhaarFront != null ||
+            spouseAadhaarBack != null ||
+            spousePan != null) &&
+        !isProprietor &&
+        !isPartnership &&
+        !isPvtLimited;
+    if (inferredProprietor) {
+      submissionProvider.setBusinessLoanType('proprietor');
+    }
+
+    // Only set if missing to avoid overwriting local draft values.
+    if ((docs?.spouseAadhaar?.frontPath ?? '').trim().isEmpty && spouseAadhaarFront != null) {
+      submissionProvider.setSpouseAadhaarFront(
+        spouseAadhaarFront,
+        isPdf: isPdfUrl(spouseAadhaarFront, null),
+      );
+    }
+    if ((docs?.spouseAadhaar?.backPath ?? '').trim().isEmpty && spouseAadhaarBack != null) {
+      submissionProvider.setSpouseAadhaarBack(
+        spouseAadhaarBack,
+        isPdf: isPdfUrl(spouseAadhaarBack, null),
+      );
+    }
+    if ((docs?.spousePan?.frontPath ?? '').trim().isEmpty && spousePan != null) {
+      submissionProvider.setSpousePan(
+        spousePan,
+        isPdf: isPdfUrl(spousePan, null),
+      );
+    }
+
+    if ((docs?.gstRegistration?.path ?? '').trim().isEmpty && gst != null) {
+      submissionProvider.setGstRegistration(gst, isPdf: isPdfUrl(gst, null));
+    }
+    if ((docs?.labourCertificate?.path ?? '').trim().isEmpty && labour != null) {
+      submissionProvider.setLabourCertificate(labour, isPdf: isPdfUrl(labour, null));
+    }
+    if ((docs?.companyPanCard?.path ?? '').trim().isEmpty && companyPan != null) {
+      submissionProvider.setCompanyPanCard(companyPan, isPdf: isPdfUrl(companyPan, null));
+    }
+    if ((docs?.partnershipDeed?.path ?? '').trim().isEmpty && partnershipDeed != null) {
+      submissionProvider.setPartnershipDeed(partnershipDeed, isPdf: isPdfUrl(partnershipDeed, null));
+    }
+    if ((docs?.moa?.path ?? '').trim().isEmpty && moa != null) {
+      submissionProvider.setMoa(moa, isPdf: isPdfUrl(moa, null));
+    }
+    if ((docs?.aoa?.path ?? '').trim().isEmpty && aoa != null) {
+      submissionProvider.setAoa(aoa, isPdf: isPdfUrl(aoa, null));
+    }
+    if ((docs?.msmeCertificate?.path ?? '').trim().isEmpty && msme != null) {
+      submissionProvider.setMsmeCertificate(msme, isPdf: isPdfUrl(msme, null));
+    }
+    if ((docs?.ownHouseProof?.path ?? '').trim().isEmpty && ohp != null) {
+      submissionProvider.setOwnHouseProof(ohp, isPdf: isPdfUrl(ohp, null));
+    }
+
+    // Hydrate partners if present (partnership flow).
+    if (inferredPartnerCount > 0) {
+      final existingCount = docs?.partnerCount ?? 0;
+      if (existingCount < inferredPartnerCount) {
+        submissionProvider.setPartnerCount(inferredPartnerCount);
+      }
+
+      for (var i = 1; i <= inferredPartnerCount; i++) {
+        final frontKey = i * 10 + 1;
+        final backKey = i * 10 + 2;
+        final panKey = i * 10 + 3;
+        final frontUrl = partnerLatest[frontKey]?.url;
+        final backUrl = partnerLatest[backKey]?.url;
+        final panUrl = partnerLatest[panKey]?.url;
+
+        final currentDocs = submissionProvider.submission.businessDocuments;
+        final partner =
+            (currentDocs != null && currentDocs.partners.length >= i)
+                ? currentDocs.partners[i - 1]
+                : null;
+
+        if (((partner?.aadhaar?.frontPath ?? '').trim().isEmpty) && (frontUrl ?? '').trim().isNotEmpty) {
+          submissionProvider.setPartnerAadhaarFront(
+            i,
+            frontUrl!.trim(),
+            isPdf: isPdfUrl(frontUrl, null),
+          );
+        }
+        if (((partner?.aadhaar?.backPath ?? '').trim().isEmpty) && (backUrl ?? '').trim().isNotEmpty) {
+          submissionProvider.setPartnerAadhaarBack(
+            i,
+            backUrl!.trim(),
+            isPdf: isPdfUrl(backUrl, null),
+          );
+        }
+        if (((partner?.pan?.frontPath ?? '').trim().isEmpty) && (panUrl ?? '').trim().isNotEmpty) {
+          submissionProvider.setPartnerPan(
+            i,
+            panUrl!.trim(),
+            isPdf: isPdfUrl(panUrl, null),
+          );
+        }
+      }
     }
   }
 
@@ -505,11 +737,133 @@ class PdfGenerationService {
 
   /// Add Documents section (list of uploaded documents with images and detailed summary)
   Future<void> _addDocumentsSection(pw.Document pdf, DocumentSubmission submission, {String? authToken}) async {
+    final isBusinessLoan = (submission.loanType ?? '').toLowerCase().contains('business');
+    final business = submission.businessDocuments;
+    final businessType = (submission.businessLoanType ?? '').toLowerCase();
+    final hasPartners = business?.hasPartners ?? false;
+    final isBusinessProprietor = isBusinessLoan &&
+        (businessType == 'proprietor' ||
+            (businessType.isEmpty && business?.spousePan != null));
+    final isBusinessPartnership = isBusinessLoan &&
+        (businessType == 'partnership' ||
+            businessType == 'pvt_limited' ||
+            (businessType.isEmpty && hasPartners));
+    final isBusinessPvtLimited = isBusinessLoan && businessType == 'pvt_limited';
+    final partnershipPartnerCount = business?.partnerCount ?? (hasPartners ? business!.partners.length : 0);
+
     // Load images asynchronously (from local/asset paths or from backend URLs)
     final selfieImage = await _loadImageForPdf(submission.selfiePath, authToken: authToken);
     final aadhaarFrontImage = await _loadImageForPdf(submission.aadhaar?.frontPath, authToken: authToken);
     final aadhaarBackImage = await _loadImageForPdf(submission.aadhaar?.backPath, authToken: authToken);
     final panImage = await _loadImageForPdf(submission.pan?.frontPath, authToken: authToken);
+
+    // Bank statement + salary slips (images only)
+    final bankImages = <pw.MemoryImage?>[];
+    if (submission.bankStatement?.isPdf != true &&
+        submission.bankStatement?.pages.isNotEmpty == true) {
+      final pages = submission.bankStatement!.pages;
+      final maxPages = pages.length > 3 ? 3 : pages.length;
+      for (int i = 0; i < maxPages; i++) {
+        bankImages.add(await _loadImageForPdf(pages[i], authToken: authToken));
+      }
+    }
+
+    final slipImages = <pw.MemoryImage?>[];
+    if (!isBusinessLoan &&
+        submission.salarySlips?.slipItems.isNotEmpty == true) {
+      final items = submission.salarySlips!.slipItems.where((i) => i.hasFile).toList();
+      final maxSlips = items.length > 3 ? 3 : items.length;
+      for (int i = 0; i < maxSlips; i++) {
+        // Only embed images (skip PDFs)
+        if (items[i].isPdf) {
+          slipImages.add(null);
+        } else {
+          slipImages.add(await _loadImageForPdf(items[i].path, authToken: authToken));
+        }
+      }
+    }
+
+    // Business-loan docs (proprietor/partnership)
+    final spouseAadhaarFrontImage = await _loadImageForPdf(
+      business?.spouseAadhaar?.frontPath,
+      authToken: authToken,
+    );
+    final spouseAadhaarBackImage = await _loadImageForPdf(
+      business?.spouseAadhaar?.backPath,
+      authToken: authToken,
+    );
+    final spousePanImage = await _loadImageForPdf(
+      business?.spousePan?.frontPath,
+      authToken: authToken,
+    );
+    final companyPanImage = await _loadImageForPdf(
+      business?.companyPanCard?.path,
+      authToken: authToken,
+    );
+    final partnershipDeedImage = await _loadImageForPdf(
+      business?.partnershipDeed?.path,
+      authToken: authToken,
+    );
+    final moaImage = await _loadImageForPdf(
+      business?.moa?.path,
+      authToken: authToken,
+    );
+    final aoaImage = await _loadImageForPdf(
+      business?.aoa?.path,
+      authToken: authToken,
+    );
+    final gstImage = await _loadImageForPdf(
+      business?.gstRegistration?.path,
+      authToken: authToken,
+    );
+    final labourImage = await _loadImageForPdf(
+      business?.labourCertificate?.path,
+      authToken: authToken,
+    );
+    final msmeImage = await _loadImageForPdf(
+      business?.msmeCertificate?.path,
+      authToken: authToken,
+    );
+    final ohpImage = await _loadImageForPdf(
+      business?.ownHouseProof?.path,
+      authToken: authToken,
+    );
+
+    final partnerImageEntries = <MapEntry<String, pw.MemoryImage?>>[];
+    if (isBusinessLoan && isBusinessPartnership && partnershipPartnerCount > 0 && business != null) {
+      final max = partnershipPartnerCount;
+      for (var i = 0; i < max; i++) {
+        final partner = business.partners.length > i ? business.partners[i] : null;
+        final aadhaar = partner?.aadhaar;
+        final pan = partner?.pan;
+        final idx = i + 1;
+
+        if (aadhaar?.frontPath != null && aadhaar!.frontIsPdf == false) {
+          partnerImageEntries.add(
+            MapEntry(
+              'Partner $idx Aadhaar Front',
+              await _loadImageForPdf(aadhaar.frontPath, authToken: authToken),
+            ),
+          );
+        }
+        if (aadhaar?.backPath != null && aadhaar!.backIsPdf == false) {
+          partnerImageEntries.add(
+            MapEntry(
+              'Partner $idx Aadhaar Back',
+              await _loadImageForPdf(aadhaar.backPath, authToken: authToken),
+            ),
+          );
+        }
+        if (pan?.frontPath != null && pan!.isPdf == false) {
+          partnerImageEntries.add(
+            MapEntry(
+              'Partner $idx PAN',
+              await _loadImageForPdf(pan.frontPath, authToken: authToken),
+            ),
+          );
+        }
+      }
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -553,13 +907,112 @@ class PdfGenerationService {
               ? '${submission.bankStatement!.pages.length} page${submission.bankStatement!.pages.length == 1 ? '' : 's'} uploaded' 
               : 'Not uploaded'),
             _buildSimpleDocRow('Bank Statement Format', submission.bankStatement?.isPdf == true ? 'PDF' : 'Image'),
-            _buildSimpleDocRow(
-              'Salary Slips',
-              (submission.salarySlips?.uploadedCount ?? 0) > 0
-                  ? '${submission.salarySlips!.uploadedCount} slip${submission.salarySlips!.uploadedCount == 1 ? '' : 's'} uploaded'
-                  : 'Not uploaded',
-            ),
-            _buildSimpleDocRow('Salary Slips Format', submission.salarySlips?.isPdf == true ? 'PDF' : 'Image'),
+            if (!(isBusinessLoan && (isBusinessProprietor || isBusinessPartnership))) ...[
+              _buildSimpleDocRow(
+                'Salary Slips',
+                (submission.salarySlips?.uploadedCount ?? 0) > 0
+                    ? '${submission.salarySlips!.uploadedCount} slip${submission.salarySlips!.uploadedCount == 1 ? '' : 's'} uploaded'
+                    : 'Not uploaded',
+              ),
+              _buildSimpleDocRow('Salary Slips Format', submission.salarySlips?.isPdf == true ? 'PDF' : 'Image'),
+            ] else ...[
+              _buildSimpleDocRow('Salary Slips', 'Not required (Business Loan)'),
+            ],
+
+            if (isBusinessLoan && isBusinessProprietor) ...[
+              pw.SizedBox(height: 10),
+              pw.Divider(),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                'Business Loan Documents',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue800,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              _buildSimpleDocRow(
+                'Spouse Aadhaar',
+                (business?.spouseAadhaar?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Spouse PAN',
+                (business?.spousePan?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'GST Registration',
+                (business?.gstRegistration?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Labour Certificate',
+                (business?.labourCertificate?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'MSME Certificate',
+                (business?.msmeCertificate?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Own House Proof',
+                (business?.ownHouseProof?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+            ],
+            if (isBusinessLoan && isBusinessPartnership) ...[
+              pw.SizedBox(height: 10),
+              pw.Divider(),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                'Business Loan Documents',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue800,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              _buildSimpleDocRow(
+                'Partners',
+                partnershipPartnerCount > 0 ? '$partnershipPartnerCount partner(s)' : 'Not selected',
+              ),
+              _buildSimpleDocRow(
+                'Partners KYC',
+                (business?.isPartnerKycComplete ?? false) ? 'Completed' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Company PAN Card',
+                (business?.companyPanCard?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              if (isBusinessPvtLimited) ...[
+                _buildSimpleDocRow(
+                  'MOA',
+                  (business?.moa?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+                ),
+                _buildSimpleDocRow(
+                  'AOA',
+                  (business?.aoa?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+                ),
+              ] else
+                _buildSimpleDocRow(
+                  'Partnership Deed',
+                  (business?.partnershipDeed?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+                ),
+              _buildSimpleDocRow(
+                'GST Registration',
+                (business?.gstRegistration?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Labour Certificate',
+                (business?.labourCertificate?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'MSME Certificate',
+                (business?.msmeCertificate?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+              _buildSimpleDocRow(
+                'Own House Proof',
+                (business?.ownHouseProof?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+              ),
+            ],
             
             pw.SizedBox(height: 30),
             pw.Divider(),
@@ -569,7 +1022,23 @@ class PdfGenerationService {
             if (submission.selfiePath != null || 
                 (submission.aadhaar?.frontPath != null && submission.aadhaar?.frontIsPdf == false) ||
                 (submission.aadhaar?.backPath != null && submission.aadhaar?.backIsPdf == false) ||
-                (submission.pan?.frontPath != null && submission.pan?.isPdf == false)) ...[
+                (submission.pan?.frontPath != null && submission.pan?.isPdf == false) ||
+                (submission.bankStatement?.isPdf == false && submission.bankStatement?.pages.isNotEmpty == true) ||
+                (!isBusinessLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ||
+                (isBusinessLoan && (isBusinessProprietor || isBusinessPartnership) && (
+                  (business?.spouseAadhaar?.frontPath != null && business?.spouseAadhaar?.frontIsPdf == false) ||
+                  (business?.spouseAadhaar?.backPath != null && business?.spouseAadhaar?.backIsPdf == false) ||
+                  (business?.spousePan?.frontPath != null && business?.spousePan?.isPdf == false) ||
+                  (business?.companyPanCard?.path != null && business?.companyPanCard?.isPdf == false) ||
+                  (business?.partnershipDeed?.path != null && business?.partnershipDeed?.isPdf == false) ||
+                  (business?.moa?.path != null && business?.moa?.isPdf == false) ||
+                  (business?.aoa?.path != null && business?.aoa?.isPdf == false) ||
+                  (business?.gstRegistration?.path != null && business?.gstRegistration?.isPdf == false) ||
+                  (business?.labourCertificate?.path != null && business?.labourCertificate?.isPdf == false) ||
+                  (business?.msmeCertificate?.path != null && business?.msmeCertificate?.isPdf == false) ||
+                  (business?.ownHouseProof?.path != null && business?.ownHouseProof?.isPdf == false) ||
+                  (isBusinessPartnership && partnerImageEntries.isNotEmpty)
+                ))) ...[
               
               _buildSectionHeader('Document Images'),
               pw.SizedBox(height: 15),
@@ -601,7 +1070,147 @@ class PdfGenerationService {
               // PAN Card Image
               if (submission.pan?.frontPath != null && submission.pan?.isPdf == false)
                 _buildPdfImageWidget('PAN Card', panImage),
+
+              // Bank statement pages (first up to 3)
+              if (submission.bankStatement?.isPdf != true &&
+                  submission.bankStatement?.pages.isNotEmpty == true) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Bank Statement (Pages)'),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  [
+                    for (int i = 0; i < bankImages.length; i++)
+                      MapEntry('Bank Page ${i + 1}', bankImages[i]),
+                  ],
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
+
+              // Salary slips (first up to 3, images only)
+              if (!isBusinessLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Salary Slips'),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  [
+                    for (int i = 0; i < slipImages.length; i++)
+                      MapEntry('Salary Slip ${i + 1}', slipImages[i]),
+                  ],
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
+
+              if (isBusinessLoan && isBusinessProprietor) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Business Documents (Images)'),
+                pw.SizedBox(height: 12),
+
+                if ((business?.spouseAadhaar?.frontPath != null &&
+                        business?.spouseAadhaar?.frontIsPdf == false) ||
+                    (business?.spouseAadhaar?.backPath != null &&
+                        business?.spouseAadhaar?.backIsPdf == false)) ...[
+                  pw.Row(
+                    children: [
+                      if (business?.spouseAadhaar?.frontPath != null &&
+                          business?.spouseAadhaar?.frontIsPdf == false)
+                        pw.Expanded(
+                          child: _buildPdfImageWidget(
+                            'Spouse Aadhaar Front',
+                            spouseAadhaarFrontImage,
+                          ),
+                        ),
+                      if (business?.spouseAadhaar?.frontPath != null &&
+                          business?.spouseAadhaar?.frontIsPdf == false &&
+                          business?.spouseAadhaar?.backPath != null &&
+                          business?.spouseAadhaar?.backIsPdf == false)
+                        pw.SizedBox(width: 10),
+                      if (business?.spouseAadhaar?.backPath != null &&
+                          business?.spouseAadhaar?.backIsPdf == false)
+                        pw.Expanded(
+                          child: _buildPdfImageWidget(
+                            'Spouse Aadhaar Back',
+                            spouseAadhaarBackImage,
+                          ),
+                        ),
+                    ],
+                  ),
+                  pw.SizedBox(height: 10),
+                ],
+
+                if (business?.spousePan?.frontPath != null &&
+                    business?.spousePan?.isPdf == false)
+                  pw.SizedBox(height: 0),
+
+                _buildPdfImageGrid(
+                  [
+                    if (business?.spousePan?.frontPath != null &&
+                        business?.spousePan?.isPdf == false)
+                      MapEntry('Spouse PAN', spousePanImage),
+                    if (business?.gstRegistration?.path != null &&
+                        business?.gstRegistration?.isPdf == false)
+                      MapEntry('GST Registration', gstImage),
+                    if (business?.labourCertificate?.path != null &&
+                        business?.labourCertificate?.isPdf == false)
+                      MapEntry('Labour Certificate', labourImage),
+                    if (business?.msmeCertificate?.path != null &&
+                        business?.msmeCertificate?.isPdf == false)
+                      MapEntry('MSME Certificate', msmeImage),
+                    if (business?.ownHouseProof?.path != null &&
+                        business?.ownHouseProof?.isPdf == false)
+                      MapEntry('Own House Proof', ohpImage),
+                  ],
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
+              if (isBusinessLoan && isBusinessPartnership) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Business Documents (Images)'),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  [
+                    if (business?.companyPanCard?.path != null &&
+                        business?.companyPanCard?.isPdf == false)
+                      MapEntry('Company PAN Card', companyPanImage),
+                    if (business?.partnershipDeed?.path != null &&
+                        business?.partnershipDeed?.isPdf == false)
+                      MapEntry('Partnership Deed', partnershipDeedImage),
+                    if (business?.moa?.path != null &&
+                        business?.moa?.isPdf == false)
+                      MapEntry('MOA', moaImage),
+                    if (business?.aoa?.path != null &&
+                        business?.aoa?.isPdf == false)
+                      MapEntry('AOA', aoaImage),
+                    if (business?.gstRegistration?.path != null &&
+                        business?.gstRegistration?.isPdf == false)
+                      MapEntry('GST Registration', gstImage),
+                    if (business?.labourCertificate?.path != null &&
+                        business?.labourCertificate?.isPdf == false)
+                      MapEntry('Labour Certificate', labourImage),
+                    if (business?.msmeCertificate?.path != null &&
+                        business?.msmeCertificate?.isPdf == false)
+                      MapEntry('MSME Certificate', msmeImage),
+                    if (business?.ownHouseProof?.path != null &&
+                        business?.ownHouseProof?.isPdf == false)
+                      MapEntry('Own House Proof', ohpImage),
+                  ],
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
             ],
+              if (isBusinessLoan && isBusinessPartnership && partnerImageEntries.isNotEmpty) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Partners (Images)'),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  partnerImageEntries,
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
           ];
         },
       ),
@@ -778,9 +1387,53 @@ class PdfGenerationService {
     if (imagePath == null || imagePath.isEmpty) return null;
 
     try {
+      String normalizeNetworkUrl(String raw) {
+        var path = raw.trim();
+        if (path.isEmpty) return path;
+        // Stored as "baseUrl..." sometimes
+        if (path.startsWith('baseUrl')) {
+          path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
+        }
+        // Old localhost saved URLs
+        if (path.startsWith('http://localhost:5000')) {
+          path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
+        }
+        // If already absolute URL
+        if (path.startsWith('http://') || path.startsWith('https://')) return path;
+
+        // Normalize missing-leading-slash variants.
+        if (path.startsWith('uploads/') || path.startsWith('api/')) {
+          path = '/$path';
+        }
+        if (!path.startsWith('/')) {
+          // likely local filesystem path; return as-is so File() can try.
+          return raw;
+        }
+
+        // Normalize /api/v1/uploads/<category>/... -> /api/v1/uploads/files/<category>/...
+        if (path.startsWith('/api/v1/uploads/') &&
+            !path.startsWith('/api/v1/uploads/files/')) {
+          path = path.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
+        }
+
+        // Normalize /uploads/<category>/... -> /api/v1/uploads/files/<category>/...
+        if (path.startsWith('/uploads/') && !path.contains('/uploads/files/')) {
+          path = path.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+        }
+
+        // Treat /api/... and /api/v1/... as server paths
+        if (path.startsWith('/api/')) {
+          return '${ApiConfig.baseUrl}$path';
+        }
+
+        return raw;
+      }
+
+      final normalized = normalizeNetworkUrl(imagePath);
+
       // Load from HTTP/HTTPS URL (e.g. backend upload URLs)
-      if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-        final uri = Uri.parse(imagePath);
+      if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+        final uri = Uri.parse(normalized);
         final headers = <String, String>{};
         if (authToken != null && authToken.isNotEmpty) {
           headers['Authorization'] = 'Bearer $authToken';
@@ -805,9 +1458,7 @@ class PdfGenerationService {
       }
 
       // For web platform, we can't directly read files from paths
-      if (kIsWeb) {
-        return null;
-      }
+      if (kIsWeb) return null;
 
       final file = File(imagePath);
       if (await file.exists()) {
@@ -884,6 +1535,92 @@ class PdfGenerationService {
           ],
         ],
       ),
+    );
+  }
+
+  /// Compact image tile (for grid layouts)
+  pw.Widget _buildPdfImageTile(
+    String title,
+    pw.MemoryImage? image, {
+    bool isUploaded = true,
+    double imageHeight = 110,
+  }) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(
+          color: isUploaded && image != null ? PdfColors.green : PdfColors.grey400,
+          width: 1.5,
+        ),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(6)),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            title,
+            style: pw.TextStyle(
+              fontSize: 11,
+              fontWeight: pw.FontWeight.bold,
+              color: isUploaded && image != null ? PdfColors.green : PdfColors.grey600,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Container(
+            height: imageHeight,
+            width: double.infinity,
+            decoration: pw.BoxDecoration(
+              color: image != null ? PdfColors.white : PdfColors.grey100,
+              border: pw.Border.all(color: PdfColors.grey300, width: 1),
+              borderRadius: const pw.BorderRadius.all(pw.Radius.circular(5)),
+            ),
+            child: image != null
+                ? pw.Image(image, fit: pw.BoxFit.contain)
+                : pw.Center(
+                    child: pw.Text(
+                      isUploaded ? 'Preview not available' : 'Not uploaded',
+                      style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Two-column (default) image grid for better placement
+  pw.Widget _buildPdfImageGrid(
+    List<MapEntry<String, pw.MemoryImage?>> items, {
+    int columns = 2,
+    double imageHeight = 110,
+  }) {
+    if (items.isEmpty) return pw.SizedBox();
+    final filtered = items.where((e) => e.key.trim().isNotEmpty).toList();
+    if (filtered.isEmpty) return pw.SizedBox();
+
+    return pw.LayoutBuilder(
+      builder: (context, constraints) {
+        final gap = 10.0;
+        final maxW = constraints?.maxWidth ?? 500.0;
+        final col = columns <= 0 ? 2 : columns;
+        final itemW = (maxW - (gap * (col - 1))) / col;
+        return pw.Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final entry in filtered)
+              pw.SizedBox(
+                width: itemW,
+                child: _buildPdfImageTile(
+                  entry.key,
+                  entry.value,
+                  imageHeight: imageHeight,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

@@ -21,9 +21,40 @@ import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 import 'pan_horizontal_card_capture_screen.dart';
 import '../utils/local_file_persist.dart';
+import '../utils/ocr_pdf.dart';
+import '../services/additional_documents_service.dart';
+import '../providers/auth_provider.dart';
+import '../widgets/premium_progress_indicator.dart';
+import '../widgets/preview_header_action.dart';
 
 class Step3PanScreen extends StatefulWidget {
-  const Step3PanScreen({super.key});
+  const Step3PanScreen({
+    super.key,
+    this.isSpouse = false,
+    this.isPartner = false,
+    this.partnerIndex,
+    this.titleOverride,
+    this.backRouteOverride,
+    this.nextRouteOverride,
+    this.progressStepOverride,
+    this.totalStepsOverride,
+  });
+
+  /// When true, behaves like spouse PAN screen (same UI/validations, different storage/save).
+  final bool isSpouse;
+
+  /// Partnership flow: when true, saves into partner KYC bucket (no personal-data updates).
+  final bool isPartner;
+
+  /// 1-based partner index for partnership flow.
+  final int? partnerIndex;
+
+  /// Optional UI/flow overrides for spouse mode.
+  final String? titleOverride;
+  final String? backRouteOverride;
+  final String? nextRouteOverride;
+  final int? progressStepOverride;
+  final int? totalStepsOverride;
 
   @override
   State<Step3PanScreen> createState() => _Step3PanScreenState();
@@ -32,6 +63,8 @@ class Step3PanScreen extends StatefulWidget {
 class _Step3PanScreenState extends State<Step3PanScreen> {
   final ImagePicker _imagePicker = ImagePicker();
   final FileUploadService _fileUploadService = FileUploadService();
+  final AdditionalDocumentsService _additionalDocumentsService =
+      AdditionalDocumentsService();
   String? _frontPath;
   bool _isSaving = false;
   bool _isPdf = false;
@@ -57,6 +90,45 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   // OCR completeness flag (used to enforce "must extract")
   bool _panOcrComplete = false;
   String? _panOcrIssue;
+
+  bool _isRemoteOrServerPath(String? path) {
+    if (path == null) return false;
+    final p = path.trim();
+    if (p.isEmpty) return false;
+    return p.startsWith('http') ||
+        p.startsWith('blob:') ||
+        p.startsWith('/uploads/') ||
+        p.startsWith('uploads/') ||
+        p.startsWith('/api/') ||
+        p.startsWith('api/');
+  }
+
+  Future<void> _initOcrForExistingPan() async {
+    if (!mounted) return;
+
+    // Applicant flow: if step3Pan was loaded from backend with extracted fields,
+    // `_panOcrComplete` is already set. We don't re-run OCR automatically.
+    if (!widget.isSpouse) return;
+
+    final path = _frontPath?.trim();
+    if (path == null || path.isEmpty) return;
+
+    // If spouse doc is already a remote/server path, don't force a re-upload just to OCR.
+    if (_isRemoteOrServerPath(path)) {
+      setState(() {
+        _panOcrComplete = true;
+        _panOcrIssue = null;
+      });
+      return;
+    }
+
+    // Local: re-run OCR so the user can proceed without re-uploading.
+    if (_isPdf) {
+      await _performPanOcrFromPdf(path);
+    } else {
+      await _performPanOCR(path);
+    }
+  }
 
   String _normalizeForNameCompare(String input) {
     return input
@@ -293,23 +365,58 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   void initState() {
     super.initState();
     final provider = context.read<SubmissionProvider>();
-    _frontPath = provider.submission.pan?.frontPath;
-    
-    // Check if it's a PDF based on provider extended info if available or file extension
-    // SubmissionProvider helper needed or direct check 
-     if (_frontPath != null && _frontPath!.toLowerCase().endsWith('.pdf')) {
-       _isPdf = true;
+    if (widget.isSpouse) {
+      _frontPath = provider.submission.businessDocuments?.spousePan?.frontPath;
+      _isPdf = provider.submission.businessDocuments?.spousePan?.isPdf ?? false;
+    } else if (widget.isPartner) {
+      final idx = (widget.partnerIndex ?? 1) - 1;
+      final partnerPan =
+          provider.submission.businessDocuments?.partners
+              .asMap()
+              .containsKey(idx) ==
+                  true
+              ? provider.submission.businessDocuments!.partners[idx].pan
+              : null;
+      _frontPath = partnerPan?.frontPath;
+      _isPdf = partnerPan?.isPdf ?? false;
+    } else {
+      _frontPath = provider.submission.pan?.frontPath;
+      // Check if it's a PDF based on provider extended info if available or file extension
+      // SubmissionProvider helper needed or direct check 
+      if (_frontPath != null && _frontPath!.toLowerCase().endsWith('.pdf')) {
+        _isPdf = true;
+      }
     }
     
     // Load existing data from backend
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadExistingData();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadAuthToken();
+      await _loadExistingData();
+      await _initOcrForExistingPan();
     });
+  }
+
+  Future<void> _loadAuthToken() async {
+    try {
+      final storage = StorageService.instance;
+      final accessToken = await storage.getAccessToken();
+      if (accessToken != null && mounted) {
+        setState(() {
+          _authToken = accessToken;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadExistingData() async {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
+
+    if (widget.isSpouse || widget.isPartner) {
+      // Spouse/Partner PAN is stored in local draft / additional-doc uploads.
+      // Don't load applicant PAN step from backend.
+      return;
+    }
 
     // Refresh application data from backend to get the latest saved data
     try {
@@ -369,16 +476,19 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         // Also update SubmissionProvider
         context.read<SubmissionProvider>().setPanFront(effectiveFront, isPdf: stepData['isPdf'] as bool? ?? false);
 
-        // Keep Personal Details in sync whenever PAN is uploaded/loaded.
-        final provider = context.read<SubmissionProvider>();
-        if (extractedPanNumber != null && extractedPanNumber.trim().isNotEmpty) {
-          provider.updatePersonalDataField(panNo: extractedPanNumber);
-        }
-        if (extractedName != null && extractedName.trim().isNotEmpty) {
-          provider.updatePersonalDataField(fullName: extractedName);
-        }
-        if (extractedFatherName != null && extractedFatherName.trim().isNotEmpty) {
-          provider.updatePersonalDataField(fatherName: extractedFatherName);
+        // Keep Personal Details in sync whenever PAN is uploaded/loaded (applicant only).
+        if (!widget.isSpouse) {
+          final provider = context.read<SubmissionProvider>();
+          if (extractedPanNumber != null && extractedPanNumber.trim().isNotEmpty) {
+            provider.updatePersonalDataField(panNo: extractedPanNumber);
+          }
+          if (extractedName != null && extractedName.trim().isNotEmpty) {
+            provider.updatePersonalDataField(fullName: extractedName);
+          }
+          if (extractedFatherName != null &&
+              extractedFatherName.trim().isNotEmpty) {
+            provider.updatePersonalDataField(fatherName: extractedFatherName);
+          }
         }
 
         // Fetch image if network URL and not PDF
@@ -426,7 +536,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
 
     // Fallback: if step2 isn't saved yet, still validate using provider auto-filled name.
-    _refreshAadhaarValidationContextFromProvider();
+    if (!widget.isSpouse && !widget.isPartner) {
+      _refreshAadhaarValidationContextFromProvider();
+    }
 
     // If PAN names were loaded from backend, fix potential swap using Aadhaar.
     if (mounted) {
@@ -434,12 +546,14 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _maybeSwapPanNameAndFatherNameUsingAadhaar();
       });
       // Ensure Personal Details reflects the corrected fields.
-      final provider = context.read<SubmissionProvider>();
-      if ((_extractedName ?? '').trim().isNotEmpty) {
-        provider.updatePersonalDataField(fullName: _extractedName);
-      }
-      if ((_extractedFatherName ?? '').trim().isNotEmpty) {
-        provider.updatePersonalDataField(fatherName: _extractedFatherName);
+      if (!widget.isSpouse && !widget.isPartner) {
+        final provider = context.read<SubmissionProvider>();
+        if ((_extractedName ?? '').trim().isNotEmpty) {
+          provider.updatePersonalDataField(fullName: _extractedName);
+        }
+        if ((_extractedFatherName ?? '').trim().isNotEmpty) {
+          provider.updatePersonalDataField(fatherName: _extractedFatherName);
+        }
       }
     }
   }
@@ -449,11 +563,67 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _frontPath == null) return false;
 
+    final submissionProvider = context.read<SubmissionProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final businessLoanType =
+        (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+    final isBusinessProprietor = loanType.contains('business') && businessLoanType == 'proprietor';
+
     setState(() {
       _isSaving = true;
     });
 
     try {
+      if (widget.isSpouse || widget.isPartner) {
+        // Spouse/Partner mode: upload as additional document.
+        String? leadId;
+        try {
+          final user = context.read<AuthProvider>().user;
+          if (user != null) {
+            String? phoneNumber;
+            if (user.email.endsWith('@phone.local')) {
+              phoneNumber = user.email.split('@')[0];
+            }
+            final lead = await _additionalDocumentsService.getLeadByUser(
+              user.email,
+              phone: phoneNumber,
+            );
+            leadId = lead?['id'] as String?;
+          }
+        } catch (_) {
+          leadId = null;
+        }
+
+        var uploadPath = _frontPath!;
+        if (leadId != null &&
+            !uploadPath.startsWith('http') &&
+            !uploadPath.startsWith('/uploads/') &&
+            !uploadPath.startsWith('/api/')) {
+          final fileName = uploadPath.split('/').last.split('\\').last;
+          final res = await _additionalDocumentsService.uploadAdditionalDocument(
+            filePath: uploadPath,
+            fileName: fileName,
+            documentType: widget.isSpouse
+                ? 'spouse_pan'
+                : 'custom_partner_${widget.partnerIndex ?? 1}_pan',
+            leadId: leadId,
+            fileBytes: kIsWeb ? _frontBytes?.toList() : null,
+          );
+          uploadPath =
+              (res['url'] as String?) ?? (res['path'] as String?) ?? uploadPath;
+        }
+
+        if (widget.isSpouse) {
+          context.read<SubmissionProvider>().setSpousePan(uploadPath, isPdf: _isPdf);
+        } else {
+          context
+              .read<SubmissionProvider>()
+              .setPartnerPan(widget.partnerIndex ?? 1, uploadPath, isPdf: _isPdf);
+        }
+        await appProvider.updateApplication(currentStep: 6);
+        return true;
+      }
+
       Map<String, dynamic>? uploadResult;
       if (_frontPath!.startsWith('http')) {
         final currentApp = appProvider.currentApplication;
@@ -469,7 +639,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       }
 
       await appProvider.updateApplication(
-        currentStep: 4,
+        currentStep: isBusinessProprietor ? 4 : 4,
         step3Pan: {
           'frontPath': _frontPath,
           'uploadedFile': uploadResult,
@@ -527,7 +697,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _isPdf = false;
           _rotation = 0.0;
         });
-        context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+        if (widget.isSpouse) {
+          context.read<SubmissionProvider>().setSpousePan(storedPath, isPdf: false);
+        } else {
+          context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+        }
         await _performPanOCR(storedPath);
       }
       return;
@@ -552,7 +726,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+      if (widget.isSpouse) {
+        context.read<SubmissionProvider>().setSpousePan(storedPath, isPdf: false);
+      } else {
+        context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+      }
       await _performPanOCR(storedPath);
     }
   }
@@ -573,7 +751,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _isPdf = false;
         _rotation = 0.0;
       });
-      context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+      if (widget.isSpouse) {
+        context.read<SubmissionProvider>().setSpousePan(storedPath, isPdf: false);
+      } else {
+        context.read<SubmissionProvider>().setPanFront(storedPath, isPdf: false);
+      }
       
       // Perform OCR on PAN card
       await _performPanOCR(storedPath);
@@ -581,7 +763,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   /// Perform OCR on PAN card image and show extracted data
-  Future<void> _performPanOCR(String imagePath) async {
+  Future<void> _performPanOCR(String imagePath, {Uint8List? imageBytes}) async {
     if (!mounted) return;
 
     try {
@@ -594,7 +776,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         );
       }
 
-      final result = await OcrService.extractPanText(imagePath);
+      final result = await OcrService.extractPanText(imagePath, imageBytes: imageBytes);
 
       if (!mounted) return;
 
@@ -608,9 +790,11 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _extractedFatherName = result.fatherName;
         _internalDocumentValid = result.isInternallyValid;
 
-        // Ensure Aadhaar name context is available for later validation.
-        _refreshAadhaarValidationContextFromProvider();
-        _maybeSwapPanNameAndFatherNameUsingAadhaar();
+        // Ensure Aadhaar name context is available for later validation (applicant only).
+        if (!widget.isSpouse) {
+          _refreshAadhaarValidationContextFromProvider();
+          _maybeSwapPanNameAndFatherNameUsingAadhaar();
+        }
 
         final missing = <String>[];
         if (!result.hasPanNumber) missing.add('PAN Number');
@@ -630,20 +814,26 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         
         if (result.hasPanNumber) {
           extractedData.add('PAN: ${result.panNumber}');
-          // Auto-fill PAN number to personal data
-          provider.updatePersonalDataField(panNo: result.panNumber);
+          // Auto-fill PAN number to personal data (applicant only)
+          if (!widget.isSpouse) {
+            provider.updatePersonalDataField(panNo: result.panNumber);
+          }
         }
         if ((_extractedName ?? '').trim().isNotEmpty) {
           extractedData.add('Name: $_extractedName');
-          // Auto-fill name to personal data
+          // Auto-fill name to personal data (applicant only)
           // Use post-processed values (in case of swap).
-          provider.updatePersonalDataField(fullName: _extractedName);
+          if (!widget.isSpouse) {
+            provider.updatePersonalDataField(fullName: _extractedName);
+          }
         }
         if ((_extractedFatherName ?? '').trim().isNotEmpty) {
           extractedData.add('Father: $_extractedFatherName');
-          // Auto-fill father/parent name to personal data
+          // Auto-fill father/parent name to personal data (applicant only)
           // Use post-processed values (in case of swap).
-          provider.updatePersonalDataField(fatherName: _extractedFatherName);
+          if (!widget.isSpouse) {
+            provider.updatePersonalDataField(fatherName: _extractedFatherName);
+          }
         }
 
         debugPrint(
@@ -726,14 +916,67 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           _rotation = 0.0;
           _panOcrComplete = false;
         });
-        context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
-        PremiumToast.showInfo(
-          context,
-          'PAN PDF OCR is not supported right now. Please upload a clear PAN photo.',
-          duration: const Duration(seconds: 3),
-        );
+        if (widget.isSpouse) {
+          context.read<SubmissionProvider>().setSpousePan(path, isPdf: true);
+        } else {
+          context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
+        }
+        await _performPanOcrFromPdf(path);
         _showPasswordDialogIfNeeded();
       }
+    }
+  }
+
+  Future<void> _performPanOcrFromPdf(String pdfPath) async {
+    if (!mounted) return;
+
+    if (!OcrPdf.isSupported) {
+      PremiumToast.showWarning(
+        context,
+        'PDF OCR is not supported on this platform. Please upload PAN photo.',
+        duration: const Duration(seconds: 3),
+      );
+      setState(() {
+        _panOcrComplete = false;
+        _panOcrIssue = 'PDF OCR not supported';
+      });
+      return;
+    }
+
+    if (pdfPath.startsWith('http') || pdfPath.startsWith('blob:')) {
+      PremiumToast.showWarning(
+        context,
+        'PDF OCR requires a local PDF file. Please re-upload the PDF from this device or upload a photo.',
+        duration: const Duration(seconds: 4),
+      );
+      setState(() {
+        _panOcrComplete = false;
+        _panOcrIssue = 'Remote PDF not supported for OCR';
+      });
+      return;
+    }
+
+    try {
+      PremiumToast.showInfo(
+        context,
+        'Extracting PAN details from PDF...',
+        duration: const Duration(seconds: 2),
+      );
+      final jpg = await OcrPdf.renderPageToJpegBytes(pdfPath, pageIndex: 0);
+      await _performPanOCR('pdf://pan', imageBytes: jpg);
+    } catch (e, st) {
+      debugPrint('PAN PDF OCR failed: $e');
+      debugPrint('PAN PDF OCR stack: $st');
+      if (!mounted) return;
+      PremiumToast.showWarning(
+        context,
+        'Unable to OCR this PDF (password-protected PDFs are not supported). Please upload a PAN photo.',
+        duration: const Duration(seconds: 4),
+      );
+      setState(() {
+        _panOcrComplete = false;
+        _panOcrIssue = 'PDF OCR failed';
+      });
     }
   }
 
@@ -975,7 +1218,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       return;
     }
 
-    if (!_panOcrComplete) {
+    // Applicant-only strict OCR gating. Spouse/Partner flows should be simple.
+    if (!widget.isSpouse && !widget.isPartner && !_panOcrComplete) {
       _showValidationErrorDialog(
         title: 'PAN OCR Incomplete',
         message: 'Please fix PAN OCR before continuing.\n\n${_panOcrIssue ?? 'Missing required fields'}',
@@ -985,38 +1229,52 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       return;
     }
     
-    // STRICT: Never continue if Aadhaar name doesn't match PAN user name.
-    // Also handle short forms like "M ESWAR KUMAR" vs "MARKAPURAM ESWAR KUMAR".
-    _refreshAadhaarValidationContextFromProvider();
-    _maybeSwapPanNameAndFatherNameUsingAadhaar();
+    // STRICT: Never continue if Aadhaar name doesn't match PAN user name (applicant only).
+    // Spouse/Partner PAN should not be validated against applicant Aadhaar.
+    if (!widget.isSpouse && !widget.isPartner) {
+      // Also handle short forms like "M ESWAR KUMAR" vs "MARKAPURAM ESWAR KUMAR".
+      _refreshAadhaarValidationContextFromProvider();
+      _maybeSwapPanNameAndFatherNameUsingAadhaar();
 
-    final aadhaarName = _aadhaarName;
-    final panName = _extractedName;
-    if (aadhaarName != null &&
-        aadhaarName.trim().isNotEmpty &&
-        panName != null &&
-        panName.trim().isNotEmpty) {
-      final ok = _isAadhaarPanNameMatch(aadhaarName, panName);
-      debugPrint('PAN name validation (Aadhaar vs PAN): match=$ok');
-      if (!ok) {
-        _showValidationErrorDialog(
-          title: 'Name Mismatch Detected',
-          message:
-              'The name on your Aadhaar card does not match the name on your PAN card.',
-          instruction:
-              'Please re-upload correct documents. If Aadhaar shows initials (e.g., "M ESWAR KUMAR"), re-capture with better crop/clarity.',
-          icon: Icons.person_off,
-          aadhaarName: aadhaarName,
-          panName: panName,
-        );
-        return;
+      final aadhaarName = _aadhaarName;
+      final panName = _extractedName;
+      if (aadhaarName != null &&
+          aadhaarName.trim().isNotEmpty &&
+          panName != null &&
+          panName.trim().isNotEmpty) {
+        final ok = _isAadhaarPanNameMatch(aadhaarName, panName);
+        debugPrint('PAN name validation (Aadhaar vs PAN): match=$ok');
+        if (!ok) {
+          _showValidationErrorDialog(
+            title: 'Name Mismatch Detected',
+            message:
+                'The name on your Aadhaar card does not match the name on your PAN card.',
+            instruction:
+                'Please re-upload correct documents. If Aadhaar shows initials (e.g., "M ESWAR KUMAR"), re-capture with better crop/clarity.',
+            icon: Icons.person_off,
+            aadhaarName: aadhaarName,
+            panName: panName,
+          );
+          return;
+        }
       }
     }
     
     if (_isSaving) return;
     final saved = await _saveToBackend();
     if (mounted && saved) {
-      context.go(AppRoutes.step4BankStatement);
+      final appProvider = context.read<ApplicationProvider>();
+      final submissionProvider = context.read<SubmissionProvider>();
+      final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+      final businessLoanType =
+          (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+      final isBusinessProprietor = loanType.contains('business') && businessLoanType == 'proprietor';
+
+      if (widget.isSpouse || widget.isPartner) {
+        context.go(widget.nextRouteOverride ?? AppRoutes.step4BankStatement);
+      } else {
+        context.go(isBusinessProprietor ? AppRoutes.step4SpouseAadhaar : AppRoutes.step4BankStatement);
+      }
     }
   }
 
@@ -1032,11 +1290,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
-    if (provider.submission.pan != null) {
-      provider.submission.pan!.frontPath = null;
-      if (provider.submission.pan!.frontPath == null) {
-        provider.submission.pan = null;
-      }
+    if (widget.isSpouse) {
+      provider.clearSpousePan();
+    } else if (widget.isPartner) {
+      provider.clearPartnerPan(widget.partnerIndex ?? 1);
+    } else {
+      provider.clearPan();
     }
   }
 
@@ -1051,11 +1310,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       _internalDocumentValid = true;
     });
     final provider = context.read<SubmissionProvider>();
-    if (provider.submission.pan != null) {
-      provider.submission.pan!.frontPath = null;
-      if (provider.submission.pan!.frontPath == null) {
-        provider.submission.pan = null;
-      }
+    if (widget.isSpouse) {
+      provider.clearSpousePan();
+    } else if (widget.isPartner) {
+      provider.clearPartnerPan(widget.partnerIndex ?? 1);
+    } else {
+      provider.clearPan();
     }
   }
 
@@ -1068,15 +1328,54 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           children: [
             // Blue Header
             AppHeader(
-              title: 'PAN Card',
+              title: widget.titleOverride ??
+                  (widget.isSpouse
+                      ? 'Spouse PAN'
+                      : (widget.isPartner ? 'Partner PAN' : 'PAN Card')),
               icon: Icons.credit_card,
               showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step2Aadhaar),
+              onBackPressed: () {
+                final back = widget.backRouteOverride ?? AppRoutes.step2Aadhaar;
+                context.go(back);
+              },
               showHomeButton: true,
+              actions: [
+                PreviewHeaderAction(
+                  backRoute:
+                      widget.isSpouse
+                          ? AppRoutes.step5SpousePan
+                          : (widget.isPartner
+                              ? '${AppRoutes.partnerPan}?i=${widget.partnerIndex ?? 1}'
+                              : AppRoutes.step3Pan),
+                ),
+              ],
             ),
             
             // Progress Indicator
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ??
+                        submissionProvider.submission.loanType ??
+                        '')
+                    .toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '')
+                        .toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+
+                final totalSteps =
+                    widget.totalStepsOverride ?? (isBusinessProprietor ? 10 : 7);
+
+                return _buildProgressIndicator(
+                  context,
+                  currentStep: widget.progressStepOverride ?? 3,
+                  totalSteps: totalSteps,
+                );
+              },
+            ),
             
             // Content
             Expanded(
@@ -1115,128 +1414,15 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Steps 1-2: Completed
-          for (int i = 1; i <= 2; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // Step 3: Current
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '3',
-                      style: TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: Colors.grey.shade200,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Steps 4-7: Pending
-          for (int i = 4; i <= 7; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$i',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (i < 7)
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: Colors.grey.shade200,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+  Widget _buildProgressIndicator(
+    BuildContext context, {
+    required int currentStep,
+    required int totalSteps,
+  }) {
+    return PremiumProgressIndicator(
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      maxVisibleSteps: 7,
     );
   }
 
@@ -1419,6 +1605,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   Widget _buildImagePreview(BuildContext context) {
+    final canPreview = !_isPdf &&
+        !(_frontPath!.startsWith('http') && (_authToken == null || _imageFailed));
+
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: Container(
@@ -1469,10 +1658,113 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                             headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
                           ),
                         )),
+              if (canPreview) ...[
+                Positioned.fill(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _openPanPreviewDialog(context),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: _tapToPreviewPill(),
+                ),
+              ],
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _tapToPreviewPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.18),
+        ),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.open_in_full, size: 14, color: Colors.white),
+          SizedBox(width: 6),
+          Text(
+            'Tap to preview',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openPanPreviewDialog(BuildContext context) async {
+    if (_frontPath == null || _frontPath!.isEmpty) return;
+    if (_isPdf) return;
+
+    final headers =
+        _authToken != null ? <String, String>{'Authorization': 'Bearer $_authToken'} : null;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      child: Transform.rotate(
+                        angle: _rotation * 3.14159 / 180,
+                        child: PlatformImage(
+                          imagePath: _frontPath!,
+                          imageBytes: _frontBytes,
+                          fit: BoxFit.contain,
+                          headers: headers,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: AppTheme.errorColor.withValues(alpha: 0.95),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      customBorder: const CircleBorder(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1939,7 +2231,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
 
     return Column(
       children: [
-        // Continue to Bank Statement
+        // Continue to next
         Material(
           color: AppTheme.primaryColor,
           borderRadius: BorderRadius.circular(20),
@@ -1963,7 +2255,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Continue to Bank Statement',
+                    'Continue to Next',
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

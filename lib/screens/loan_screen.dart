@@ -597,7 +597,13 @@ class _LoanScreenState extends State<LoanScreen> {
     final iconContainerSize = isLargeScreen ? 36.0 : 40.0;
 
     return InkWell(
-      onTap: () => context.go('${AppRoutes.instructions}?loanType=$title'),
+      onTap: () {
+        if (title == AppStrings.loanTypeBusiness || title == 'Business Loan') {
+          context.go(AppRoutes.businessLoanType);
+          return;
+        }
+        context.go('${AppRoutes.instructions}?loanType=$title');
+      },
       borderRadius: BorderRadius.circular(24),
       child: ClipRect(
         child: BackdropFilter(

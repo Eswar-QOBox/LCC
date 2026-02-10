@@ -9,7 +9,6 @@ import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
-import '../widgets/platform_image.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../widgets/premium_toast.dart';
@@ -17,6 +16,8 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../widgets/premium_progress_indicator.dart';
+import '../widgets/preview_header_action.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
   const Step4BankStatementScreen({super.key});
@@ -34,7 +35,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   bool _isSaving = false;
   DateTime? _statementEndDate;
   DateTime? _calculatedStartDate;
-  String? _authToken;
   List<bool> _pageFailures = [];
   List<Uint8List?> _pageBytes = [];
 
@@ -97,11 +97,6 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         // Get access token for authenticated request
         final storage = StorageService.instance;
         final accessToken = await storage.getAccessToken();
-        if (accessToken != null && mounted) {
-          setState(() {
-            _authToken = accessToken;
-          });
-        }
         
 
         
@@ -228,6 +223,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication || _pages.isEmpty) return false;
 
+    final submissionProvider = context.read<SubmissionProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final businessLoanType =
+        (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+    final isBusinessProprietor = loanType.contains('business') && businessLoanType == 'proprietor';
+
     setState(() {
       _isSaving = true;
     });
@@ -261,7 +262,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       }
 
       await appProvider.updateApplication(
-        currentStep: 5,
+        currentStep: isBusinessProprietor ? 7 : 5,
         step4BankStatement: {
           'pages': _pages.toSet().toList(),
           'isPdf': _isPdf,
@@ -430,7 +431,26 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     if (_isSaving) return;
     final saved = await _saveToBackend();
     if (mounted && saved) {
-      context.go(AppRoutes.step5_1SalarySlips);
+    final appProvider = context.read<ApplicationProvider>();
+    final submissionProvider = context.read<SubmissionProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ??
+            submissionProvider.submission.loanType ??
+            '')
+        .toLowerCase();
+      final businessLoanType =
+          (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+
+      final isBusiness = loanType.contains('business');
+      final isBusinessProprietor = isBusiness && businessLoanType == 'proprietor';
+      final isBusinessPartnership = isBusiness && businessLoanType == 'partnership';
+      final isBusinessPvtLimited = isBusiness && businessLoanType == 'pvt_limited';
+      context.go(
+        isBusinessProprietor
+            ? AppRoutes.step5BusinessDocs
+            : (isBusinessPartnership || isBusinessPvtLimited
+                ? AppRoutes.partnerCount
+                : AppRoutes.step5_1SalarySlips),
+      );
     }
   }
 
@@ -454,12 +474,50 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               title: 'Bank Statement',
               icon: Icons.account_balance,
               showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step3Pan),
+              onBackPressed: () {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ??
+                        submissionProvider.submission.loanType ??
+                        '')
+                    .toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+                context.go(isBusinessProprietor ? AppRoutes.step5SpousePan : AppRoutes.step3Pan);
+              },
               showHomeButton: true,
+              actions: const [
+                PreviewHeaderAction(backRoute: AppRoutes.step4BankStatement),
+              ],
             ),
             
             // Progress Indicator
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType =
+                    (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+                final isBusinessPartnership =
+                    loanType.contains('business') && businessLoanType == 'partnership';
+                final isBusinessPvtLimited =
+                    loanType.contains('business') && businessLoanType == 'pvt_limited';
+                final partnerCount = submissionProvider.submission.businessDocuments?.partnerCount ?? 0;
+                final totalStepsPartnerFlow = partnerCount > 0 ? (10 + 2 * partnerCount) : 10;
+
+                return _buildProgressIndicator(
+                  context,
+                  currentStep: isBusinessProprietor ? 6 : (isBusinessPartnership || isBusinessPvtLimited ? 4 : 4),
+                  totalSteps: isBusinessProprietor ? 10 : (isBusinessPartnership || isBusinessPvtLimited ? totalStepsPartnerFlow : 7),
+                );
+              },
+            ),
             
             // Content
             Expanded(
@@ -494,128 +552,15 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Steps 1-3: Completed
-          for (int i = 1; i <= 3; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // Step 4: Current
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '4',
-                      style: TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: Colors.grey.shade200,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Steps 5-7: Pending
-          for (int i = 5; i <= 7; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$i',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (i < 7)
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: Colors.grey.shade200,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+  Widget _buildProgressIndicator(
+    BuildContext context, {
+    required int currentStep,
+    required int totalSteps,
+  }) {
+    return PremiumProgressIndicator(
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      maxVisibleSteps: 7,
     );
   }
 
@@ -1166,7 +1111,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Continue to Salary Slips',
+                      'Continue to Next',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

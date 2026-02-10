@@ -19,8 +19,9 @@ import '../utils/app_theme.dart';
 
 class InstructionsScreen extends StatefulWidget {
   final String? loanType;
+  final String? businessLoanType;
   
-  const InstructionsScreen({super.key, this.loanType});
+  const InstructionsScreen({super.key, this.loanType, this.businessLoanType});
 
   @override
   State<InstructionsScreen> createState() => _InstructionsScreenState();
@@ -29,6 +30,12 @@ class InstructionsScreen extends StatefulWidget {
 class _InstructionsScreenState extends State<InstructionsScreen> {
   bool _isCreatingApplication = false;
   final LoanApplicationService _applicationService = LoanApplicationService();
+
+  bool get _isBusinessProprietor {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    final businessLoanType = (widget.businessLoanType ?? '').toLowerCase();
+    return loanType.contains('business') && businessLoanType == 'proprietor';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,15 +161,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         _buildDocumentItem(
                           context,
                           icon: Icons.face,
-                          title: 'Selfie/Photo',
-                          description: 'Passport-style photo with white background',
+                          title: _isBusinessProprietor ? 'Selfie (Proprietor)' : 'Selfie/Photo',
+                          description: _isBusinessProprietor
+                              ? 'Clear photo of proprietor'
+                              : 'Passport-style photo with white background',
                           iconColor: const Color(0xFF7C3AED),
                         ),
                         const SizedBox(height: 12),
                         _buildDocumentItem(
                           context,
                           icon: Icons.badge,
-                          title: 'Aadhaar Card',
+                          title: _isBusinessProprietor ? 'Aadhaar (Proprietor)' : 'Aadhaar Card',
                           description: 'Front and back sides required',
                           iconColor: AppTheme.successColor,
                         ),
@@ -170,11 +179,29 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         _buildDocumentItem(
                           context,
                           icon: Icons.credit_card,
-                          title: 'PAN Card',
+                          title: _isBusinessProprietor ? 'PAN (Proprietor)' : 'PAN Card',
                           description: 'Front side required',
                           iconColor: const Color(0xFFF59E0B),
                         ),
                         const SizedBox(height: 12),
+                        if (_isBusinessProprietor) ...[
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.badge_outlined,
+                            title: 'Aadhaar (Spouse)',
+                            description: 'Front and back sides required',
+                            iconColor: const Color(0xFF14B8A6),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.credit_card_outlined,
+                            title: 'PAN (Spouse)',
+                            description: 'Front side required',
+                            iconColor: const Color(0xFF0EA5E9),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         _buildDocumentItem(
                           context,
                           icon: Icons.account_balance,
@@ -183,18 +210,45 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           iconColor: AppTheme.primaryColor,
                         ),
                         const SizedBox(height: 12),
-                        _buildDocumentItem(
-                          context,
-                          icon: Icons.description,
-                          title: 'Salary Slips',
-                          description: 'Last 3 months for income verification',
-                          iconColor: const Color(0xFF0D9488),
-                        ),
-                        const SizedBox(height: 12),
+                        if (!_isBusinessProprietor) ...[
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.description,
+                            title: 'Salary Slips',
+                            description: 'Last 3 months for income verification',
+                            iconColor: const Color(0xFF0D9488),
+                          ),
+                          const SizedBox(height: 12),
+                        ] else ...[
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.receipt_long,
+                            title: 'GST / Labour Certificate',
+                            description: 'At least one required (photo or PDF)',
+                            iconColor: const Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.workspace_premium,
+                            title: 'MSME Certificate',
+                            description: 'Photo or PDF',
+                            iconColor: const Color(0xFF0D9488),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.home_outlined,
+                            title: 'Own House Proof',
+                            description: 'Photo or PDF',
+                            iconColor: const Color(0xFF14B8A6),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         _buildDocumentItem(
                           context,
                           icon: Icons.person,
-                          title: 'Personal Information',
+                          title: _isBusinessProprietor ? 'Personal Details (Proprietor)' : 'Personal Information',
                           description: 'Complete the personal data form',
                           iconColor: const Color(0xFF7C3AED),
                         ),
@@ -368,6 +422,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
                                     final loanType =
                                         widget.loanType ?? 'personal';
+                                    // Store loan meta in the draft model (used for completeness rules).
+                                    submissionProvider.setLoanType(loanType);
+                                    submissionProvider.setBusinessLoanType(
+                                      widget.businessLoanType,
+                                    );
                                     debugPrint(
                                         'Creating application for loan type: $loanType');
                                     // Create application so step screens have an applicationId

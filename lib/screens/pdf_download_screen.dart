@@ -20,6 +20,33 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
   final PdfGenerationService _pdfService = PdfGenerationService();
   bool _isGenerating = false;
   bool _useSampleData = false; // Use real data by default for production
+  bool _isHydrating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hydrateIfNeeded();
+    });
+  }
+
+  Future<void> _hydrateIfNeeded() async {
+    if (!mounted) return;
+    if (_useSampleData) return;
+    if (_isHydrating) return;
+    setState(() => _isHydrating = true);
+    try {
+      await _pdfService.hydrateSubmissionForPdf(
+        context: context,
+        submissionProvider: context.read<SubmissionProvider>(),
+        applicationProvider: context.read<ApplicationProvider>(),
+      );
+    } catch (_) {
+      // Best-effort only; ignore errors.
+    } finally {
+      if (mounted) setState(() => _isHydrating = false);
+    }
+  }
 
   Future<void> _generatePdf() async {
     if (_isGenerating) return;
@@ -80,7 +107,20 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final submissionProvider = context.watch<SubmissionProvider>();
+    final applicationProvider = context.watch<ApplicationProvider>();
     final submission = submissionProvider.submission;
+    final loanType =
+        (applicationProvider.currentApplication?.loanType ?? submission.loanType ?? '')
+            .toLowerCase();
+    final businessLoanType = (submission.businessLoanType ?? '').toLowerCase();
+    final isBusinessProprietor =
+        loanType.contains('business') && businessLoanType == 'proprietor';
+    final isBusinessPartnership =
+        loanType.contains('business') && businessLoanType == 'partnership';
+    final isBusinessPvtLimited =
+        loanType.contains('business') && businessLoanType == 'pvt_limited';
+    final isBusinessLoanFlow = isBusinessProprietor || isBusinessPartnership || isBusinessPvtLimited;
+    final isSubmitted = (applicationProvider.currentApplication?.status ?? '').toLowerCase() == 'submitted';
 
     return Scaffold(
       body: Container(
@@ -269,42 +309,190 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                             ],
                           ),
                           const SizedBox(height: 16),
+                          if (_isHydrating) ...[
+                            Row(
+                              children: [
+                                SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  'Syncing uploaded documents...',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                          ],
                           _buildIncludedItem(
-                            context, 
-                            'Personal Information', 
-                            _useSampleData || submission.personalData != null,
-                            isSample: _useSampleData && submission.personalData == null,
+                            context,
+                            'Personal Information',
+                            _useSampleData || isSubmitted || submission.personalData != null,
+                            isSample: _useSampleData && !isSubmitted && submission.personalData == null,
                           ),
                           _buildIncludedItem(
-                            context, 
-                            'Selfie', 
-                            _useSampleData || submission.selfiePath != null,
-                            isSample: _useSampleData && submission.selfiePath == null,
+                            context,
+                            'Selfie',
+                            _useSampleData || isSubmitted || submission.selfiePath != null,
+                            isSample: _useSampleData && !isSubmitted && submission.selfiePath == null,
                           ),
                           _buildIncludedItem(
-                            context, 
-                            'Aadhaar Card', 
-                            _useSampleData || submission.aadhaar?.isComplete == true,
-                            isSample: _useSampleData && submission.aadhaar?.isComplete != true,
+                            context,
+                            'Aadhaar Card',
+                            _useSampleData || isSubmitted || submission.aadhaar?.isComplete == true,
+                            isSample: _useSampleData && !isSubmitted && submission.aadhaar?.isComplete != true,
                           ),
                           _buildIncludedItem(
-                            context, 
-                            'PAN Card', 
-                            _useSampleData || submission.pan?.isComplete == true,
-                            isSample: _useSampleData && submission.pan?.isComplete != true,
+                            context,
+                            'PAN Card',
+                            _useSampleData || isSubmitted || submission.pan?.isComplete == true,
+                            isSample: _useSampleData && !isSubmitted && submission.pan?.isComplete != true,
                           ),
                           _buildIncludedItem(
-                            context, 
-                            'Bank Statement', 
-                            _useSampleData || submission.bankStatement?.isComplete == true,
-                            isSample: _useSampleData && submission.bankStatement?.isComplete != true,
+                            context,
+                            'Bank Statement',
+                            _useSampleData || isSubmitted || submission.bankStatement?.isComplete == true,
+                            isSample: _useSampleData && !isSubmitted && submission.bankStatement?.isComplete != true,
                           ),
-                          _buildIncludedItem(
-                            context, 
-                            'Salary Slips', 
-                            _useSampleData || submission.salarySlips?.isComplete == true,
-                            isSample: _useSampleData && submission.salarySlips?.isComplete != true,
-                          ),
+                          if (!isBusinessLoanFlow)
+                            _buildIncludedItem(
+                              context,
+                              'Salary Slips',
+                              _useSampleData || isSubmitted || submission.salarySlips?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.salarySlips?.isComplete != true,
+                            )
+                          else
+                            _buildIncludedItem(
+                              context,
+                              'Salary Slips (Not required for Business Loan)',
+                              true,
+                            ),
+
+                          if (isBusinessProprietor) ...[
+                            const SizedBox(height: 8),
+                            Divider(color: colorScheme.outline.withValues(alpha: 0.15)),
+                            const SizedBox(height: 8),
+                            _buildIncludedItem(
+                              context,
+                              'Spouse Aadhaar',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.spouseAadhaar?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.spouseAadhaar?.isComplete != true,
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'Spouse PAN',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.spousePan?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.spousePan?.isComplete != true,
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'GST / Labour (Any one)',
+                              _useSampleData || isSubmitted ||
+                                  (submission.businessDocuments?.hasGstOrLabour ?? false),
+                              isSample: _useSampleData && !isSubmitted &&
+                                  !(submission.businessDocuments?.hasGstOrLabour ?? false),
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'MSME Certificate',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.msmeCertificate?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.msmeCertificate?.isComplete != true,
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'Own House Proof',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.ownHouseProof?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.ownHouseProof?.isComplete != true,
+                            ),
+                          ],
+                          if (isBusinessPartnership || isBusinessPvtLimited) ...[
+                            const SizedBox(height: 8),
+                            Divider(color: colorScheme.outline.withValues(alpha: 0.15)),
+                            const SizedBox(height: 8),
+                            _buildIncludedItem(
+                              context,
+                              'Partners KYC',
+                              _useSampleData || isSubmitted ||
+                                  (submission.businessDocuments?.isPartnerKycComplete ?? false),
+                              isSample: _useSampleData && !isSubmitted &&
+                                  !(submission.businessDocuments?.isPartnerKycComplete ?? false),
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'Company PAN Card',
+                              _useSampleData || isSubmitted ||
+                                  (submission.businessDocuments?.companyPanCard?.isComplete ?? false),
+                              isSample: _useSampleData && !isSubmitted &&
+                                  !(submission.businessDocuments?.companyPanCard?.isComplete ?? false),
+                            ),
+                            if (isBusinessPvtLimited) ...[
+                              _buildIncludedItem(
+                                context,
+                                'MOA',
+                                _useSampleData || isSubmitted ||
+                                    (submission.businessDocuments?.moa?.isComplete ?? false),
+                                isSample: _useSampleData && !isSubmitted &&
+                                    !(submission.businessDocuments?.moa?.isComplete ?? false),
+                              ),
+                              _buildIncludedItem(
+                                context,
+                                'AOA',
+                                _useSampleData || isSubmitted ||
+                                    (submission.businessDocuments?.aoa?.isComplete ?? false),
+                                isSample: _useSampleData && !isSubmitted &&
+                                    !(submission.businessDocuments?.aoa?.isComplete ?? false),
+                              ),
+                            ] else
+                              _buildIncludedItem(
+                                context,
+                                'Partnership Deed',
+                                _useSampleData || isSubmitted ||
+                                    (submission.businessDocuments?.partnershipDeed?.isComplete ?? false),
+                                isSample: _useSampleData && !isSubmitted &&
+                                    !(submission.businessDocuments?.partnershipDeed?.isComplete ?? false),
+                              ),
+                            _buildIncludedItem(
+                              context,
+                              'GST / Labour (Any one)',
+                              _useSampleData || isSubmitted ||
+                                  (submission.businessDocuments?.hasGstOrLabour ?? false),
+                              isSample: _useSampleData && !isSubmitted &&
+                                  !(submission.businessDocuments?.hasGstOrLabour ?? false),
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'MSME Certificate',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.msmeCertificate?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.msmeCertificate?.isComplete != true,
+                            ),
+                            _buildIncludedItem(
+                              context,
+                              'Own House Proof',
+                              _useSampleData || isSubmitted ||
+                                  submission.businessDocuments?.ownHouseProof?.isComplete == true,
+                              isSample: _useSampleData && !isSubmitted &&
+                                  submission.businessDocuments?.ownHouseProof?.isComplete != true,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -350,6 +538,9 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                               setState(() {
                                 _useSampleData = value;
                               });
+                              if (!value) {
+                                _hydrateIfNeeded();
+                              }
                             },
                             activeColor: Colors.orange,
                           ),

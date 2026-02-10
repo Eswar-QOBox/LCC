@@ -19,6 +19,225 @@ class SubmissionProvider with ChangeNotifier {
   bool get termsAccepted => _termsAccepted;
   bool get isInitialized => _isInitialized;
 
+  // Loan meta
+  void setLoanType(String? loanType) {
+    _submission.loanType = loanType;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setBusinessLoanType(String? businessLoanType) {
+    _submission.businessLoanType = businessLoanType;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  // Business docs
+  void setSpouseAadhaarFront(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.spouseAadhaar ??= AadhaarDocument();
+    _submission.businessDocuments!.spouseAadhaar!.frontPath = path;
+    _submission.businessDocuments!.spouseAadhaar!.frontIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setSpouseAadhaarBack(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.spouseAadhaar ??= AadhaarDocument();
+    _submission.businessDocuments!.spouseAadhaar!.backPath = path;
+    _submission.businessDocuments!.spouseAadhaar!.backIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearSpouseAadhaar() {
+    if (_submission.businessDocuments == null) return;
+    _submission.businessDocuments!.spouseAadhaar = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setSpousePan(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.spousePan ??= PanDocument();
+    _submission.businessDocuments!.spousePan!.frontPath = path;
+    _submission.businessDocuments!.spousePan!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setGstRegistration(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.gstRegistration ??= UploadedDoc();
+    _submission.businessDocuments!.gstRegistration!.path = path;
+    _submission.businessDocuments!.gstRegistration!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCompanyPanCard(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.companyPanCard ??= UploadedDoc();
+    _submission.businessDocuments!.companyPanCard!.path = path;
+    _submission.businessDocuments!.companyPanCard!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnershipDeed(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.partnershipDeed ??= UploadedDoc();
+    _submission.businessDocuments!.partnershipDeed!.path = path;
+    _submission.businessDocuments!.partnershipDeed!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setMoa(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.moa ??= UploadedDoc();
+    _submission.businessDocuments!.moa!.path = path;
+    _submission.businessDocuments!.moa!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setAoa(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.aoa ??= UploadedDoc();
+    _submission.businessDocuments!.aoa!.path = path;
+    _submission.businessDocuments!.aoa!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setLabourCertificate(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.labourCertificate ??= UploadedDoc();
+    _submission.businessDocuments!.labourCertificate!.path = path;
+    _submission.businessDocuments!.labourCertificate!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setMsmeCertificate(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.msmeCertificate ??= UploadedDoc();
+    _submission.businessDocuments!.msmeCertificate!.path = path;
+    _submission.businessDocuments!.msmeCertificate!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setOwnHouseProof(String path, {bool isPdf = false}) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    _submission.businessDocuments!.ownHouseProof ??= UploadedDoc();
+    _submission.businessDocuments!.ownHouseProof!.path = path;
+    _submission.businessDocuments!.ownHouseProof!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnerCount(int count) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    final b = _submission.businessDocuments!;
+    b.partnerCount = count;
+    final existing = b.partners;
+    if (existing.length < count) {
+      b.partners = [
+        ...existing,
+        ...List.generate(count - existing.length, (_) => PartnerKyc()),
+      ];
+    } else if (existing.length > count) {
+      b.partners = existing.take(count).toList();
+    }
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnerAadhaarFront(
+    int partnerIndex1Based,
+    String path, {
+    bool isPdf = false,
+  }) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    final b = _submission.businessDocuments!;
+    final idx = partnerIndex1Based - 1;
+    final ensureLen = (b.partnerCount ?? 0) > 0 ? b.partnerCount! : (idx + 1);
+    if (b.partners.length < ensureLen) {
+      b.partners = [
+        ...b.partners,
+        ...List.generate(ensureLen - b.partners.length, (_) => PartnerKyc()),
+      ];
+    }
+    b.partners[idx].aadhaar ??= AadhaarDocument();
+    b.partners[idx].aadhaar!.frontPath = path;
+    b.partners[idx].aadhaar!.frontIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnerAadhaarBack(
+    int partnerIndex1Based,
+    String path, {
+    bool isPdf = false,
+  }) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    final b = _submission.businessDocuments!;
+    final idx = partnerIndex1Based - 1;
+    final ensureLen = (b.partnerCount ?? 0) > 0 ? b.partnerCount! : (idx + 1);
+    if (b.partners.length < ensureLen) {
+      b.partners = [
+        ...b.partners,
+        ...List.generate(ensureLen - b.partners.length, (_) => PartnerKyc()),
+      ];
+    }
+    b.partners[idx].aadhaar ??= AadhaarDocument();
+    b.partners[idx].aadhaar!.backPath = path;
+    b.partners[idx].aadhaar!.backIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnerExtractedAadhaarNumber(int partnerIndex1Based, String? number) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    final b = _submission.businessDocuments!;
+    final idx = partnerIndex1Based - 1;
+    final ensureLen = (b.partnerCount ?? 0) > 0 ? b.partnerCount! : (idx + 1);
+    if (b.partners.length < ensureLen) {
+      b.partners = [
+        ...b.partners,
+        ...List.generate(ensureLen - b.partners.length, (_) => PartnerKyc()),
+      ];
+    }
+    b.partners[idx].extractedAadhaarNumber = number?.trim().replaceAll(RegExp(r'[\s-]'), '');
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPartnerPan(
+    int partnerIndex1Based,
+    String path, {
+    bool isPdf = false,
+  }) {
+    _submission.businessDocuments ??= BusinessDocuments();
+    final b = _submission.businessDocuments!;
+    final idx = partnerIndex1Based - 1;
+    final ensureLen = (b.partnerCount ?? 0) > 0 ? b.partnerCount! : (idx + 1);
+    if (b.partners.length < ensureLen) {
+      b.partners = [
+        ...b.partners,
+        ...List.generate(ensureLen - b.partners.length, (_) => PartnerKyc()),
+      ];
+    }
+    b.partners[idx].pan ??= PanDocument();
+    b.partners[idx].pan!.frontPath = path;
+    b.partners[idx].pan!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
   /// Initialize the provider by loading any existing draft
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -30,6 +249,7 @@ class SubmissionProvider with ChangeNotifier {
   void setSelfie(String path) {
     _submission.selfiePath = path;
     notifyListeners();
+    unawaited(saveDraft());
   }
 
   // Aadhaar
@@ -38,6 +258,7 @@ class SubmissionProvider with ChangeNotifier {
     _submission.aadhaar!.frontPath = path;
     _submission.aadhaar!.frontIsPdf = isPdf;
     notifyListeners();
+    unawaited(saveDraft());
   }
 
   void setAadhaarBack(String path, {bool isPdf = false}) {
@@ -45,6 +266,37 @@ class SubmissionProvider with ChangeNotifier {
     _submission.aadhaar!.backPath = path;
     _submission.aadhaar!.backIsPdf = isPdf;
     notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearAadhaar() {
+    _submission.aadhaar = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearAadhaarFront() {
+    final a = _submission.aadhaar;
+    if (a == null) return;
+    a.frontPath = null;
+    a.frontIsPdf = false;
+    if (a.frontPath == null && a.backPath == null) {
+      _submission.aadhaar = null;
+    }
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearAadhaarBack() {
+    final a = _submission.aadhaar;
+    if (a == null) return;
+    a.backPath = null;
+    a.backIsPdf = false;
+    if (a.frontPath == null && a.backPath == null) {
+      _submission.aadhaar = null;
+    }
+    notifyListeners();
+    unawaited(saveDraft());
   }
 
   // PAN
@@ -53,6 +305,40 @@ class SubmissionProvider with ChangeNotifier {
     _submission.pan!.frontPath = path;
     _submission.pan!.isPdf = isPdf;
     notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearPan() {
+    _submission.pan = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearSpousePan() {
+    if (_submission.businessDocuments == null) return;
+    _submission.businessDocuments!.spousePan = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearPartnerPan(int partnerIndex1Based) {
+    final b = _submission.businessDocuments;
+    if (b == null) return;
+    final idx = partnerIndex1Based - 1;
+    if (idx < 0 || idx >= b.partners.length) return;
+    b.partners[idx].pan = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearPartnerAadhaar(int partnerIndex1Based) {
+    final b = _submission.businessDocuments;
+    if (b == null) return;
+    final idx = partnerIndex1Based - 1;
+    if (idx < 0 || idx >= b.partners.length) return;
+    b.partners[idx].aadhaar = null;
+    notifyListeners();
+    unawaited(saveDraft());
   }
 
   // Bank Statement
@@ -309,32 +595,53 @@ class SubmissionProvider with ChangeNotifier {
 
     bool hasInvalidFiles = false;
 
+    bool shouldCheckExistence(String path) {
+      final p = path.trim();
+      if (p.isEmpty) return false;
+      // Server/blob paths should not be validated via local filesystem.
+      return !(p.startsWith('http') ||
+          p.startsWith('/uploads/') ||
+          p.startsWith('uploads/') ||
+          p.startsWith('/api/') ||
+          p.startsWith('api/') ||
+          p.startsWith('blob:'));
+    }
+
     // Validate selfie
     if (_submission.selfiePath != null) {
-      final file = io.File(_submission.selfiePath!);
-      if (!await file.exists()) {
-        debugPrint('⚠️ Selfie file not found: ${_submission.selfiePath}');
-        _submission.selfiePath = null;
-        hasInvalidFiles = true;
+      final path = _submission.selfiePath!;
+      if (shouldCheckExistence(path)) {
+        final file = io.File(path);
+        if (!await file.exists()) {
+          debugPrint('⚠️ Selfie file not found: $path');
+          _submission.selfiePath = null;
+          hasInvalidFiles = true;
+        }
       }
     }
 
     // Validate Aadhaar
     if (_submission.aadhaar != null) {
       if (_submission.aadhaar!.frontPath != null) {
-        final file = io.File(_submission.aadhaar!.frontPath!);
-        if (!await file.exists()) {
-          debugPrint('⚠️ Aadhaar front file not found: ${_submission.aadhaar!.frontPath}');
-          _submission.aadhaar!.frontPath = null;
-          hasInvalidFiles = true;
+        final path = _submission.aadhaar!.frontPath!;
+        if (shouldCheckExistence(path)) {
+          final file = io.File(path);
+          if (!await file.exists()) {
+            debugPrint('⚠️ Aadhaar front file not found: $path');
+            _submission.aadhaar!.frontPath = null;
+            hasInvalidFiles = true;
+          }
         }
       }
       if (_submission.aadhaar!.backPath != null) {
-        final file = io.File(_submission.aadhaar!.backPath!);
-        if (!await file.exists()) {
-          debugPrint('⚠️ Aadhaar back file not found: ${_submission.aadhaar!.backPath}');
-          _submission.aadhaar!.backPath = null;
-          hasInvalidFiles = true;
+        final path = _submission.aadhaar!.backPath!;
+        if (shouldCheckExistence(path)) {
+          final file = io.File(path);
+          if (!await file.exists()) {
+            debugPrint('⚠️ Aadhaar back file not found: $path');
+            _submission.aadhaar!.backPath = null;
+            hasInvalidFiles = true;
+          }
         }
       }
       // If both paths are null, clear the aadhaar document
@@ -345,11 +652,14 @@ class SubmissionProvider with ChangeNotifier {
 
     // Validate PAN
     if (_submission.pan != null && _submission.pan!.frontPath != null) {
-      final file = io.File(_submission.pan!.frontPath!);
-      if (!await file.exists()) {
-        debugPrint('⚠️ PAN file not found: ${_submission.pan!.frontPath}');
-        _submission.pan!.frontPath = null;
-        hasInvalidFiles = true;
+      final path = _submission.pan!.frontPath!;
+      if (shouldCheckExistence(path)) {
+        final file = io.File(path);
+        if (!await file.exists()) {
+          debugPrint('⚠️ PAN file not found: $path');
+          _submission.pan!.frontPath = null;
+          hasInvalidFiles = true;
+        }
       }
       // If path is null, clear the pan document
       if (_submission.pan!.frontPath == null) {
@@ -361,6 +671,10 @@ class SubmissionProvider with ChangeNotifier {
     if (_submission.bankStatement != null && _submission.bankStatement!.pages.isNotEmpty) {
       final validPages = <String>[];
       for (final pagePath in _submission.bankStatement!.pages) {
+        if (!shouldCheckExistence(pagePath)) {
+          validPages.add(pagePath);
+          continue;
+        }
         final file = io.File(pagePath);
         if (await file.exists()) {
           validPages.add(pagePath);
@@ -376,11 +690,119 @@ class SubmissionProvider with ChangeNotifier {
       }
     }
 
+    // Validate Business Documents (Business Loan - Proprietor)
+    if (_submission.businessDocuments != null) {
+      final b = _submission.businessDocuments!;
+
+      // Spouse Aadhaar
+      if (b.spouseAadhaar != null) {
+        if (b.spouseAadhaar!.frontPath != null) {
+          final path = b.spouseAadhaar!.frontPath!;
+          if (shouldCheckExistence(path)) {
+            final file = io.File(path);
+            if (!await file.exists()) {
+              debugPrint('⚠️ Spouse Aadhaar front file not found: $path');
+              b.spouseAadhaar!.frontPath = null;
+              hasInvalidFiles = true;
+            }
+          }
+        }
+        if (b.spouseAadhaar!.backPath != null) {
+          final path = b.spouseAadhaar!.backPath!;
+          if (shouldCheckExistence(path)) {
+            final file = io.File(path);
+            if (!await file.exists()) {
+              debugPrint('⚠️ Spouse Aadhaar back file not found: $path');
+              b.spouseAadhaar!.backPath = null;
+              hasInvalidFiles = true;
+            }
+          }
+        }
+        if (b.spouseAadhaar!.frontPath == null && b.spouseAadhaar!.backPath == null) {
+          b.spouseAadhaar = null;
+        }
+      }
+
+      // Spouse PAN
+      if (b.spousePan != null && b.spousePan!.frontPath != null) {
+        final path = b.spousePan!.frontPath!;
+        if (shouldCheckExistence(path)) {
+          final file = io.File(path);
+          if (!await file.exists()) {
+            debugPrint('⚠️ Spouse PAN file not found: $path');
+            b.spousePan!.frontPath = null;
+            hasInvalidFiles = true;
+          }
+        }
+        if (b.spousePan!.frontPath == null) {
+          b.spousePan = null;
+        }
+      }
+
+      Future<void> validateUploadedDoc(UploadedDoc? doc, String label, void Function() clear) async {
+        final path = doc?.path;
+        if (path == null || path.trim().isEmpty) return;
+        if (!shouldCheckExistence(path)) return;
+        final file = io.File(path);
+        if (!await file.exists()) {
+          debugPrint('⚠️ $label file not found: $path');
+          clear();
+          hasInvalidFiles = true;
+        }
+      }
+
+      await validateUploadedDoc(
+        b.companyPanCard,
+        'Company PAN Card',
+        () => b.companyPanCard = null,
+      );
+      await validateUploadedDoc(
+        b.partnershipDeed,
+        'Partnership Deed',
+        () => b.partnershipDeed = null,
+      );
+      await validateUploadedDoc(
+        b.gstRegistration,
+        'GST Registration',
+        () => b.gstRegistration = null,
+      );
+      await validateUploadedDoc(
+        b.labourCertificate,
+        'Labour Certificate',
+        () => b.labourCertificate = null,
+      );
+      await validateUploadedDoc(
+        b.msmeCertificate,
+        'MSME Certificate',
+        () => b.msmeCertificate = null,
+      );
+      await validateUploadedDoc(
+        b.ownHouseProof,
+        'Own House Proof',
+        () => b.ownHouseProof = null,
+      );
+
+      // If everything is null, clear businessDocuments.
+      final hasPartnerInfo = (b.partnerCount ?? 0) > 0 || b.partners.isNotEmpty;
+      if (b.spouseAadhaar == null &&
+          b.spousePan == null &&
+          !hasPartnerInfo &&
+          b.companyPanCard == null &&
+          b.partnershipDeed == null &&
+          b.gstRegistration == null &&
+          b.labourCertificate == null &&
+          b.msmeCertificate == null &&
+          b.ownHouseProof == null) {
+        _submission.businessDocuments = null;
+      }
+    }
+
     // Validate Salary Slips
     if (_submission.salarySlips != null && _submission.salarySlips!.slipItems.isNotEmpty) {
       for (int i = 0; i < _submission.salarySlips!.slipItems.length; i++) {
         final slipItem = _submission.salarySlips!.slipItems[i];
         if (!slipItem.hasFile) continue;
+        if (!shouldCheckExistence(slipItem.path)) continue;
         final file = io.File(slipItem.path);
         if (!await file.exists()) {
           debugPrint('⚠️ Salary slip file not found: ${slipItem.path}');
@@ -447,6 +869,8 @@ class SubmissionProvider with ChangeNotifier {
   // JSON serialization helpers
   Map<String, dynamic> _submissionToJson(DocumentSubmission submission) {
     return {
+      'loanType': submission.loanType,
+      'businessLoanType': submission.businessLoanType,
       'selfiePath': submission.selfiePath,
       'aadhaar': submission.aadhaar != null
           ? {
@@ -467,6 +891,94 @@ class SubmissionProvider with ChangeNotifier {
               'pdfPassword': submission.bankStatement!.pdfPassword,
               'isPdf': submission.bankStatement!.isPdf,
               'statementDate': submission.bankStatement!.statementDate?.toIso8601String(),
+            }
+          : null,
+      'businessDocuments': submission.businessDocuments != null
+          ? {
+              'spouseAadhaar': submission.businessDocuments!.spouseAadhaar != null
+                  ? {
+                      'frontPath': submission.businessDocuments!.spouseAadhaar!.frontPath,
+                      'backPath': submission.businessDocuments!.spouseAadhaar!.backPath,
+                      'frontIsPdf': submission.businessDocuments!.spouseAadhaar!.frontIsPdf,
+                      'backIsPdf': submission.businessDocuments!.spouseAadhaar!.backIsPdf,
+                    }
+                  : null,
+              'spousePan': submission.businessDocuments!.spousePan != null
+                  ? {
+                      'frontPath': submission.businessDocuments!.spousePan!.frontPath,
+                      'isPdf': submission.businessDocuments!.spousePan!.isPdf,
+                    }
+                  : null,
+              'partnerCount': submission.businessDocuments!.partnerCount,
+              'partners': submission.businessDocuments!.partners
+                  .map(
+                    (p) => {
+                      'aadhaar': p.aadhaar != null
+                          ? {
+                              'frontPath': p.aadhaar!.frontPath,
+                              'backPath': p.aadhaar!.backPath,
+                              'frontIsPdf': p.aadhaar!.frontIsPdf,
+                              'backIsPdf': p.aadhaar!.backIsPdf,
+                            }
+                          : null,
+                      'pan': p.pan != null
+                          ? {
+                              'frontPath': p.pan!.frontPath,
+                              'isPdf': p.pan!.isPdf,
+                            }
+                          : null,
+                      'extractedAadhaarNumber': p.extractedAadhaarNumber,
+                    },
+                  )
+                  .toList(),
+              'companyPanCard': submission.businessDocuments!.companyPanCard != null
+                  ? {
+                      'path': submission.businessDocuments!.companyPanCard!.path,
+                      'isPdf': submission.businessDocuments!.companyPanCard!.isPdf,
+                    }
+                  : null,
+              'partnershipDeed': submission.businessDocuments!.partnershipDeed != null
+                  ? {
+                      'path': submission.businessDocuments!.partnershipDeed!.path,
+                      'isPdf': submission.businessDocuments!.partnershipDeed!.isPdf,
+                    }
+                  : null,
+              'moa': submission.businessDocuments!.moa != null
+                  ? {
+                      'path': submission.businessDocuments!.moa!.path,
+                      'isPdf': submission.businessDocuments!.moa!.isPdf,
+                    }
+                  : null,
+              'aoa': submission.businessDocuments!.aoa != null
+                  ? {
+                      'path': submission.businessDocuments!.aoa!.path,
+                      'isPdf': submission.businessDocuments!.aoa!.isPdf,
+                    }
+                  : null,
+              'gstRegistration': submission.businessDocuments!.gstRegistration != null
+                  ? {
+                      'path': submission.businessDocuments!.gstRegistration!.path,
+                      'isPdf': submission.businessDocuments!.gstRegistration!.isPdf,
+                    }
+                  : null,
+              'labourCertificate': submission.businessDocuments!.labourCertificate != null
+                  ? {
+                      'path': submission.businessDocuments!.labourCertificate!.path,
+                      'isPdf': submission.businessDocuments!.labourCertificate!.isPdf,
+                    }
+                  : null,
+              'msmeCertificate': submission.businessDocuments!.msmeCertificate != null
+                  ? {
+                      'path': submission.businessDocuments!.msmeCertificate!.path,
+                      'isPdf': submission.businessDocuments!.msmeCertificate!.isPdf,
+                    }
+                  : null,
+              'ownHouseProof': submission.businessDocuments!.ownHouseProof != null
+                  ? {
+                      'path': submission.businessDocuments!.ownHouseProof!.path,
+                      'isPdf': submission.businessDocuments!.ownHouseProof!.isPdf,
+                    }
+                  : null,
             }
           : null,
       'personalData': submission.personalData != null
@@ -528,6 +1040,8 @@ class SubmissionProvider with ChangeNotifier {
 
   DocumentSubmission _submissionFromJson(Map<String, dynamic> json) {
     final submission = DocumentSubmission(
+      loanType: json['loanType'] as String?,
+      businessLoanType: json['businessLoanType'] as String?,
       selfiePath: json['selfiePath'] as String?,
       submittedAt: json['submittedAt'] != null
           ? DateTime.parse(json['submittedAt'] as String)
@@ -562,6 +1076,92 @@ class SubmissionProvider with ChangeNotifier {
             ? DateTime.parse(bankData['statementDate'] as String)
             : null,
       );
+    }
+
+    if (json['businessDocuments'] != null) {
+      final b = json['businessDocuments'] as Map<String, dynamic>;
+      final docs = BusinessDocuments();
+
+      if (b['spouseAadhaar'] != null) {
+        final a = b['spouseAadhaar'] as Map<String, dynamic>;
+        docs.spouseAadhaar = AadhaarDocument(
+          frontPath: a['frontPath'] as String?,
+          backPath: a['backPath'] as String?,
+          frontIsPdf: a['frontIsPdf'] as bool? ?? false,
+          backIsPdf: a['backIsPdf'] as bool? ?? false,
+        );
+      }
+      if (b['spousePan'] != null) {
+        final p = b['spousePan'] as Map<String, dynamic>;
+        docs.spousePan = PanDocument(
+          frontPath: p['frontPath'] as String?,
+          isPdf: p['isPdf'] as bool? ?? false,
+        );
+      }
+
+      docs.partnerCount = (b['partnerCount'] as num?)?.toInt();
+      if (b['partners'] is List) {
+        final rawPartners = b['partners'] as List<dynamic>;
+        docs.partners = rawPartners.map((raw) {
+          if (raw is! Map<String, dynamic>) return PartnerKyc();
+          AadhaarDocument? parseAadhaar(dynamic r) {
+            if (r is! Map<String, dynamic>) return null;
+            return AadhaarDocument(
+              frontPath: r['frontPath'] as String?,
+              backPath: r['backPath'] as String?,
+              frontIsPdf: r['frontIsPdf'] as bool? ?? false,
+              backIsPdf: r['backIsPdf'] as bool? ?? false,
+            );
+          }
+
+          PanDocument? parsePan(dynamic r) {
+            if (r is! Map<String, dynamic>) return null;
+            return PanDocument(
+              frontPath: r['frontPath'] as String?,
+              isPdf: r['isPdf'] as bool? ?? false,
+            );
+          }
+
+          return PartnerKyc(
+            aadhaar: parseAadhaar(raw['aadhaar']),
+            pan: parsePan(raw['pan']),
+            extractedAadhaarNumber: raw['extractedAadhaarNumber'] as String?,
+          );
+        }).toList();
+      }
+
+      UploadedDoc? parseUploadedDoc(dynamic raw) {
+        if (raw is! Map<String, dynamic>) return null;
+        return UploadedDoc(
+          path: raw['path'] as String?,
+          isPdf: raw['isPdf'] as bool? ?? false,
+        );
+      }
+
+      docs.gstRegistration = parseUploadedDoc(b['gstRegistration']);
+      docs.labourCertificate = parseUploadedDoc(b['labourCertificate']);
+      docs.msmeCertificate = parseUploadedDoc(b['msmeCertificate']);
+      docs.ownHouseProof = parseUploadedDoc(b['ownHouseProof']);
+      docs.companyPanCard = parseUploadedDoc(b['companyPanCard']);
+      docs.partnershipDeed = parseUploadedDoc(b['partnershipDeed']);
+      docs.moa = parseUploadedDoc(b['moa']);
+      docs.aoa = parseUploadedDoc(b['aoa']);
+
+      // Only attach if something exists.
+      if (docs.spouseAadhaar != null ||
+          docs.spousePan != null ||
+          docs.partnerCount != null ||
+          docs.partners.isNotEmpty ||
+          docs.companyPanCard != null ||
+          docs.partnershipDeed != null ||
+          docs.moa != null ||
+          docs.aoa != null ||
+          docs.gstRegistration != null ||
+          docs.labourCertificate != null ||
+          docs.msmeCertificate != null ||
+          docs.ownHouseProof != null) {
+        submission.businessDocuments = docs;
+      }
     }
 
     if (json['personalData'] != null) {

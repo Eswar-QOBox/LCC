@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../utils/api_config.dart';
+
 /// Platform-agnostic image widget that works on both mobile and web
 class PlatformImage extends StatefulWidget {
   final String imagePath;
@@ -31,6 +33,60 @@ class _PlatformImageState extends State<PlatformImage> {
   Uint8List? _webFetchedBytes;
   bool _isLoadingWeb = false;
   bool _hasWebError = false;
+
+  String _normalizeUrlIfNeeded(String raw) {
+    if (raw.isEmpty) return raw;
+    if (raw.startsWith('blob:') || raw.startsWith('data:image')) return raw;
+
+    var path = raw;
+
+    // Normalize "baseUrl..." prefix if stored that way.
+    if (path.startsWith('baseUrl')) {
+      path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
+    }
+
+    // Normalize localhost URLs from older saved data.
+    if (path.startsWith('http://localhost:5000')) {
+      path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
+    }
+
+    // If already a full URL, return as-is.
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+
+    // Some saved paths come without leading slash (e.g. "uploads/...", "api/...").
+    if (path.startsWith('uploads/') || path.startsWith('api/')) {
+      path = '/$path';
+    }
+
+    // Convert known upload-relative paths to full API URLs.
+    // Only treat these as network paths (avoid breaking local file paths like /storage/...).
+    if (path.startsWith('/uploads/')) {
+      if (!path.contains('/uploads/files/')) {
+        path = path.replaceFirst('/uploads/', '/api/v1/uploads/files/');
+      }
+      return '${ApiConfig.baseUrl}$path';
+    }
+
+    if (path.startsWith('/api/')) {
+      return '${ApiConfig.baseUrl}$path';
+    }
+
+    return raw;
+  }
+
+  bool _isNetworkPath(String raw) {
+    final p = raw;
+    return p.startsWith('http://') ||
+        p.startsWith('https://') ||
+        p.startsWith('blob:') ||
+        p.startsWith('data:image') ||
+        p.startsWith('/uploads/') ||
+        p.startsWith('/api/') ||
+        p.startsWith('uploads/') ||
+        p.startsWith('api/') ||
+        p.startsWith('baseUrl') ||
+        p.startsWith('http://localhost:5000');
+  }
 
   @override
   void initState() {
@@ -69,6 +125,7 @@ class _PlatformImageState extends State<PlatformImage> {
 
 
   Future<void> _fetchWebImageIfNeeded() async {
+    final normalized = _normalizeUrlIfNeeded(widget.imagePath);
     // Only fetch manually if:
     // 1. We are on Web
     // 2. We don't have explicit bytes passed
@@ -76,7 +133,7 @@ class _PlatformImageState extends State<PlatformImage> {
     // 4. We have headers (Authorization) that Image.network ignores on Web
     if (kIsWeb && 
         widget.imageBytes == null && 
-        (widget.imagePath.startsWith('http://') || widget.imagePath.startsWith('https://')) && 
+        (normalized.startsWith('http://') || normalized.startsWith('https://')) && 
         widget.headers != null) {
       
       setState(() {
@@ -87,7 +144,7 @@ class _PlatformImageState extends State<PlatformImage> {
 
       try {
         final response = await http.get(
-          Uri.parse(widget.imagePath), 
+          Uri.parse(normalized), 
           headers: widget.headers
         );
         
@@ -157,12 +214,14 @@ class _PlatformImageState extends State<PlatformImage> {
 
   @override
   Widget build(BuildContext context) {
+    final normalized = _normalizeUrlIfNeeded(widget.imagePath);
+    final effectiveFit = widget.fit ?? BoxFit.cover;
     if (kIsWeb) {
       // 1. Use explicitly passed bytes if available
       if (widget.imageBytes != null) {
         return Image.memory(
           widget.imageBytes!,
-          fit: widget.fit,
+          fit: effectiveFit,
           width: widget.width,
           height: widget.height,
         );
@@ -186,19 +245,19 @@ class _PlatformImageState extends State<PlatformImage> {
       if (_webFetchedBytes != null) {
         return Image.memory(
           _webFetchedBytes!,
-          fit: widget.fit,
+          fit: effectiveFit,
           width: widget.width,
           height: widget.height,
         );
       }
 
       // 3. Standard Web Handling (no headers or public url)
-      if (widget.imagePath.startsWith('http://') || 
-          widget.imagePath.startsWith('https://') ||
-          widget.imagePath.startsWith('data:image')) {
+      if (normalized.startsWith('http://') || 
+          normalized.startsWith('https://') ||
+          normalized.startsWith('data:image')) {
         return Image.network(
-          widget.imagePath,
-          fit: widget.fit,
+          normalized,
+          fit: effectiveFit,
           width: widget.width,
           height: widget.height,
           // Note: headers are ignored on Web by Image.network
@@ -220,10 +279,11 @@ class _PlatformImageState extends State<PlatformImage> {
       }
     } else {
       // On mobile/desktop
-      if (widget.imagePath.startsWith('http://') || widget.imagePath.startsWith('https://')) {
+      if (_isNetworkPath(widget.imagePath) &&
+          (normalized.startsWith('http://') || normalized.startsWith('https://'))) {
         return Image.network(
-          widget.imagePath,
-          fit: widget.fit,
+          normalized,
+          fit: effectiveFit,
           width: widget.width,
           height: widget.height,
           headers: widget.headers,
@@ -232,7 +292,7 @@ class _PlatformImageState extends State<PlatformImage> {
       } else {
         return Image.file(
           File(widget.imagePath),
-          fit: widget.fit,
+          fit: effectiveFit,
           width: widget.width,
           height: widget.height,
           errorBuilder: (context, error, stackTrace) => _buildErrorWidget(),
@@ -242,43 +302,80 @@ class _PlatformImageState extends State<PlatformImage> {
   }
 
   Widget _buildErrorWidget() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
-            const SizedBox(height: 8),
-            Text(
-              'Image not available',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey.shade700,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isTiny = constraints.maxWidth <= 72 || constraints.maxHeight <= 72;
+
+        // In small thumbnails (e.g., 60x60), only show an icon to avoid RenderFlex overflow.
+        if (isTiny) {
+          return Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Center(
+              child: Icon(
+                Icons.image_not_supported,
+                size: 26,
+                color: Colors.grey.shade400,
               ),
             ),
-            if (kDebugMode) ...[
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Text(
-                  'Check console for details',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey.shade600,
-                  ),
-                  textAlign: TextAlign.center,
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.image_not_supported,
+                  size: 32,
+                  color: Colors.grey.shade400,
                 ),
-              ),
-            ],
-          ],
-        ),
-      ),
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Text(
+                    'Image not available',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                if (kDebugMode) ...[
+                  const SizedBox(height: 4),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Text(
+                      'Check console',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

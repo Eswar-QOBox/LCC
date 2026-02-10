@@ -710,7 +710,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               crossAxisCount: 2,
               crossAxisSpacing: 14,
               mainAxisSpacing: 14,
-              childAspectRatio: 1.25,
+              childAspectRatio: 1.05,
             ),
             itemCount: documents.length,
             itemBuilder: (context, index) {
@@ -789,7 +789,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       ),
       padding: const EdgeInsets.all(12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

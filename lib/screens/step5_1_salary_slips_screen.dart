@@ -22,6 +22,7 @@ import '../services/storage_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../utils/api_config.dart';
+import '../widgets/preview_header_action.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
@@ -802,6 +803,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               showBackButton: true,
               onBackPressed: () => context.go(AppRoutes.step4BankStatement),
               showHomeButton: true,
+              actions: const [
+                PreviewHeaderAction(backRoute: AppRoutes.step5_1SalarySlips),
+              ],
             ),
             _buildProgressIndicator(context),
             Expanded(
@@ -1169,11 +1173,12 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               right: 8,
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
+                  // Keep close button red for consistency across previews.
+                  color: AppTheme.errorColor.withValues(alpha: 0.9),
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
+                      color: AppTheme.errorColor.withValues(alpha: 0.25),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),

@@ -117,6 +117,8 @@ class AppStrings {
         return 'Step 5: Personal Data';
       case 6:
         return 'Step 6: Preview';
+      case 7:
+        return 'Step 7: Preview';
       default:
         return 'Start Application';
     }

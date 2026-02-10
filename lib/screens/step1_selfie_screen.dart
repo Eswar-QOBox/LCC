@@ -20,6 +20,8 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../widgets/premium_progress_indicator.dart';
+import '../widgets/preview_header_action.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
   const Step1SelfieScreen({super.key});
@@ -562,10 +564,33 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
               showBackButton: true,
               onBackPressed: () => context.go(AppRoutes.home),
               showHomeButton: true,
+              actions: const [
+                PreviewHeaderAction(backRoute: AppRoutes.step1Selfie),
+              ],
             ),
             
             // Progress Indicator with numbered circles
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ??
+                        submissionProvider.submission.loanType ??
+                        '')
+                    .toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '')
+                        .toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+
+                return _buildProgressIndicator(
+                  context,
+                  currentStep: 1,
+                  totalSteps: isBusinessProprietor ? 10 : 7,
+                );
+              },
+            ),
             
             // Content
             Expanded(
@@ -621,92 +646,15 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Step 1: Current
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '1',
-                      style: TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: Colors.grey.shade200,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Steps 2-7: Pending
-          for (int i = 2; i <= 7; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$i',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (i < 7)
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: Colors.grey.shade200,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
+  Widget _buildProgressIndicator(
+    BuildContext context, {
+    required int currentStep,
+    required int totalSteps,
+  }) {
+    return PremiumProgressIndicator(
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      maxVisibleSteps: 7,
     );
   }
 
@@ -810,6 +758,17 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
   Widget _buildSelfieDisplayArea(BuildContext context) {
     final theme = Theme.of(context);
 
+    void openPreview() {
+      final path = _imagePath;
+      if (path == null || path.isEmpty) return;
+      _openImagePreviewDialog(
+        context,
+        imagePath: path,
+        imageBytes: _imageBytes,
+        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+      );
+    }
+
     return AspectRatio(
       aspectRatio: 4 / 3,
       child: Container(
@@ -839,11 +798,33 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                           ? (_networkImageFailed
                               ? const Icon(Icons.broken_image, color: Colors.grey, size: 64)
                               : const CircularProgressIndicator())
-                          : PlatformImage(
-                              imagePath: _imagePath!,
-                              imageBytes: _imageBytes,
-                              fit: BoxFit.cover,
-                              headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                          : Stack(
+                              children: [
+                                Positioned.fill(
+                                  child: PlatformImage(
+                                    imagePath: _imagePath!,
+                                    imageBytes: _imageBytes,
+                                    fit: BoxFit.cover,
+                                    headers: _authToken != null
+                                        ? {'Authorization': 'Bearer $_authToken'}
+                                        : null,
+                                  ),
+                                ),
+                                // Tap target + affordance ("Tap to preview")
+                                Positioned.fill(
+                                  child: Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      onTap: openPreview,
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 12,
+                                  right: 12,
+                                  child: _tapToPreviewPill(),
+                                ),
+                              ],
                             ),
                     )
                   : Center(
@@ -869,6 +850,90 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _tapToPreviewPill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.18),
+        ),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.open_in_full, size: 14, color: Colors.white),
+          SizedBox(width: 6),
+          Text(
+            'Tap to preview',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openImagePreviewDialog(
+    BuildContext context, {
+    required String imagePath,
+    Uint8List? imageBytes,
+    Map<String, String>? headers,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: InteractiveViewer(
+                      minScale: 1.0,
+                      maxScale: 4.0,
+                      child: PlatformImage(
+                        imagePath: imagePath,
+                        imageBytes: imageBytes,
+                        fit: BoxFit.contain,
+                        headers: headers,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: AppTheme.errorColor.withValues(alpha: 0.95),
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      customBorder: const CircleBorder(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1012,7 +1077,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Next: Aadhaar Card',
+                      'Continue to Next',
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

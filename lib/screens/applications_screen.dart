@@ -322,9 +322,29 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       await appProvider.loadApplication(application.id);
       if (!context.mounted) return;
 
+      String resolveRouteForDraft(LoanApplication app) {
+        // Backend currentStep is constrained to 1..7.
+        // For Business Loan (Proprietor) we map steps 4-7 to our extended UI.
+        final isBusiness = (app.loanType).toLowerCase().contains('business');
+        if (isBusiness) {
+          switch (app.currentStep) {
+            case 4:
+              return AppRoutes.step4SpouseAadhaar;
+            case 5:
+              return AppRoutes.step5SpousePan;
+            case 6:
+              return AppRoutes.step4BankStatement;
+            case 7:
+              // After bank statement we continue with GST/Labour → MSME → OHP → Personal → Preview.
+              return AppRoutes.step6Preview;
+          }
+        }
+        return AppRoutes.getStepRoute(app.currentStep);
+      }
+
       // Draft: go to current step to continue editing
       if (application.isDraft) {
-        context.go(AppRoutes.getStepRoute(application.currentStep));
+        context.go(resolveRouteForDraft(application));
         return;
       }
       // Submitted or approved: sync then show View Submitted screen
@@ -333,7 +353,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         return;
       }
       // Other status (e.g. paused): go to current step
-      context.go(AppRoutes.getStepRoute(application.currentStep));
+      context.go(resolveRouteForDraft(application));
     } catch (e) {
       if (!context.mounted) return;
       PremiumToast.showError(context, 'Failed to load application: ${e.toString()}');

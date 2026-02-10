@@ -1,18 +1,28 @@
 class DocumentSubmission {
+  /// The selected loan type (e.g. "Personal Loan", "Business Loan")
+  String? loanType;
+
+  /// Business subtype for Business Loan (e.g. "proprietor", "partnership", "pvt_limited")
+  String? businessLoanType;
+
   String? selfiePath;
   AadhaarDocument? aadhaar;
   PanDocument? pan;
   BankStatement? bankStatement;
+  BusinessDocuments? businessDocuments;
   PersonalData? personalData;
   SalarySlips? salarySlips;
   DateTime? submittedAt;
   SubmissionStatus status;
 
   DocumentSubmission({
+    this.loanType,
+    this.businessLoanType,
     this.selfiePath,
     this.aadhaar,
     this.pan,
     this.bankStatement,
+    this.businessDocuments,
     this.personalData,
     this.salarySlips,
     this.submittedAt,
@@ -20,6 +30,58 @@ class DocumentSubmission {
   });
 
   bool get isComplete {
+    final isBusinessLoan = (loanType ?? '').toLowerCase().contains('business');
+    final businessType = (businessLoanType ?? '').toLowerCase();
+    final isProprietor = businessType == 'proprietor';
+    final isPartnership = businessType == 'partnership';
+    final isPvtLimited = businessType == 'pvt_limited';
+
+    // Business Loan (Proprietor) flow: no salary slips; requires extra business docs.
+    if (isBusinessLoan && isProprietor) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          businessDocuments != null &&
+          businessDocuments!.isCompleteForProprietor &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
+    // Business Loan (Partnership) flow: no salary slips; requires partner KYC + common business docs.
+    if (isBusinessLoan && isPartnership) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          businessDocuments != null &&
+          businessDocuments!.isCompleteForPartnership &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
+    // Business Loan (Pvt Limited) flow: same as partnership but company docs = Company PAN + MOA + AOA.
+    if (isBusinessLoan && isPvtLimited) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          businessDocuments != null &&
+          businessDocuments!.isCompleteForPvtLimited &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
+    // Default (personal loan flow): requires salary slips.
     return selfiePath != null &&
         aadhaar != null &&
         aadhaar!.isComplete &&
@@ -36,6 +98,12 @@ class DocumentSubmission {
   /// Debug method to check which parts are missing
   List<String> getMissingParts() {
     final missing = <String>[];
+    final isBusinessLoan = (loanType ?? '').toLowerCase().contains('business');
+    final businessType = (businessLoanType ?? '').toLowerCase();
+    final isProprietor = businessType == 'proprietor';
+    final isPartnership = businessType == 'partnership';
+    final isPvtLimited = businessType == 'pvt_limited';
+
     if (selfiePath == null) {
       missing.add('Selfie');
     }
@@ -48,6 +116,27 @@ class DocumentSubmission {
     if (bankStatement == null || !bankStatement!.isComplete) {
       missing.add('Bank Statement (${bankStatement == null ? "not uploaded" : "incomplete"})');
     }
+    if (isBusinessLoan && isProprietor) {
+      if (businessDocuments == null || !businessDocuments!.isCompleteForProprietor) {
+        missing.add(
+          'Business Documents (${businessDocuments == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+    }
+    if (isBusinessLoan && isPartnership) {
+      if (businessDocuments == null || !businessDocuments!.isCompleteForPartnership) {
+        missing.add(
+          'Partners / Business Documents (${businessDocuments == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+    }
+    if (isBusinessLoan && isPvtLimited) {
+      if (businessDocuments == null || !businessDocuments!.isCompleteForPvtLimited) {
+        missing.add(
+          'Partners / Business Documents (MOA, AOA) (${businessDocuments == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+    }
     if (personalData == null || !personalData!.isComplete) {
       if (personalData == null) {
         missing.add('Personal Data (not filled)');
@@ -56,14 +145,132 @@ class DocumentSubmission {
         missing.add('Personal Data - Missing: ${missingFields.join(", ")}');
       }
     }
-    if (salarySlips == null || !salarySlips!.isComplete) {
-      final count = salarySlips?.uploadedCount ?? 0;
-      missing.add(
-        'Salary Slips (${salarySlips == null ? "not uploaded" : "$count/${SalarySlips.requiredSlipCount}"})',
-      );
+    if (!(isBusinessLoan && (isProprietor || isPartnership || isPvtLimited))) {
+      if (salarySlips == null || !salarySlips!.isComplete) {
+        final count = salarySlips?.uploadedCount ?? 0;
+        missing.add(
+          'Salary Slips (${salarySlips == null ? "not uploaded" : "$count/${SalarySlips.requiredSlipCount}"})',
+        );
+      }
     }
     return missing;
   }
+}
+
+class UploadedDoc {
+  String? path;
+  bool isPdf;
+
+  UploadedDoc({this.path, this.isPdf = false});
+
+  bool get isComplete => path != null && path!.trim().isNotEmpty;
+}
+
+class BusinessDocuments {
+  /// Spouse (wife/husband) documents
+  AadhaarDocument? spouseAadhaar;
+  PanDocument? spousePan;
+
+  /// Partnership flow
+  int? partnerCount;
+  List<PartnerKyc> partners;
+
+  /// Business certificates (photo or PDF)
+  /// Partnership flow (company-level docs)
+  UploadedDoc? companyPanCard;
+  UploadedDoc? partnershipDeed;
+
+  /// Pvt Limited flow: MOA & AOA
+  UploadedDoc? moa;
+  UploadedDoc? aoa;
+
+  UploadedDoc? gstRegistration;
+  UploadedDoc? labourCertificate;
+  UploadedDoc? msmeCertificate;
+  UploadedDoc? ownHouseProof; // OHP
+
+  BusinessDocuments({
+    this.spouseAadhaar,
+    this.spousePan,
+    this.partnerCount,
+    List<PartnerKyc>? partners,
+    this.companyPanCard,
+    this.partnershipDeed,
+    this.moa,
+    this.aoa,
+    this.gstRegistration,
+    this.labourCertificate,
+    this.msmeCertificate,
+    this.ownHouseProof,
+  }) : partners = partners ?? [];
+
+  bool get hasGstOrLabour {
+    return (gstRegistration?.isComplete ?? false) ||
+        (labourCertificate?.isComplete ?? false);
+  }
+
+  bool get hasPartners => (partnerCount ?? 0) > 0 || partners.isNotEmpty;
+
+  bool get isPartnerKycComplete {
+    final count = partnerCount;
+    if (count == null) {
+      return partners.isNotEmpty && partners.every((p) => p.isComplete);
+    }
+    if (count <= 0) return false;
+    if (partners.length < count) return false;
+    return partners.take(count).every((p) => p.isComplete);
+  }
+
+  bool get isCommonBusinessDocsComplete {
+    return hasGstOrLabour &&
+        msmeCertificate != null &&
+        msmeCertificate!.isComplete &&
+        ownHouseProof != null &&
+        ownHouseProof!.isComplete;
+  }
+
+  bool get isPartnershipCompanyDocsComplete {
+    return (companyPanCard?.isComplete ?? false) && (partnershipDeed?.isComplete ?? false);
+  }
+
+  bool get isPvtLimitedCompanyDocsComplete {
+    return (companyPanCard?.isComplete ?? false) &&
+        (moa?.isComplete ?? false) &&
+        (aoa?.isComplete ?? false);
+  }
+
+  bool get isCompleteForProprietor {
+    return spouseAadhaar != null &&
+        spouseAadhaar!.isComplete &&
+        spousePan != null &&
+        spousePan!.isComplete &&
+        isCommonBusinessDocsComplete;
+  }
+
+  bool get isCompleteForPartnership {
+    return isPartnerKycComplete && isPartnershipCompanyDocsComplete && isCommonBusinessDocsComplete;
+  }
+
+  bool get isCompleteForPvtLimited {
+    return isPartnerKycComplete && isPvtLimitedCompanyDocsComplete && isCommonBusinessDocsComplete;
+  }
+
+  /// Backwards-compatible "complete" flag.
+  ///
+  /// - If partners exist (partnership flow), uses `isCompleteForPartnership`.
+  /// - Otherwise, uses `isCompleteForProprietor`.
+  bool get isComplete => hasPartners ? isCompleteForPartnership : isCompleteForProprietor;
+}
+
+class PartnerKyc {
+  AadhaarDocument? aadhaar;
+  PanDocument? pan;
+  /// OCR-extracted Aadhaar number for validation (e.g. partner cannot be same as applicant or other partners).
+  String? extractedAadhaarNumber;
+
+  PartnerKyc({this.aadhaar, this.pan, this.extractedAadhaarNumber});
+
+  bool get isComplete => (aadhaar?.isComplete ?? false) && (pan?.isComplete ?? false);
 }
 
 class AadhaarDocument {

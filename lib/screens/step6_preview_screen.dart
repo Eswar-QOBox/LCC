@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -16,6 +17,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
 import '../utils/api_config.dart';
+import '../widgets/premium_progress_indicator.dart';
 
 void main() {
   runApp(
@@ -30,10 +32,18 @@ void main() {
 }
 
 class Step6PreviewScreen extends StatefulWidget {
-  const Step6PreviewScreen({super.key, this.mode});
+  const Step6PreviewScreen({
+    super.key,
+    this.mode,
+    this.backRouteOverride,
+  });
 
   /// When 'viewSubmitted', sync runs then redirects to ViewSubmittedScreen.
   final String? mode;
+  
+  /// When provided, Preview's Back button returns to this route.
+  /// Falls back to `AppRoutes.step5PersonalData` when null/empty.
+  final String? backRouteOverride;
 
   @override
   State<Step6PreviewScreen> createState() => _Step6PreviewScreenState();
@@ -46,6 +56,57 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   // Change tracking for dynamic button (Submit vs Close)
   bool _hasChanges = false;
   Map<String, dynamic>? _initialApplicationSnapshot;
+
+  void _openImagePreview(String imagePath) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.transparent,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            color: Colors.black,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4.0,
+                    child: Center(
+                      child: PlatformImage(
+                        imagePath: imagePath,
+                        fit: BoxFit.contain,
+                        headers: _authToken != null
+                            ? {'Authorization': 'Bearer $_authToken'}
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: AppTheme.errorColor,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      customBorder: const CircleBorder(),
+                      child: const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -152,6 +213,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final application = appProvider.currentApplication!;
     final submissionProvider = context.read<SubmissionProvider>();
 
+    // Ensure local draft knows the current loan type (used for completeness rules).
+    submissionProvider.setLoanType(application.loanType);
+
 
     // Helper function to build full URL from relative path
     // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
@@ -174,6 +238,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (path.startsWith('http') || path.startsWith('blob:')) {
         return path;
       }
+      
+      // Normalize paths that come without a leading slash (e.g. "uploads/...", "api/...")
+      if (path.startsWith('uploads/') || path.startsWith('api/')) {
+        path = '/$path';
+      }
+      if (!path.startsWith('/')) {
+        path = '/$path';
+      }
 
       // Some backends return file URLs like /api/v1/uploads/<category>/<file>
       // but the actual file-serving route is /api/v1/uploads/files/<category>/<file>.
@@ -189,21 +261,34 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           !apiPath.contains('/uploads/files/')) {
         apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
       } else if (!apiPath.startsWith('/api/')) {
-        apiPath = '/api/v1$apiPath';
+        // Ensure we don't end up with "/api/v1uploads/..." (missing slash)
+        apiPath = apiPath.startsWith('/') ? '/api/v1$apiPath' : '/api/v1/$apiPath';
       }
       return '${ApiConfig.baseUrl}$apiPath';
     }
 
     // Sync selfie data
     if (application.step1Selfie != null) {
-      final stepData = application.step1Selfie as Map<String, dynamic>;
-      final imagePath = stepData['imagePath'] as String?;
-      final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
-      // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
-      final relativeUrl = uploadedFile?['url'] as String?;
-      final effectivePath = buildFullUrl(relativeUrl) ?? buildFullUrl(imagePath);
-      if (effectivePath != null && effectivePath.isNotEmpty) {
-        submissionProvider.setSelfie(effectivePath);
+      try {
+        if (application.step1Selfie is Map<String, dynamic>) {
+          final stepData = application.step1Selfie as Map<String, dynamic>;
+          final imagePath = stepData['imagePath'] as String?;
+          final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
+          // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
+          final relativeUrl = uploadedFile?['url'] as String?;
+          final effectivePath = buildFullUrl(relativeUrl) ?? buildFullUrl(imagePath);
+          if (effectivePath != null && effectivePath.isNotEmpty) {
+            submissionProvider.setSelfie(effectivePath);
+          }
+        } else if (application.step1Selfie is String) {
+          final s = application.step1Selfie as String;
+          final effectivePath = buildFullUrl(s) ?? s;
+          if (effectivePath.isNotEmpty) {
+            submissionProvider.setSelfie(effectivePath);
+          }
+        }
+      } catch (e) {
+        debugPrint('Preview Screen: Failed to parse selfie: $e');
       }
     }
 
@@ -433,10 +518,24 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       p = p.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
     }
     if (p.startsWith('http') || p.startsWith('blob:')) return p;
+
+    // Normalize missing leading slash variants.
+    if (p.startsWith('uploads/') || p.startsWith('api/')) {
+      p = '/$p';
+    }
+    if (!p.startsWith('/')) {
+      p = '/$p';
+    }
+
+    // Normalize /api/v1/uploads/<category>/... -> /api/v1/uploads/files/<category>/...
+    if (p.startsWith('/api/v1/uploads/') && !p.startsWith('/api/v1/uploads/files/')) {
+      p = p.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
+    }
+
     if (p.startsWith('/uploads/') && !p.contains('/uploads/files/')) {
       p = p.replaceFirst('/uploads/', '/api/v1/uploads/files/');
     } else if (!p.startsWith('/api/')) {
-      p = '/api/v1$p';
+      p = p.startsWith('/') ? '/api/v1$p' : '/api/v1/$p';
     }
     return '${ApiConfig.baseUrl}$p';
   }
@@ -573,6 +672,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final submission = provider.submission;
     // Check submission status from backend application data
     final isSubmitted = appProvider.currentApplication?.isSubmitted ?? false;
+    final isBusinessLoan =
+        (appProvider.currentApplication?.loanType ?? '').toLowerCase().contains('business');
+    final businessLoanType = (submission.businessLoanType ?? '').toLowerCase();
+    final isBusinessProprietor = isBusinessLoan && businessLoanType == 'proprietor';
+    final isBusinessPartnership = isBusinessLoan && businessLoanType == 'partnership';
+    final isBusinessPvtLimited = isBusinessLoan && businessLoanType == 'pvt_limited';
+    final partnerCount = submission.businessDocuments?.partnerCount ?? 0;
+    final isPartnerFlow = isBusinessPartnership || isBusinessPvtLimited;
     
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -649,10 +756,49 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
               title: 'Review & Submit',
               icon: Icons.check_circle_outline,
               showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step5PersonalData),
+              onBackPressed: () {
+                final back = (widget.backRouteOverride ?? '').trim();
+                final safeBack =
+                    (back.isNotEmpty && back.startsWith('/')) ? back : AppRoutes.step5PersonalData;
+                context.go(safeBack);
+              },
               showHomeButton: true,
             ),
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ??
+                        submissionProvider.submission.loanType ??
+                        '')
+                    .toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+                final isBusinessPartnership =
+                    loanType.contains('business') && businessLoanType == 'partnership';
+                final isBusinessPvtLimited =
+                    loanType.contains('business') && businessLoanType == 'pvt_limited';
+                final partnerCount =
+                    submissionProvider.submission.businessDocuments?.partnerCount ?? 0;
+                final isPartnerFlow = isBusinessPartnership || isBusinessPvtLimited;
+
+                return _buildProgressIndicator(
+                  context,
+                  currentStep: isBusinessProprietor
+                      ? 10
+                      : (isPartnerFlow && partnerCount > 0
+                          ? (10 + 2 * partnerCount)
+                          : 7),
+                  totalSteps: isBusinessProprietor
+                      ? 10
+                      : (isPartnerFlow && partnerCount > 0
+                          ? (10 + 2 * partnerCount)
+                          : 7),
+                );
+              },
+            ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
@@ -802,22 +948,148 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                 : '✗ Missing',
                             submission.bankStatement?.isComplete == true,
                           ),
-                          _buildSummaryRow(
-                            context,
-                            'Step 5: Personal Data',
-                            submission.personalData?.isComplete == true
-                                ? '✓ Completed'
-                                : '✗ Missing',
-                            submission.personalData?.isComplete == true,
-                          ),
-                          _buildSummaryRow(
-                            context,
-                            'Step 6: Salary Slips',
-                            submission.salarySlips?.isComplete == true
-                                ? '✓ Uploaded'
-                                : '✗ Missing',
-                            submission.salarySlips?.isComplete == true,
-                          ),
+                          if (isBusinessProprietor) ...[
+                            _buildSummaryRow(
+                              context,
+                              'Step 5: Spouse Aadhaar',
+                              submission.businessDocuments?.spouseAadhaar?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.spouseAadhaar?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 6: Spouse PAN',
+                              submission.businessDocuments?.spousePan?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.spousePan?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 7: GST / Labour',
+                              (submission.businessDocuments?.hasGstOrLabour ?? false)
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              (submission.businessDocuments?.hasGstOrLabour ?? false),
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 8: MSME',
+                              submission.businessDocuments?.msmeCertificate?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.msmeCertificate?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 9: Own House Proof',
+                              submission.businessDocuments?.ownHouseProof?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.ownHouseProof?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 10: Personal Data',
+                              submission.personalData?.isComplete == true
+                                  ? '✓ Completed'
+                                  : '✗ Missing',
+                              submission.personalData?.isComplete == true,
+                            ),
+                          ] else if (isPartnerFlow) ...[
+                            _buildSummaryRow(
+                              context,
+                              'Step 5: Partners KYC',
+                              (submission.businessDocuments?.isPartnerKycComplete ?? false)
+                                  ? '✓ Completed'
+                                  : '✗ Missing',
+                              (submission.businessDocuments?.isPartnerKycComplete ?? false),
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step ${6 + 2 * partnerCount}: Company PAN Card',
+                              submission.businessDocuments?.companyPanCard?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.companyPanCard?.isComplete == true,
+                            ),
+                            if (isBusinessPvtLimited) ...[
+                              _buildSummaryRow(
+                                context,
+                                'Step ${6 + 2 * partnerCount}: MOA',
+                                submission.businessDocuments?.moa?.isComplete == true
+                                    ? '✓ Uploaded'
+                                    : '✗ Missing',
+                                submission.businessDocuments?.moa?.isComplete == true,
+                              ),
+                              _buildSummaryRow(
+                                context,
+                                'Step ${6 + 2 * partnerCount}: AOA',
+                                submission.businessDocuments?.aoa?.isComplete == true
+                                    ? '✓ Uploaded'
+                                    : '✗ Missing',
+                                submission.businessDocuments?.aoa?.isComplete == true,
+                              ),
+                            ] else
+                              _buildSummaryRow(
+                                context,
+                                'Step ${6 + 2 * partnerCount}: Partnership Deed',
+                                submission.businessDocuments?.partnershipDeed?.isComplete == true
+                                    ? '✓ Uploaded'
+                                    : '✗ Missing',
+                                submission.businessDocuments?.partnershipDeed?.isComplete == true,
+                              ),
+                            _buildSummaryRow(
+                              context,
+                              'Step ${6 + 2 * partnerCount}: GST / Labour',
+                              (submission.businessDocuments?.hasGstOrLabour ?? false)
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              (submission.businessDocuments?.hasGstOrLabour ?? false),
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step ${7 + 2 * partnerCount}: MSME',
+                              submission.businessDocuments?.msmeCertificate?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.msmeCertificate?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step ${8 + 2 * partnerCount}: Own House Proof',
+                              submission.businessDocuments?.ownHouseProof?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.businessDocuments?.ownHouseProof?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step ${9 + 2 * partnerCount}: Personal Data',
+                              submission.personalData?.isComplete == true
+                                  ? '✓ Completed'
+                                  : '✗ Missing',
+                              submission.personalData?.isComplete == true,
+                            ),
+                          ] else ...[
+                            _buildSummaryRow(
+                              context,
+                              'Step 5: Salary Slips',
+                              submission.salarySlips?.isComplete == true
+                                  ? '✓ Uploaded'
+                                  : '✗ Missing',
+                              submission.salarySlips?.isComplete == true,
+                            ),
+                            _buildSummaryRow(
+                              context,
+                              'Step 6: Personal Data',
+                              submission.personalData?.isComplete == true
+                                  ? '✓ Completed'
+                                  : '✗ Missing',
+                              submission.personalData?.isComplete == true,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -862,12 +1134,47 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(14),
-                                child: PlatformImage(
-                                  imagePath: selfiePath,
-                                  fit: BoxFit.cover,
-                                  headers: _authToken != null
-                                      ? {'Authorization': 'Bearer $_authToken'}
-                                      : null,
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          onTap: () => _openImagePreview(selfiePath),
+                                          child: PlatformImage(
+                                            imagePath: selfiePath,
+                                            fit: BoxFit.cover,
+                                            headers: _authToken != null
+                                                ? {
+                                                    'Authorization': 'Bearer $_authToken'
+                                                  }
+                                                : null,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: 12,
+                                      bottom: 12,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.55),
+                                          borderRadius: BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          'Tap to preview',
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             )
@@ -893,25 +1200,25 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                   submission.aadhaar!.frontPath!,
                                   'Aadhaar PDF',
                                   true,
+                                  height: 220,
                                 )
-                              : Row(
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    Expanded(
-                                      child: _buildPremiumDocumentPreview(
-                                        context,
-                                        submission.aadhaar!.frontPath!,
-                                        'Front',
-                                        submission.aadhaar!.frontIsPdf,
-                                      ),
+                                    _buildPremiumDocumentPreview(
+                                      context,
+                                      submission.aadhaar!.frontPath!,
+                                      'Front',
+                                      submission.aadhaar!.frontIsPdf,
+                                      height: 220,
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildPremiumDocumentPreview(
-                                        context,
-                                        submission.aadhaar!.backPath!,
-                                        'Back',
-                                        submission.aadhaar!.backIsPdf,
-                                      ),
+                                    const SizedBox(height: 12),
+                                    _buildPremiumDocumentPreview(
+                                      context,
+                                      submission.aadhaar!.backPath!,
+                                      'Back',
+                                      submission.aadhaar!.backIsPdf,
+                                      height: 220,
                                     ),
                                   ],
                                 )
@@ -995,25 +1302,458 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 20),
+                    if (isBusinessProprietor) ...[
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 5,
+                        title: 'Spouse Aadhaar',
+                        icon: Icons.badge_outlined,
+                        isComplete: submission.businessDocuments?.spouseAadhaar?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step4SpouseAadhaar),
+                        child: (submission.businessDocuments?.spouseAadhaar?.isComplete == true)
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _buildPremiumDocumentPreview(
+                                    context,
+                                    submission.businessDocuments!.spouseAadhaar!.frontPath!,
+                                    'Front',
+                                    submission.businessDocuments!.spouseAadhaar!.frontIsPdf,
+                                    height: 220,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _buildPremiumDocumentPreview(
+                                    context,
+                                    submission.businessDocuments!.spouseAadhaar!.backPath!,
+                                    'Back',
+                                    submission.businessDocuments!.spouseAadhaar!.backIsPdf,
+                                    height: 220,
+                                  ),
+                                ],
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 6,
+                        title: 'Spouse PAN',
+                        icon: Icons.credit_card_outlined,
+                        isComplete: submission.businessDocuments?.spousePan?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step5SpousePan),
+                        child: submission.businessDocuments?.spousePan?.isComplete == true
+                            ? _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.spousePan!.frontPath!,
+                                'Front',
+                                submission.businessDocuments!.spousePan!.isPdf,
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 7,
+                        title: 'GST / Labour',
+                        icon: Icons.receipt_long,
+                        isComplete: submission.businessDocuments?.hasGstOrLabour ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step5BusinessDocs),
+                        child: (submission.businessDocuments?.hasGstOrLabour ?? false)
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  if (submission.businessDocuments?.gstRegistration?.isComplete == true)
+                                    _buildPremiumDocumentPreview(
+                                      context,
+                                      submission.businessDocuments!.gstRegistration!.path!,
+                                      'GST',
+                                      submission.businessDocuments!.gstRegistration!.isPdf,
+                                      height: 220,
+                                    ),
+                                  if (submission.businessDocuments?.gstRegistration?.isComplete == true &&
+                                      submission.businessDocuments?.labourCertificate?.isComplete == true)
+                                    const SizedBox(height: 12),
+                                  if (submission.businessDocuments?.labourCertificate?.isComplete == true)
+                                    _buildPremiumDocumentPreview(
+                                      context,
+                                      submission.businessDocuments!.labourCertificate!.path!,
+                                      'Labour',
+                                      submission.businessDocuments!.labourCertificate!.isPdf,
+                                      height: 220,
+                                    ),
+                                ],
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 8,
+                        title: 'MSME',
+                        icon: Icons.workspace_premium,
+                        isComplete: submission.businessDocuments?.msmeCertificate?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step6Msme),
+                        child: submission.businessDocuments?.msmeCertificate?.isComplete == true
+                            ? _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.msmeCertificate!.path!,
+                                'MSME',
+                                submission.businessDocuments!.msmeCertificate!.isPdf,
+                                height: 220,
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 9,
+                        title: 'Own House Proof',
+                        icon: Icons.home_outlined,
+                        isComplete: submission.businessDocuments?.ownHouseProof?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step7Ohp),
+                        child: submission.businessDocuments?.ownHouseProof?.isComplete == true
+                            ? _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.ownHouseProof!.path!,
+                                'Own House Proof',
+                                submission.businessDocuments!.ownHouseProof!.isPdf,
+                                height: 220,
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                    ] else if (isPartnerFlow) ...[
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 5,
+                        title: 'Partners KYC',
+                        icon: Icons.groups,
+                        isComplete: submission.businessDocuments?.isPartnerKycComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.partnerCount),
+                        child: (partnerCount > 0)
+                            ? Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: List.generate(partnerCount, (i) {
+                                  final partnerIndex = i + 1;
+                                  final partner = (submission.businessDocuments?.partners.length ?? 0) > i
+                                      ? submission.businessDocuments!.partners[i]
+                                      : null;
+                                  final aadhaar = partner?.aadhaar;
+                                  final pan = partner?.pan;
+                                  final hasAadhaar = aadhaar?.isComplete ?? false;
+                                  final hasPan = pan?.isComplete ?? false;
+
+                                  return Padding(
+                                    padding: EdgeInsets.only(bottom: partnerIndex == partnerCount ? 0 : 16),
+                                    child: PremiumCard(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Partner $partnerIndex',
+                                                  style: theme.textTheme.titleMedium?.copyWith(
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ),
+                                              TextButton(
+                                                onPressed: () => context.go(
+                                                  '${AppRoutes.partnerAadhaar}?i=$partnerIndex&from=preview',
+                                                ),
+                                                child: const Text('Edit'),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 8),
+                                          if (hasAadhaar) ...[
+                                            _buildPremiumDocumentPreview(
+                                              context,
+                                              aadhaar!.frontPath!,
+                                              'Aadhaar Front',
+                                              aadhaar.frontIsPdf,
+                                              height: 180,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            _buildPremiumDocumentPreview(
+                                              context,
+                                              aadhaar.backPath!,
+                                              'Aadhaar Back',
+                                              aadhaar.backIsPdf,
+                                              height: 180,
+                                            ),
+                                          ] else
+                                            _buildEmptyState(context, 'Aadhaar not uploaded'),
+                                          const SizedBox(height: 12),
+                                          if (hasPan)
+                                            _buildPremiumDocumentPreview(
+                                              context,
+                                              pan!.frontPath!,
+                                              'PAN',
+                                              pan.isPdf,
+                                              height: 180,
+                                            )
+                                          else
+                                            _buildEmptyState(context, 'PAN not uploaded'),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              )
+                            : _buildEmptyState(context, 'Not selected'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 6 + 2 * partnerCount,
+                        title: 'Business Documents',
+                        icon: Icons.receipt_long,
+                        isComplete: (submission.businessDocuments?.companyPanCard?.isComplete ?? false) &&
+                            (isBusinessPvtLimited
+                                ? ((submission.businessDocuments?.moa?.isComplete ?? false) &&
+                                    (submission.businessDocuments?.aoa?.isComplete ?? false))
+                                : (submission.businessDocuments?.partnershipDeed?.isComplete ?? false)) &&
+                            (submission.businessDocuments?.hasGstOrLabour ?? false),
+                        onEdit: () => _editStep(context, AppRoutes.step5BusinessDocs),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (submission.businessDocuments?.companyPanCard?.isComplete == true)
+                              _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.companyPanCard!.path!,
+                                'Company PAN Card',
+                                submission.businessDocuments!.companyPanCard!.isPdf,
+                                height: 220,
+                              )
+                            else
+                              _buildEmptyState(context, 'Company PAN Card not uploaded'),
+                            const SizedBox(height: 12),
+                            if (isBusinessPvtLimited) ...[
+                              if (submission.businessDocuments?.moa?.isComplete == true)
+                                _buildPremiumDocumentPreview(
+                                  context,
+                                  submission.businessDocuments!.moa!.path!,
+                                  'MOA',
+                                  submission.businessDocuments!.moa!.isPdf,
+                                  height: 220,
+                                )
+                              else
+                                _buildEmptyState(context, 'MOA not uploaded'),
+                              const SizedBox(height: 12),
+                              if (submission.businessDocuments?.aoa?.isComplete == true)
+                                _buildPremiumDocumentPreview(
+                                  context,
+                                  submission.businessDocuments!.aoa!.path!,
+                                  'AOA',
+                                  submission.businessDocuments!.aoa!.isPdf,
+                                  height: 220,
+                                )
+                              else
+                                _buildEmptyState(context, 'AOA not uploaded'),
+                              const SizedBox(height: 12),
+                            ] else ...[
+                              if (submission.businessDocuments?.partnershipDeed?.isComplete == true)
+                                _buildPremiumDocumentPreview(
+                                  context,
+                                  submission.businessDocuments!.partnershipDeed!.path!,
+                                  'Partnership Deed',
+                                  submission.businessDocuments!.partnershipDeed!.isPdf,
+                                  height: 220,
+                                )
+                              else
+                                _buildEmptyState(context, 'Partnership Deed not uploaded'),
+                              const SizedBox(height: 12),
+                            ],
+                            if (submission.businessDocuments?.gstRegistration?.isComplete == true)
+                              _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.gstRegistration!.path!,
+                                'GST',
+                                submission.businessDocuments!.gstRegistration!.isPdf,
+                                height: 220,
+                              ),
+                            if (submission.businessDocuments?.gstRegistration?.isComplete == true &&
+                                submission.businessDocuments?.labourCertificate?.isComplete == true)
+                              const SizedBox(height: 12),
+                            if (submission.businessDocuments?.labourCertificate?.isComplete == true)
+                              _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.labourCertificate!.path!,
+                                'Labour',
+                                submission.businessDocuments!.labourCertificate!.isPdf,
+                                height: 220,
+                              ),
+                            if ((submission.businessDocuments?.hasGstOrLabour ?? false) == false)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: _buildEmptyState(context, 'GST/Labour not uploaded'),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 7 + 2 * partnerCount,
+                        title: 'MSME',
+                        icon: Icons.workspace_premium,
+                        isComplete: submission.businessDocuments?.msmeCertificate?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step6Msme),
+                        child: submission.businessDocuments?.msmeCertificate?.isComplete == true
+                            ? _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.msmeCertificate!.path!,
+                                'MSME',
+                                submission.businessDocuments!.msmeCertificate!.isPdf,
+                                height: 220,
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 8 + 2 * partnerCount,
+                        title: 'Own House Proof',
+                        icon: Icons.home_outlined,
+                        isComplete: submission.businessDocuments?.ownHouseProof?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step7Ohp),
+                        child: submission.businessDocuments?.ownHouseProof?.isComplete == true
+                            ? _buildPremiumDocumentPreview(
+                                context,
+                                submission.businessDocuments!.ownHouseProof!.path!,
+                                'Own House Proof',
+                                submission.businessDocuments!.ownHouseProof!.isPdf,
+                                height: 220,
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                    ] else ...[
+                      _buildPremiumSection(
+                        context,
+                        stepNumber: 5,
+                        title: 'Salary Slips',
+                        icon: Icons.receipt_long,
+                        isComplete: submission.salarySlips?.isComplete ?? false,
+                        onEdit: () => _editStep(context, AppRoutes.step5_1SalarySlips),
+                        child: submission.salarySlips?.isComplete == true
+                            ? PremiumCard(
+                                gradientColors: [
+                                  colorScheme.primary.withValues(alpha: 0.05),
+                                  colorScheme.secondary.withValues(alpha: 0.02),
+                                ],
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                colorScheme.primary,
+                                                colorScheme.secondary,
+                                              ],
+                                            ),
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(
+                                            Icons.receipt_long,
+                                            color: Colors.white,
+                                            size: 24,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                '${submission.salarySlips!.slips.length} ${submission.salarySlips!.slips.length == 1 ? 'Slip' : 'Slips'} Uploaded',
+                                                style: theme.textTheme.titleMedium?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                submission.salarySlips!.isPdf ? 'PDF Format' : 'Image Format',
+                                                style: theme.textTheme.bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (submission.salarySlips!.slips.length <= 3) ...[
+                                      const SizedBox(height: 16),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 12,
+                                        children: submission.salarySlips!.slips.asMap().entries.map((entry) {
+                                          return SizedBox(
+                                            width: 100,
+                                            height: 140,
+                                            child: _buildPremiumDocumentPreview(
+                                              context,
+                                              entry.value,
+                                              'Slip ${entry.key + 1}',
+                                              submission.salarySlips!.isPdf && entry.key == 0,
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 16),
+                                      GridView.builder(
+                                        shrinkWrap: true,
+                                        physics: const NeverScrollableScrollPhysics(),
+                                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: 3,
+                                          crossAxisSpacing: 12,
+                                          mainAxisSpacing: 12,
+                                          childAspectRatio: 0.7,
+                                        ),
+                                        itemCount: submission.salarySlips!.slips.length,
+                                        itemBuilder: (context, index) {
+                                          return _buildPremiumDocumentPreview(
+                                            context,
+                                            submission.salarySlips!.slipItems[index].path,
+                                            'Slip ${index + 1}',
+                                            submission.salarySlips!.isPdf && index == 0,
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              )
+                            : _buildEmptyState(context, 'Not uploaded'),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
                     _buildPremiumSection(
                       context,
-                      stepNumber: 6,
+                      stepNumber: isBusinessProprietor
+                          ? 10
+                          : (isPartnerFlow && partnerCount > 0
+                              ? (9 + 2 * partnerCount)
+                              : 6),
                       title: 'Personal Data',
                       icon: Icons.person,
                       isComplete: submission.personalData?.isComplete ?? false,
-                      onEdit: () =>
-                          _editStep(context, AppRoutes.step5PersonalData),
+                      onEdit: () => _editStep(context, AppRoutes.step5PersonalData),
                       child: Builder(
                         builder: (context) {
                           if (kDebugMode) {
                             print('🔍 Building Personal Data Section:');
-                            print(
-                              '   personalData != null: ${submission.personalData != null}',
-                            );
+                            print('   personalData != null: ${submission.personalData != null}');
                             if (submission.personalData != null) {
-                              print(
-                                '   personalData.isComplete: ${submission.personalData!.isComplete}',
-                              );
+                              print('   personalData.isComplete: ${submission.personalData!.isComplete}');
                             }
                           }
                           return submission.personalData != null
@@ -1030,137 +1770,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     ),
                                   ),
                                 )
-                              : _buildEmptyState(
-                                  context,
-                                  'No personal data entered',
-                                );
+                              : _buildEmptyState(context, 'No personal data entered');
                         },
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    _buildPremiumSection(
-                      context,
-                      stepNumber: 5,
-                      title: 'Salary Slips',
-                      icon: Icons.receipt_long,
-                      isComplete: submission.salarySlips?.isComplete ?? false,
-                      onEdit: () =>
-                          _editStep(context, AppRoutes.step5_1SalarySlips),
-                      child: submission.salarySlips?.isComplete == true
-                          ? PremiumCard(
-                              gradientColors: [
-                                colorScheme.primary.withValues(alpha: 0.05),
-                                colorScheme.secondary.withValues(alpha: 0.02),
-                              ],
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              colorScheme.primary,
-                                              colorScheme.secondary,
-                                            ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.receipt_long,
-                                          color: Colors.white,
-                                          size: 24,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              '${submission.salarySlips!.slips.length} ${submission.salarySlips!.slips.length == 1 ? 'Slip' : 'Slips'} Uploaded',
-                                              style: theme.textTheme.titleMedium
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              submission.salarySlips!.isPdf
-                                                  ? 'PDF Format'
-                                                  : 'Image Format',
-                                              style: theme.textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  if (submission.salarySlips!.slips.length <=
-                                      3) ...[
-                                    const SizedBox(height: 16),
-                                    Wrap(
-                                      spacing: 12,
-                                      runSpacing: 12,
-                                      children: submission.salarySlips!.slips
-                                          .asMap()
-                                          .entries
-                                          .map((entry) {
-                                            return SizedBox(
-                                              width: 100,
-                                              height: 140,
-                                              child:
-                                                  _buildPremiumDocumentPreview(
-                                                    context,
-                                                    entry.value,
-                                                    'Slip ${entry.key + 1}',
-                                                    submission
-                                                            .salarySlips!
-                                                            .isPdf &&
-                                                        entry.key == 0,
-                                                  ),
-                                            );
-                                          })
-                                          .toList(),
-                                    ),
-                                  ] else ...[
-                                    const SizedBox(height: 16),
-                                    GridView.builder(
-                                      shrinkWrap: true,
-                                      physics:
-                                          const NeverScrollableScrollPhysics(),
-                                      gridDelegate:
-                                          const SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: 3,
-                                            crossAxisSpacing: 12,
-                                            mainAxisSpacing: 12,
-                                            childAspectRatio: 0.7,
-                                          ),
-                                      itemCount:
-                                          submission.salarySlips!.slips.length,
-                                      itemBuilder: (context, index) {
-                                        return _buildPremiumDocumentPreview(
-                                          context,
-                                          submission
-                                              .salarySlips!
-                                              .slipItems[index]
-                                              .path,
-                                          'Slip ${index + 1}',
-                                          submission.salarySlips!.isPdf &&
-                                              index == 0,
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            )
-                          : _buildEmptyState(context, 'Not uploaded'),
                     ),
                     const SizedBox(height: 40),
                     // Dynamic button: Close if submitted, Submit if not submitted
@@ -1300,19 +1912,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             : null,
                       ),
                       child: Center(
-                        child: isComplete
-                            ? const Icon(
-                                Icons.check,
-                                color: Colors.white,
-                                size: 20,
-                              )
-                            : Text(
-                                '$stepNumber',
-                                style: TextStyle(
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                        // Keep layout consistent, but remove the green tick icon
+                        // (user requested no tick mark before headings in Preview).
+                        child: Text(
+                          '$stepNumber',
+                          style: TextStyle(
+                            color: isComplete ? Colors.white : Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -1380,8 +1988,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     BuildContext context,
     String path,
     String label,
-    bool isPdf,
-  ) {
+    bool isPdf, {
+    double height = 140,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     // Prefer path extension: if path looks like image, always show image; else use isPdf / .pdf
     final pathWithoutQuery = path.split(RegExp(r'[?#]')).first.toLowerCase();
@@ -1392,7 +2001,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         pathWithoutQuery.endsWith('.webp');
     final showAsPdf = !looksLikeImage && (isPdf || pathWithoutQuery.endsWith('.pdf'));
     return Container(
-      height: 140,
+      height: height,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
@@ -1409,81 +2018,223 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14.5),
-        child: Stack(
-          children: [
-            showAsPdf
-                ? Container(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _openDocumentPreview(
+              context,
+              path: path,
+              label: label,
+              showAsPdf: showAsPdf,
+            ),
+            child: Stack(
+              children: [
+                showAsPdf
+                    ? Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              colorScheme.primary.withValues(alpha: 0.1),
+                              colorScheme.secondary.withValues(alpha: 0.05),
+                            ],
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.picture_as_pdf,
+                                size: 40,
+                                color: colorScheme.primary,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'PDF',
+                                style: TextStyle(
+                                  color: colorScheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tap to preview',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : _buildImagePreview(path, colorScheme),
+                // "Preview" affordance (so user knows it is tappable)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.open_in_full, size: 14, color: Colors.white),
+                        SizedBox(width: 6),
+                        Text(
+                          'Preview',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          colorScheme.primary.withValues(alpha: 0.1),
-                          colorScheme.secondary.withValues(alpha: 0.05),
+                          Colors.black.withValues(alpha: 0.7),
+                          Colors.black.withValues(alpha: 0.5),
                         ],
                       ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.picture_as_pdf,
-                            size: 40,
-                            color: colorScheme.primary,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'PDF',
-                            style: TextStyle(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Image not available for PDF display',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  )
-                : _buildImagePreview(path, colorScheme),
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.black.withValues(alpha: 0.7),
-                      Colors.black.withValues(alpha: 0.5),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Future<void> _openDocumentPreview(
+    BuildContext context, {
+    required String path,
+    required String label,
+    required bool showAsPdf,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(14),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(
+              children: [
+                Container(
+                  color: Colors.black,
+                  child: Center(
+                    child: showAsPdf
+                        ? Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.picture_as_pdf,
+                                  size: 56,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  label,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Preview not available for PDFs here.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : InteractiveViewer(
+                            minScale: 1.0,
+                            maxScale: 4.0,
+                            child: PlatformImage(
+                              imagePath: path,
+                              fit: BoxFit.contain,
+                              headers: _authToken != null
+                                  ? {'Authorization': 'Bearer $_authToken'}
+                                  : null,
+                            ),
+                          ),
+                  ),
+                ),
+                // Close button
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          // Keep close button red for clear affordance.
+                          color: AppTheme.errorColor.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1513,12 +2264,14 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     }
 
     // Use PlatformImage with better error handling
-    return PlatformImage(
-      imagePath: path,
-      fit: BoxFit.cover,
-      headers: _authToken != null
-          ? {'Authorization': 'Bearer $_authToken'}
-          : null,
+    return SizedBox.expand(
+      child: PlatformImage(
+        imagePath: path,
+        fit: BoxFit.cover,
+        headers: _authToken != null
+            ? {'Authorization': 'Bearer $_authToken'}
+            : null,
+      ),
     );
   }
 
@@ -1747,23 +2500,159 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     if (kDebugMode) {
       print('   ✓ Displaying: $label = $value');
     }
+    final trimmed = value.trim();
+    final isLikelyUnbrokenLongText =
+        trimmed.length >= 18 && !trimmed.contains(' ');
+    final isEmail = trimmed.contains('@');
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 140,
+            width: 120,
             child: Text(
               '$label:',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
           Expanded(
-            child: Text(value, overflow: TextOverflow.visible, softWrap: true),
+            child: (isEmail || isLikelyUnbrokenLongText)
+                ? InkWell(
+                    onTap: () => _showFullValueSheet(
+                      context,
+                      title: label,
+                      value: trimmed,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              trimmed,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.open_in_new,
+                            size: 16,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.9),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Text(
+                    trimmed,
+                    overflow: TextOverflow.visible,
+                    softWrap: true,
+                  ),
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showFullValueSheet(
+    BuildContext context, {
+    required String title,
+    required String value,
+  }) async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: colorScheme.outline.withValues(alpha: 0.12),
+                    ),
+                  ),
+                  child: SelectableText(
+                    value,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: value));
+                          if (context.mounted) {
+                            PremiumToast.showSuccess(context, 'Copied');
+                          }
+                        },
+                        icon: const Icon(Icons.copy),
+                        label: const Text('Copy'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: colorScheme.primary,
+                          foregroundColor: colorScheme.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Close'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: colorScheme.onSurface,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1808,80 +2697,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Steps 1-6: Completed
-          for (int i = 1; i <= 6; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // Step 7: Current
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppTheme.primaryColor,
-                width: 2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  spreadRadius: 4,
-                ),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                '7',
-                style: TextStyle(
-                  color: AppTheme.primaryColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildProgressIndicator(
+    BuildContext context, {
+    required int currentStep,
+    required int totalSteps,
+  }) {
+    return PremiumProgressIndicator(
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      maxVisibleSteps: 7,
     );
   }
 }

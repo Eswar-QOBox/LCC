@@ -110,6 +110,18 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
     final loanType = app?.loanType ?? '—';
     final submittedAt = app?.submittedAt ?? submission.submittedAt;
     final pd = submission.personalData;
+    final businessDocs = submission.businessDocuments;
+    final isBusinessLoan = loanType.toLowerCase().contains('business');
+    final businessLoanType = (submission.businessLoanType ?? '').toLowerCase();
+    final hasPartners = businessDocs?.hasPartners ?? false;
+    final isBusinessProprietor = isBusinessLoan &&
+        (businessLoanType == 'proprietor' ||
+            (businessLoanType.isEmpty && businessDocs?.spousePan != null));
+    final isBusinessPartnership = isBusinessLoan &&
+        (businessLoanType == 'partnership' ||
+            businessLoanType == 'pvt_limited' ||
+            (businessLoanType.isEmpty && hasPartners));
+    final isBusinessPvtLimited = isBusinessLoan && businessLoanType == 'pvt_limited';
 
     final dateFormat = DateFormat('dd MMM yyyy, hh:mm a');
     final dobFormat = DateFormat('dd/MM/yyyy');
@@ -196,10 +208,78 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     ),
                     _dataRow(
                       'Salary Slips',
-                      submission.salarySlips?.isComplete == true
-                          ? '${submission.salarySlips!.uploadedCount} slip(s)'
-                          : '—',
+                      (isBusinessProprietor || isBusinessPartnership)
+                          ? 'Not required (Business Loan)'
+                          : (submission.salarySlips?.isComplete == true
+                              ? '${submission.salarySlips!.uploadedCount} slip(s)'
+                              : '—'),
                     ),
+                    if (isBusinessProprietor) ...[
+                      _sectionTitle('Business Documents'),
+                      _dataRow(
+                        'Spouse Aadhaar',
+                        businessDocs?.spouseAadhaar?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'Spouse PAN',
+                        businessDocs?.spousePan?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'GST / Labour',
+                        (businessDocs?.hasGstOrLabour ?? false) ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'MSME',
+                        businessDocs?.msmeCertificate?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'Own House Proof',
+                        businessDocs?.ownHouseProof?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                    ],
+                    if (isBusinessPartnership) ...[
+                      _sectionTitle('Partners / Business Documents'),
+                      _dataRow(
+                        'Partners',
+                        (businessDocs?.partnerCount ?? 0) > 0
+                            ? '${businessDocs!.partnerCount} partner(s)'
+                            : (hasPartners ? '${businessDocs!.partners.length} partner(s)' : '—'),
+                      ),
+                      _dataRow(
+                        'Partners KYC',
+                        (businessDocs?.isPartnerKycComplete ?? false) ? 'Completed' : '—',
+                      ),
+                      _dataRow(
+                        'Company PAN Card',
+                        businessDocs?.companyPanCard?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                      if (isBusinessPvtLimited) ...[
+                        _dataRow(
+                          'MOA',
+                          businessDocs?.moa?.isComplete == true ? 'Uploaded' : '—',
+                        ),
+                        _dataRow(
+                          'AOA',
+                          businessDocs?.aoa?.isComplete == true ? 'Uploaded' : '—',
+                        ),
+                      ] else
+                        _dataRow(
+                          'Partnership Deed',
+                          businessDocs?.partnershipDeed?.isComplete == true ? 'Uploaded' : '—',
+                        ),
+                      _dataRow(
+                        'GST / Labour',
+                        (businessDocs?.hasGstOrLabour ?? false) ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'MSME',
+                        businessDocs?.msmeCertificate?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                      _dataRow(
+                        'Own House Proof',
+                        businessDocs?.ownHouseProof?.isComplete == true ? 'Uploaded' : '—',
+                      ),
+                    ],
                     const SizedBox(height: 24),
                   ],
                 ),

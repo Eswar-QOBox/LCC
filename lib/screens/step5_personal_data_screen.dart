@@ -11,6 +11,8 @@ import '../utils/app_routes.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
+import '../widgets/premium_progress_indicator.dart';
+import '../widgets/preview_header_action.dart';
 
 void main() {
   runApp(
@@ -321,6 +323,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           _fatherNameController.text = father;
         }
       }
+
+      // Always prefer submission.personalData for address-different toggle and current address
+      // (set from Aadhaar screen) so the toggle effect is reflected in Personal Details.
+      final pd = provider.submission.personalData;
+      if (pd != null) {
+        _addressDifferentFromAadhaar = pd.addressDifferentFromAadhaar ?? false;
+        _currentResidenceAddressController.text = pd.currentResidenceAddress ?? '';
+      }
+
+      if (mounted) setState(() {});
     } catch (e) {
       // Silently handle errors during data loading
       // Data will remain empty if loading fails
@@ -560,8 +572,15 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       // Save to backend
       final appProvider = context.read<ApplicationProvider>();
       if (appProvider.hasApplication) {
+        final submissionProvider = context.read<SubmissionProvider>();
+        final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+        final businessLoanType =
+            (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+        final isBusinessLoan = loanType.contains('business') &&
+            (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+
         await appProvider.updateApplication(
-          currentStep: 6, // Move to preview step
+          currentStep: isBusinessLoan ? 7 : 6, // Move to preview step
           step5PersonalData: {
             'nameAsPerAadhaar': personalData.nameAsPerAadhaar,
             'dateOfBirth': personalData.dateOfBirth?.toIso8601String(),
@@ -677,7 +696,18 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
               onBackPressed: _isSaving ? null : () {
                 if (mounted && context.mounted) {
                   try {
-                    context.go(AppRoutes.step5_1SalarySlips);
+                    final appProvider = context.read<ApplicationProvider>();
+                    final submissionProvider = context.read<SubmissionProvider>();
+                    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+                    final businessLoanType =
+                        (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                    final isBusinessLoan = loanType.contains('business') &&
+                        (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+                    context.go(
+                      isBusinessLoan
+                          ? AppRoutes.step7Ohp
+                          : AppRoutes.step5_1SalarySlips,
+                    );
                   } catch (e) {
                     if (Navigator.canPop(context)) {
                       Navigator.pop(context);
@@ -686,9 +716,43 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                 }
               },
               showHomeButton: true,
+              actions: const [
+                PreviewHeaderAction(backRoute: AppRoutes.step5PersonalData),
+              ],
             ),
             // Progress Indicator
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ??
+                        submissionProvider.submission.loanType ??
+                        '')
+                    .toLowerCase();
+                final businessLoanType =
+                    (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                final isBusinessProprietor =
+                    loanType.contains('business') && businessLoanType == 'proprietor';
+                final isBusinessPartnership =
+                    loanType.contains('business') && (businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+                final partnerCount =
+                    submissionProvider.submission.businessDocuments?.partnerCount ?? 0;
+
+                return _buildProgressIndicator(
+                  context,
+                  currentStep: isBusinessProprietor
+                      ? 10
+                      : (isBusinessPartnership && partnerCount > 0
+                          ? (9 + 2 * partnerCount)
+                          : 6),
+                  totalSteps: isBusinessProprietor
+                      ? 10
+                      : (isBusinessPartnership && partnerCount > 0
+                          ? (10 + 2 * partnerCount)
+                          : 7),
+                );
+              },
+            ),
             // Content
             Expanded(
               child: SingleChildScrollView(
@@ -1568,112 +1632,15 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Steps 1-5: Completed
-          for (int i = 1; i <= 5; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // Step 6: Current
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '6',
-                      style: TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: Colors.grey.shade200,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Step 7: Pending
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                '7',
-                style: TextStyle(
-                  color: Colors.grey.shade400,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildProgressIndicator(
+    BuildContext context, {
+    required int currentStep,
+    required int totalSteps,
+  }) {
+    return PremiumProgressIndicator(
+      currentStep: currentStep,
+      totalSteps: totalSteps,
+      maxVisibleSteps: 7,
     );
   }
 
