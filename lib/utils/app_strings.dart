@@ -43,6 +43,7 @@ class AppStrings {
   static const String loanTypePropertySubtitle = 'Unlock property value';
   static const String loanTypeEmergency = 'Emergency Loan';
   static const String loanTypeEmergencySubtitle = 'Quick financial support';
+  static const String availableSoon = 'Available soon';
 
   // Applications screen
   static const String applicationsTitle = 'My Applications';
@@ -126,8 +127,11 @@ class AppStrings {
 
   // Application restriction messages
   static const String applicationInProgressTitle = 'Application In Progress';
-  static const String applicationInProgressMessage = 
+  static const String applicationInProgressMessage =
       'You have an in-progress application. Please complete it before starting a new one.';
+  /// Banner shown on home when user has an in-progress application.
+  static const String applicationInProgressBanner =
+      'There is an application in progress. Tap to continue.';
   static const String viewExistingApplication = 'View Existing Application';
   static const String cancel = 'Cancel';
 }

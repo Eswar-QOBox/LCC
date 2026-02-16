@@ -8,10 +8,6 @@ abstract class StorageService {
   static const String accessTokenKey = 'access_token';
   static const String refreshTokenKey = 'refresh_token';
   
-  // App setting keys
-  static const String allowMultipleApplicationsTestingKey =
-      'allow_multiple_applications_testing';
-
   // Factory constructor to get the appropriate implementation
   static StorageService get instance {
     return getStorageService();
@@ -33,10 +29,6 @@ abstract class StorageService {
 
   // Check if user is logged in
   Future<bool> isLoggedIn();
-
-  /// Testing-only: allow multiple applications to be created (bypass "blocking apps" check)
-  Future<bool> getAllowMultipleApplicationsTesting();
-  Future<void> setAllowMultipleApplicationsTesting(bool value);
 
   // Clear all data (logout)
   Future<void> clearAll();

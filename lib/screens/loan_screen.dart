@@ -2,13 +2,19 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/loan_application.dart';
+import '../services/loan_application_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../widgets/premium_toast.dart';
 
 class LoanScreen extends StatefulWidget {
-  const LoanScreen({super.key});
+  /// When the user taps the "application in progress" banner, this is called
+  /// (e.g. to switch to the Applications tab so they can continue).
+  final VoidCallback? onApplicationInProgressTap;
+
+  const LoanScreen({super.key, this.onApplicationInProgressTap});
 
   @override
   State<LoanScreen> createState() => _LoanScreenState();
@@ -18,11 +24,32 @@ class _LoanScreenState extends State<LoanScreen> {
   bool _showAllLoans = false;
   late PageController _carouselController;
   int _currentCarouselIndex = 0;
+  bool _hasApplicationInProgress = false;
+  final LoanApplicationService _applicationService = LoanApplicationService();
+
+  static bool _isContinueable(LoanApplication a) {
+    return a.isDraft || a.isInProgress || a.isPaused || a.isSubmitted;
+  }
 
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
+    _checkApplicationInProgress();
+  }
+
+  Future<void> _checkApplicationInProgress() async {
+    try {
+      final applications = await _applicationService.getApplications(
+        status: 'all',
+        limit: 50,
+      );
+      if (!mounted) return;
+      final hasInProgress = applications.any(_isContinueable);
+      setState(() => _hasApplicationInProgress = hasInProgress);
+    } catch (_) {
+      // Ignore; banner stays hidden.
+    }
   }
 
   @override
@@ -40,7 +67,8 @@ class _LoanScreenState extends State<LoanScreen> {
           children: [
             // Sticky Header with Glass Effect
             _buildHeader(context),
-            
+            // In-progress application banner
+            if (_hasApplicationInProgress) _buildInProgressBanner(context),
             // Main Content
             Expanded(
               child: SingleChildScrollView(
@@ -184,14 +212,60 @@ class _LoanScreenState extends State<LoanScreen> {
     );
   }
 
+  Widget _buildInProgressBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final onTap = widget.onApplicationInProgressTap;
+    return Material(
+      color: AppTheme.warningColor.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: AppTheme.warningColor.withValues(alpha: 0.2),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: AppTheme.warningColor,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  AppStrings.applicationInProgressBanner,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (onTap != null)
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 16,
+                  color: colorScheme.primary,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCreditScoreCarousel(BuildContext context) {
     const carouselItems = [
       {
-        'title': 'CURRENT CREDIT SCORE',
-        'value': '784',
-        'status': 'Excellent',
-        'trend': '+24 pts',
-        'updated': 'Updated 2 mins ago',
+        'title': 'No Paperwork Hassle',
+        'subtitle': 'Completely digital and paperless verification',
         'gradient': [
           Color(0xFF002B5B),
           Color(0xFF003B8E),
@@ -199,11 +273,8 @@ class _LoanScreenState extends State<LoanScreen> {
         ],
       },
       {
-        'title': 'LOAN ELIGIBILITY',
-        'value': '₹5,00,000',
-        'status': 'Available',
-        'trend': '+₹50K',
-        'updated': 'Updated today',
+        'title': 'Multi-Document Support',
+        'subtitle': 'Upload identity, address & income proof easily',
         'gradient': [
           Color(0xFF1A4D2E),
           Color(0xFF2D7A3D),
@@ -211,15 +282,21 @@ class _LoanScreenState extends State<LoanScreen> {
         ],
       },
       {
-        'title': 'SAVINGS RATE',
-        'value': '8.5%',
-        'status': 'Active',
-        'trend': '+0.5%',
-        'updated': 'Updated 1 hour ago',
+        'title': '24/7 Application',
+        'subtitle': 'Apply anytime from anywhere.',
         'gradient': [
           Color(0xFF4A148C),
           Color(0xFF6A1B9A),
           Color(0xFF8E24AA),
+        ],
+      },
+      {
+        'title': 'Quick Verification',
+        'subtitle': 'AI-powered document verification in minutes.',
+        'gradient': [
+          Color(0xFF0D47A1),
+          Color(0xFF1565C0),
+          Color(0xFF1976D2),
         ],
       },
     ];
@@ -243,10 +320,7 @@ class _LoanScreenState extends State<LoanScreen> {
                 child: _buildCarouselCard(
                   context,
                   title: item['title'] as String,
-                  value: item['value'] as String,
-                  status: item['status'] as String,
-                  trend: item['trend'] as String,
-                  updated: item['updated'] as String,
+                  subtitle: item['subtitle'] as String,
                   gradient: (item['gradient'] as List).cast<Color>(),
                 ),
               );
@@ -279,10 +353,7 @@ class _LoanScreenState extends State<LoanScreen> {
   Widget _buildCarouselCard(
     BuildContext context, {
     required String title,
-    required String value,
-    required String status,
-    required String trend,
-    required String updated,
+    required String subtitle,
     required List<Color> gradient,
   }) {
     final theme = Theme.of(context);
@@ -324,114 +395,32 @@ class _LoanScreenState extends State<LoanScreen> {
               ),
             ),
           ),
-          
           // Content
-          Row(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.2,
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            value,
-                            style: theme.textTheme.displayLarge?.copyWith(
-                              fontSize: 42,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -1,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppTheme.successColor.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppTheme.successColor.withValues(alpha: 0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: AppTheme.successColor,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  status,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF86EFAC),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      trend,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF86EFAC),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.history,
-                          size: 12,
-                          color: Colors.white.withValues(alpha: 0.6),
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            updated,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontSize: 10,
-                              color: Colors.white.withValues(alpha: 0.6),
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                subtitle,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -456,27 +445,7 @@ class _LoanScreenState extends State<LoanScreen> {
         'subtitle': 'For personal expenses',
         'iconColor': AppTheme.primaryColor,
         'iconBgColor': AppTheme.primaryColor.withValues(alpha: 0.1),
-      },
-      {
-        'icon': Icons.directions_car,
-        'title': 'Car Loan',
-        'subtitle': 'Finance your vehicle',
-        'iconColor': const Color(0xFF14B8A6),
-        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
-      },
-      {
-        'icon': Icons.school,
-        'title': 'Education Loan',
-        'subtitle': 'Fund your future',
-        'iconColor': const Color(0xFFF59E0B),
-        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.1),
-      },
-      {
-        'icon': Icons.home,
-        'title': 'Home Loan',
-        'subtitle': 'Buy or renovate',
-        'iconColor': AppTheme.successColor,
-        'iconBgColor': AppTheme.successColor.withValues(alpha: 0.1),
+        'availableSoon': false,
       },
       {
         'icon': Icons.business,
@@ -484,6 +453,31 @@ class _LoanScreenState extends State<LoanScreen> {
         'subtitle': 'Grow your business',
         'iconColor': const Color(0xFF7C3AED),
         'iconBgColor': const Color(0xFF7C3AED).withValues(alpha: 0.1),
+        'availableSoon': false,
+      },
+      {
+        'icon': Icons.school,
+        'title': 'Education Loan',
+        'subtitle': 'Fund your future',
+        'iconColor': const Color(0xFFF59E0B),
+        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.1),
+        'availableSoon': true,
+      },
+      {
+        'icon': Icons.home,
+        'title': 'Home Loan',
+        'subtitle': 'Buy or renovate',
+        'iconColor': AppTheme.successColor,
+        'iconBgColor': AppTheme.successColor.withValues(alpha: 0.1),
+        'availableSoon': true,
+      },
+      {
+        'icon': Icons.directions_car,
+        'title': 'Car Loan',
+        'subtitle': 'Finance your vehicle',
+        'iconColor': const Color(0xFF14B8A6),
+        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
+        'availableSoon': true,
       },
       {
         'icon': Icons.home_work,
@@ -491,6 +485,7 @@ class _LoanScreenState extends State<LoanScreen> {
         'subtitle': 'Secure your property',
         'iconColor': const Color(0xFFEC4899),
         'iconBgColor': const Color(0xFFEC4899).withValues(alpha: 0.1),
+        'availableSoon': true,
       },
     ];
 
@@ -568,6 +563,7 @@ class _LoanScreenState extends State<LoanScreen> {
                     subtitle: loanType['subtitle'] as String,
                     iconColor: loanType['iconColor'] as Color,
                     iconBgColor: loanType['iconBgColor'] as Color,
+                    availableSoon: loanType['availableSoon'] as bool? ?? false,
                   ),
                 );
               }).toList(),
@@ -585,6 +581,7 @@ class _LoanScreenState extends State<LoanScreen> {
     required String subtitle,
     required Color iconColor,
     required Color iconBgColor,
+    bool availableSoon = false,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -596,58 +593,75 @@ class _LoanScreenState extends State<LoanScreen> {
     final iconSize = isLargeScreen ? 18.0 : 20.0;
     final iconContainerSize = isLargeScreen ? 36.0 : 40.0;
 
-    return InkWell(
-      onTap: () {
-        if (title == AppStrings.loanTypeBusiness || title == 'Business Loan') {
-          context.go(AppRoutes.businessLoanType);
-          return;
-        }
-        context.go('${AppRoutes.instructions}?loanType=$title');
-      },
-      borderRadius: BorderRadius.circular(24),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: EdgeInsets.all(isLargeScreen ? 14 : 16),
-            decoration: BoxDecoration(
-              color: colorScheme.surface.withValues(alpha: 0.7),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: colorScheme.outline.withValues(alpha: 0.3),
-                width: 1,
+    return Opacity(
+      opacity: availableSoon ? 0.7 : 1,
+      child: InkWell(
+        onTap: availableSoon
+            ? null
+            : () {
+                if (title == AppStrings.loanTypeBusiness || title == 'Business Loan') {
+                  context.go(AppRoutes.businessLoanType);
+                  return;
+                }
+                context.go('${AppRoutes.instructions}?loanType=$title');
+              },
+        borderRadius: BorderRadius.circular(24),
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              padding: EdgeInsets.all(isLargeScreen ? 14 : 16),
+              decoration: BoxDecoration(
+                color: colorScheme.surface.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.3),
+                  width: 1,
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: iconContainerSize + 8,
-                  height: iconContainerSize + 8,
-                  decoration: BoxDecoration(
-                    color: iconBgColor,
-                    borderRadius: BorderRadius.circular(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: iconContainerSize + 8,
+                    height: iconContainerSize + 8,
+                    decoration: BoxDecoration(
+                      color: iconBgColor,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: iconColor,
+                      size: iconSize + 4,
+                    ),
                   ),
-                  child: Icon(
-                    icon,
-                    color: iconColor,
-                    size: iconSize + 4,
+                  const SizedBox(height: 12),
+                  Text(
+                    title,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      fontSize: titleFontSize,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    fontSize: titleFontSize,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  if (availableSoon) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      AppStrings.availableSoon,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        color: colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),

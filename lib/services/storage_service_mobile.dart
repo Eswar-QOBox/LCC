@@ -62,22 +62,6 @@ class StorageServiceMobile implements StorageService {
   }
 
   @override
-  Future<bool> getAllowMultipleApplicationsTesting() async {
-    final value = await _storage.read(
-      key: StorageService.allowMultipleApplicationsTestingKey,
-    );
-    return value == 'true' || value == '1';
-  }
-
-  @override
-  Future<void> setAllowMultipleApplicationsTesting(bool value) async {
-    await _storage.write(
-      key: StorageService.allowMultipleApplicationsTestingKey,
-      value: value ? 'true' : 'false',
-    );
-  }
-
-  @override
   Future<void> clearAll() async {
     await _storage.deleteAll();
   }

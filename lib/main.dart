@@ -63,6 +63,22 @@ class MyApp extends StatelessWidget {
         themeMode: ThemeMode.light,
         routerConfig: _router,
         debugShowCheckedModeBanner: false,
+        builder: (context, child) {
+          return PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) async {
+              if (didPop) return;
+              final navigator = Navigator.maybeOf(context);
+              if (navigator != null && navigator.canPop()) {
+                navigator.pop();
+              } else {
+                // Swipe/back would close the app — go to home instead
+                GoRouter.of(context).go(AppRoutes.home);
+              }
+            },
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
       ),
     );
   }

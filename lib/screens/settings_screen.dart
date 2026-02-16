@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +13,6 @@ import '../models/loan_application.dart';
 import '../models/document_submission.dart';
 import '../models/user.dart';
 import '../services/loan_application_service.dart';
-import '../services/storage_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -28,7 +26,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<LoanApplication> _previousLoans = [];
   bool _isLoadingLoans = true;
   String? _loansError;
-  bool _allowMultipleAppsTesting = false;
 
   String? _nonEmpty(String? value) {
     if (value == null) return null;
@@ -70,33 +67,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadPreviousLoans();
-    _loadDeveloperSettings();
-  }
-
-  Future<void> _loadDeveloperSettings() async {
-    if (kReleaseMode) return;
-    try {
-      final storage = StorageService.instance;
-      final value = await storage.getAllowMultipleApplicationsTesting();
-      if (!mounted) return;
-      setState(() => _allowMultipleAppsTesting = value);
-    } catch (_) {
-      // Ignore (non-critical)
-    }
-  }
-
-  Future<void> _setAllowMultipleAppsTesting(bool value) async {
-    if (kReleaseMode) return;
-    setState(() => _allowMultipleAppsTesting = value);
-    try {
-      final storage = StorageService.instance;
-      await storage.setAllowMultipleApplicationsTesting(value);
-    } catch (e) {
-      if (!mounted) return;
-      // Roll back locally if persisting failed
-      setState(() => _allowMultipleAppsTesting = !value);
-      PremiumToast.showError(context, 'Could not save setting. Please try again.');
-    }
   }
 
   Future<void> _loadPreviousLoans() async {
@@ -298,69 +268,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-
-                    if (!kReleaseMode) ...[
-                      // Developer / testing-only settings
-                      PremiumCard(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Developer (Testing)',
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'These options are for internal testing.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              decoration: BoxDecoration(
-                                color: colorScheme.surface,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: colorScheme.outlineVariant
-                                      .withValues(alpha: 0.6),
-                                ),
-                              ),
-                              child: ListTile(
-                                leading: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: colorScheme.primary
-                                        .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    Icons.bug_report_outlined,
-                                    color: colorScheme.primary,
-                                    size: 20,
-                                  ),
-                                ),
-                                title: const Text('Allow multiple applications'),
-                                subtitle: const Text(
-                                  'Bypass the “only one in-progress application” restriction.',
-                                ),
-                                trailing: Switch(
-                                  value: _allowMultipleAppsTesting,
-                                  onChanged: (v) =>
-                                      _setAllowMultipleAppsTesting(v),
-                                ),
-                                onTap: () => _setAllowMultipleAppsTesting(
-                                  !_allowMultipleAppsTesting,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
 
                     // Support
                     PremiumCard(

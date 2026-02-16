@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -13,7 +12,6 @@ import '../widgets/slide_to_confirm.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
-import '../services/storage_service.dart';
 import '../models/loan_application.dart';
 import '../utils/app_theme.dart';
 
@@ -130,6 +128,41 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // KYC & authorization notice
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: colorScheme.outline.withValues(alpha: 0.2),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.verified_user_outlined,
+                            color: AppTheme.primaryColor,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'I voluntarily submit my Aadhaar and other required documents for KYC and loan processing and authorize the Company to verify and use them in accordance with applicable laws.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                height: 1.45,
+                                fontSize: 13,
+                              ),
+                              textAlign: TextAlign.justify,
                             ),
                           ),
                         ],
@@ -368,50 +401,36 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   if (!mounted) return;
                                   setState(() => _isCreatingApplication = true);
                                   try {
-                                    // Testing-only: optionally bypass the "only one in-progress application" rule.
-                                    var allowMultipleApplications = false;
-                                    if (!kReleaseMode) {
-                                      try {
-                                        final storage = StorageService.instance;
-                                        allowMultipleApplications = await storage
-                                            .getAllowMultipleApplicationsTesting();
-                                      } catch (_) {
-                                        allowMultipleApplications = false;
-                                      }
-                                    }
+                                    // Before creating a new application, check existing ones.
+                                    final existingApps =
+                                        await _applicationService.getApplications(
+                                      status: 'all',
+                                      limit: 50,
+                                    );
 
-                                    if (!allowMultipleApplications) {
-                                      // Before creating a new application, check existing ones.
-                                      final existingApps =
-                                          await _applicationService.getApplications(
-                                        status: 'all',
-                                        limit: 50,
-                                      );
+                                    final hasApproved = existingApps
+                                        .any((app) => app.isApproved);
 
-                                      final hasApproved = existingApps
-                                          .any((app) => app.isApproved);
+                                    // Any submitted/in-progress applications that are NOT approved yet
+                                    final blockingApps = existingApps.where(
+                                      (app) =>
+                                          app.isSubmitted ||
+                                          app.isInProgress ||
+                                          app.isPaused,
+                                    );
 
-                                      // Any submitted/in-progress applications that are NOT approved yet
-                                      final blockingApps = existingApps.where(
-                                        (app) =>
-                                            app.isSubmitted ||
-                                            app.isInProgress ||
-                                            app.isPaused,
-                                      );
-
-                                      if (!hasApproved &&
-                                          blockingApps.isNotEmpty) {
-                                        // Show "talk to our agent" style dialog and do NOT create a new app
-                                        final latest =
-                                            List<LoanApplication>.from(blockingApps)
-                                              ..sort(
-                                                (a, b) => b.updatedAt
-                                                    .compareTo(a.updatedAt),
-                                              );
-                                        _showInProgressDialog(
-                                            context, latest.first);
-                                        return;
-                                      }
+                                    if (!hasApproved &&
+                                        blockingApps.isNotEmpty) {
+                                      // Show "talk to our agent" style dialog and do NOT create a new app
+                                      final latest =
+                                          List<LoanApplication>.from(blockingApps)
+                                            ..sort(
+                                              (a, b) => b.updatedAt
+                                                  .compareTo(a.updatedAt),
+                                            );
+                                      _showInProgressDialog(
+                                          context, latest.first);
+                                      return;
                                     }
 
                                     // Clear old draft data before starting new submission

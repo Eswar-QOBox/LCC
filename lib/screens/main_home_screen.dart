@@ -22,13 +22,15 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   final LoanApplicationService _applicationService = LoanApplicationService();
   bool _hasPendingApplications = false;
 
-  final List<Widget> _screens = [
-    const LoanScreen(),
-    const ApplicationsScreen(),
-    const RequiredDocumentsScreen(),
-    const LoanCalculatorScreen(),
-    const SettingsScreen(),
-  ];
+  List<Widget> _buildScreens() => [
+        LoanScreen(
+          onApplicationInProgressTap: () => _setIndex(1),
+        ),
+        const ApplicationsScreen(),
+        const RequiredDocumentsScreen(),
+        const LoanCalculatorScreen(),
+        const SettingsScreen(),
+      ];
 
   @override
   void initState() {
@@ -84,7 +86,7 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: _buildScreens(),
       ),
       bottomNavigationBar: ClipRect(
         child: BackdropFilter(
