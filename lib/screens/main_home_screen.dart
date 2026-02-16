@@ -183,50 +183,59 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    isActive ? activeIcon : icon,
-                    color: isActive
-                        ? AppTheme.primaryColor
-                        : colorScheme.onSurfaceVariant,
-                    size: 24,
-                  ),
-                  if (showBadge)
-                    Positioned(
-                      right: -4,
-                      top: -4,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: AppTheme.errorColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.surface,
-                            width: 1.5,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(
+                        isActive ? activeIcon : icon,
+                        color: isActive
+                            ? AppTheme.primaryColor
+                            : colorScheme.onSurfaceVariant,
+                        size: 24,
+                      ),
+                      if (showBadge)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: AppTheme.errorColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: colorScheme.surface,
+                                width: 1.5,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                      color: isActive
+                          ? AppTheme.primaryColor
+                          : colorScheme.onSurfaceVariant,
                     ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 10,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-                  color: isActive
-                      ? AppTheme.primaryColor
-                      : colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

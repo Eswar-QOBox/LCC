@@ -703,6 +703,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             ],
           ),
           const SizedBox(height: 16),
+          // Two columns, rows stack vertically
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1086,6 +1087,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             ],
           ),
           const SizedBox(height: 16),
+          // Two columns, rows stack vertically
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
