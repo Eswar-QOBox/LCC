@@ -61,9 +61,9 @@ dependencies:
   image: ^4.2.0
   image_cropper: ^11.0.0
   
-  # Face Detection
-  google_mlkit_face_detection: ^0.10.0
-  google_mlkit_text_recognition: ^0.13.0
+  # Face Detection & Text Recognition (use latest for compatible MLKitCore)
+  google_mlkit_face_detection: ^0.13.2
+  google_mlkit_text_recognition: ^0.15.1
   
   # HTTP Requests
   http: ^1.2.1
