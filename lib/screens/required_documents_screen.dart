@@ -702,16 +702,15 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          // Two columns, rows stack vertically
+          const SizedBox(height: 10),
+          // Single column, top to bottom (compact)
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: 1.05,
+              crossAxisCount: 1,
+              mainAxisSpacing: 6,
+              childAspectRatio: 3.2,
             ),
             itemCount: documents.length,
             itemBuilder: (context, index) {
@@ -778,17 +777,17 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor, width: 1.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Column(
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -801,16 +800,17 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                   requirement.label,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (requirement.isCustom) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(999),
@@ -827,17 +827,18 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               ],
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Row(
             children: [
-              Icon(statusIcon, size: 16, color: statusColor),
-              const SizedBox(width: 6),
+              Icon(statusIcon, size: 12, color: statusColor),
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   statusText,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: statusColor,
                     fontWeight: FontWeight.w700,
+                    fontSize: 11,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -848,8 +849,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           if (!canUpload)
             const Center(
               child: SizedBox(
-                width: 24,
-                height: 24,
+                width: 20,
+                height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
@@ -1086,16 +1087,15 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          // Two columns, rows stack vertically
+          const SizedBox(height: 10),
+          // Single column, top to bottom (compact)
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              childAspectRatio: 1.05,
+              crossAxisCount: 1,
+              mainAxisSpacing: 6,
+              childAspectRatio: 3.2,
             ),
             itemCount: documents.length,
             itemBuilder: (context, index) {
@@ -1127,7 +1127,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: AppTheme.successColor.withValues(alpha: 0.25),
           width: 1.5,
@@ -1135,12 +1135,12 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Column(
         mainAxisSize: MainAxisSize.max,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1153,14 +1153,15 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                   requirement.label,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (requirement.isCustom)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(4),
@@ -1176,21 +1177,22 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Row(
             children: [
               const Icon(
                 Icons.check_circle,
                 color: AppTheme.successColor,
-                size: 16,
+                size: 12,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Expanded(
                 child: Text(
                   AppStrings.verified,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: AppTheme.successColor,
                     fontWeight: FontWeight.w700,
+                    fontSize: 11,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1198,12 +1200,12 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             ],
           ),
           if (uploadedDoc.id.isNotEmpty) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Text(
               uploadedDoc.fileName,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 11,
+                fontSize: 10,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
