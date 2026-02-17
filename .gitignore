@@ -1,4 +1,6 @@
 # Miscellaneous
+# Windows reserved name - avoid committing if created by accident
+nul
 *.class
 *.log
 *.pyc
