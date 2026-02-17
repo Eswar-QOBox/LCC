@@ -1,4 +1,4 @@
-package com.example.lcc
+package com.finance.jsee
 
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -92,4 +92,3 @@ class PdfOcrRenderer : MethodChannel.MethodCallHandler {
     return bytes
   }
 }
-

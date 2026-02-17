@@ -19,7 +19,11 @@ class File {
   Future<File> writeAsBytes(List<int> bytes, {FileMode mode = FileMode.write}) async {
     throw UnsupportedError('File operations not available on web');
   }
-  
+
+  Future<File> copy(String newPath) async {
+    throw UnsupportedError('File operations not available on web');
+  }
+
   Future<void> delete({bool recursive = false}) async {
     throw UnsupportedError('File operations not available on web');
   }
@@ -34,7 +38,11 @@ class Directory {
   Future<bool> exists() async {
     throw UnsupportedError('Directory operations not available on web');
   }
-  
+
+  Future<Directory> create({bool recursive = false}) async {
+    throw UnsupportedError('Directory operations not available on web');
+  }
+
   Future<Directory> createTemp(String prefix) async {
     throw UnsupportedError('Directory operations not available on web');
   }

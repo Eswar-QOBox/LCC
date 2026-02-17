@@ -1,4 +1,4 @@
-package com.example.lcc
+package com.finance.jsee
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
