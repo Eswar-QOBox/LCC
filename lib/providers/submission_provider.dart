@@ -32,6 +32,67 @@ class SubmissionProvider with ChangeNotifier {
     unawaited(saveDraft());
   }
 
+  void setProfessionalLoanType(String? professionalLoanType) {
+    _submission.professionalLoanType = professionalLoanType;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  // Professional docs (Doctor / CA)
+  void setProfessionalMedicalDegree(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.medicalDegree ??= UploadedDoc();
+    _submission.professionalDocuments!.medicalDegree!.path = path;
+    _submission.professionalDocuments!.medicalDegree!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalMedicalLicence(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.medicalLicence ??= UploadedDoc();
+    _submission.professionalDocuments!.medicalLicence!.path = path;
+    _submission.professionalDocuments!.medicalLicence!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalPrescription(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.prescription ??= UploadedDoc();
+    _submission.professionalDocuments!.prescription!.path = path;
+    _submission.professionalDocuments!.prescription!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalCaDegree(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.caDegree ??= UploadedDoc();
+    _submission.professionalDocuments!.caDegree!.path = path;
+    _submission.professionalDocuments!.caDegree!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalCertificateOfPractice(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.certificateOfPractice ??= UploadedDoc();
+    _submission.professionalDocuments!.certificateOfPractice!.path = path;
+    _submission.professionalDocuments!.certificateOfPractice!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalIcaiCertificate(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.icaiCertificate ??= UploadedDoc();
+    _submission.professionalDocuments!.icaiCertificate!.path = path;
+    _submission.professionalDocuments!.icaiCertificate!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
   // Business docs
   void setSpouseAadhaarFront(String path, {bool isPdf = false}) {
     _submission.businessDocuments ??= BusinessDocuments();
@@ -871,6 +932,7 @@ class SubmissionProvider with ChangeNotifier {
     return {
       'loanType': submission.loanType,
       'businessLoanType': submission.businessLoanType,
+      'professionalLoanType': submission.professionalLoanType,
       'selfiePath': submission.selfiePath,
       'aadhaar': submission.aadhaar != null
           ? {
@@ -981,6 +1043,46 @@ class SubmissionProvider with ChangeNotifier {
                   : null,
             }
           : null,
+      'professionalDocuments': submission.professionalDocuments != null
+          ? {
+              'medicalDegree': submission.professionalDocuments!.medicalDegree != null
+                  ? {
+                      'path': submission.professionalDocuments!.medicalDegree!.path,
+                      'isPdf': submission.professionalDocuments!.medicalDegree!.isPdf,
+                    }
+                  : null,
+              'medicalLicence': submission.professionalDocuments!.medicalLicence != null
+                  ? {
+                      'path': submission.professionalDocuments!.medicalLicence!.path,
+                      'isPdf': submission.professionalDocuments!.medicalLicence!.isPdf,
+                    }
+                  : null,
+              'prescription': submission.professionalDocuments!.prescription != null
+                  ? {
+                      'path': submission.professionalDocuments!.prescription!.path,
+                      'isPdf': submission.professionalDocuments!.prescription!.isPdf,
+                    }
+                  : null,
+              'caDegree': submission.professionalDocuments!.caDegree != null
+                  ? {
+                      'path': submission.professionalDocuments!.caDegree!.path,
+                      'isPdf': submission.professionalDocuments!.caDegree!.isPdf,
+                    }
+                  : null,
+              'certificateOfPractice': submission.professionalDocuments!.certificateOfPractice != null
+                  ? {
+                      'path': submission.professionalDocuments!.certificateOfPractice!.path,
+                      'isPdf': submission.professionalDocuments!.certificateOfPractice!.isPdf,
+                    }
+                  : null,
+              'icaiCertificate': submission.professionalDocuments!.icaiCertificate != null
+                  ? {
+                      'path': submission.professionalDocuments!.icaiCertificate!.path,
+                      'isPdf': submission.professionalDocuments!.icaiCertificate!.isPdf,
+                    }
+                  : null,
+            }
+          : null,
       'personalData': submission.personalData != null
           ? {
               'nameAsPerAadhaar': submission.personalData!.nameAsPerAadhaar,
@@ -1042,6 +1144,7 @@ class SubmissionProvider with ChangeNotifier {
     final submission = DocumentSubmission(
       loanType: json['loanType'] as String?,
       businessLoanType: json['businessLoanType'] as String?,
+      professionalLoanType: json['professionalLoanType'] as String?,
       selfiePath: json['selfiePath'] as String?,
       submittedAt: json['submittedAt'] != null
           ? DateTime.parse(json['submittedAt'] as String)
@@ -1162,6 +1265,25 @@ class SubmissionProvider with ChangeNotifier {
           docs.ownHouseProof != null) {
         submission.businessDocuments = docs;
       }
+    }
+
+    if (json['professionalDocuments'] != null) {
+      final p = json['professionalDocuments'] as Map<String, dynamic>;
+      UploadedDoc? parseUploadedDoc(dynamic raw) {
+        if (raw is! Map<String, dynamic>) return null;
+        return UploadedDoc(
+          path: raw['path'] as String?,
+          isPdf: raw['isPdf'] as bool? ?? false,
+        );
+      }
+      submission.professionalDocuments = ProfessionalDocuments(
+        medicalDegree: parseUploadedDoc(p['medicalDegree']),
+        medicalLicence: parseUploadedDoc(p['medicalLicence']),
+        prescription: parseUploadedDoc(p['prescription']),
+        caDegree: parseUploadedDoc(p['caDegree']),
+        certificateOfPractice: parseUploadedDoc(p['certificateOfPractice']),
+        icaiCertificate: parseUploadedDoc(p['icaiCertificate']),
+      );
     }
 
     if (json['personalData'] != null) {

@@ -635,8 +635,18 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       }
 
       if (mounted && context.mounted) {
-        // Navigate to preview screen
-        context.go(AppRoutes.step6Preview);
+        final submissionProvider = context.read<SubmissionProvider>();
+        final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+        final professionalType =
+            (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+        final isProfessionalLoan = loanType.contains('professional') &&
+            (professionalType == 'doctor' || professionalType == 'ca');
+        // Professional flow: Personal Data -> Salary Slips -> Preview. Personal: Personal Data -> Preview.
+        if (isProfessionalLoan) {
+          context.go(AppRoutes.step5_1SalarySlips);
+        } else {
+          context.go(AppRoutes.step6Preview);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -701,12 +711,18 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
                     final businessLoanType =
                         (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+                    final professionalLoanType =
+                        (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
                     final isBusinessLoan = loanType.contains('business') &&
                         (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+                    final isProfessionalLoan = loanType.contains('professional') &&
+                        (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
                     context.go(
                       isBusinessLoan
                           ? AppRoutes.step7Ohp
-                          : AppRoutes.step5_1SalarySlips,
+                          : isProfessionalLoan
+                              ? AppRoutes.step5ProfessionalDocs
+                              : AppRoutes.step5_1SalarySlips,
                     );
                   } catch (e) {
                     if (Navigator.canPop(context)) {

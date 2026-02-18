@@ -713,7 +713,16 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     }
     final saved = await _saveToBackend();
     if (mounted && saved) {
-      context.go(AppRoutes.step5PersonalData);
+      final submissionProvider = context.read<SubmissionProvider>();
+      final appProvider = context.read<ApplicationProvider>();
+      final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+      final professionalType =
+          (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+      final isProfessionalLoan = loanType.contains('professional') &&
+          (professionalType == 'doctor' || professionalType == 'ca');
+      context.go(
+        isProfessionalLoan ? AppRoutes.step6Preview : AppRoutes.step5PersonalData,
+      );
     }
   }
 
@@ -801,7 +810,18 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               title: 'Salary Slips',
               icon: Icons.receipt_long,
               showBackButton: true,
-              onBackPressed: () => context.go(AppRoutes.step4BankStatement),
+              onBackPressed: () {
+                final appProvider = context.read<ApplicationProvider>();
+                final submissionProvider = context.read<SubmissionProvider>();
+                final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+                final professionalType =
+                    (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+                final isProfessionalLoan = loanType.contains('professional') &&
+                    (professionalType == 'doctor' || professionalType == 'ca');
+                context.go(
+                  isProfessionalLoan ? AppRoutes.step5PersonalData : AppRoutes.step4BankStatement,
+                );
+              },
               showHomeButton: true,
               actions: const [
                 PreviewHeaderAction(backRoute: AppRoutes.step5_1SalarySlips),

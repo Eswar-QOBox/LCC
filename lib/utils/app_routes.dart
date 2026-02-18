@@ -10,6 +10,8 @@ class AppRoutes {
   static const String instructions = '/instructions';
   static const String termsAndConditions = '/terms';
   static const String businessLoanType = '/business-loan-type';
+  static const String professionalLoanType = '/professional-loan-type';
+  static const String step5ProfessionalDocs = '/step5-professional-docs';
   
   // Document Steps
   static const String step1Selfie = '/step1-selfie';

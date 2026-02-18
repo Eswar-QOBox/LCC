@@ -389,6 +389,10 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         loanIcon = Icons.business;
         loanColor = AppTheme.warningColor;
         break;
+      case AppStrings.loanTypeProfessional:
+        loanIcon = Icons.work_outline;
+        loanColor = const Color(0xFF0EA5E9);
+        break;
       case AppStrings.loanTypeEducation:
         loanIcon = Icons.school;
         loanColor = colorScheme.secondary;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
+import '../utils/developer_mode.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/skeleton_box.dart';
 import '../providers/submission_provider.dart';
@@ -26,6 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<LoanApplication> _previousLoans = [];
   bool _isLoadingLoans = true;
   String? _loansError;
+  bool _developerMode = false;
 
   String? _nonEmpty(String? value) {
     if (value == null) return null;
@@ -67,6 +69,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadPreviousLoans();
+    _loadDeveloperMode();
+  }
+
+  Future<void> _loadDeveloperMode() async {
+    final enabled = await isDeveloperModeEnabled();
+    if (mounted) setState(() => _developerMode = enabled);
   }
 
   Future<void> _loadPreviousLoans() async {
@@ -238,6 +246,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Developer mode – allow multiple applications
+                    PremiumCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.developer_mode,
+                                  color: colorScheme.primary,
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Developer mode',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Allow multiple applications in progress at once',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _developerMode ? 'On' : 'Off',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: _developerMode
+                                        ? AppTheme.successColor
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              Switch(
+                                value: _developerMode,
+                                onChanged: (value) async {
+                                  await setDeveloperModeEnabled(value);
+                                  if (mounted) setState(() => _developerMode = value);
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 16),
 
@@ -880,6 +951,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       case 'Business Loan':
         loanIcon = Icons.business;
         loanColor = AppTheme.warningColor;
+        break;
+      case 'Professional Loan':
+        loanIcon = Icons.work_outline;
+        loanColor = const Color(0xFF0EA5E9);
         break;
       case 'Education Loan':
         loanIcon = Icons.school;

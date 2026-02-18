@@ -456,6 +456,14 @@ class _LoanScreenState extends State<LoanScreen> {
         'availableSoon': false,
       },
       {
+        'icon': Icons.work_outline,
+        'title': 'Professional Loan',
+        'subtitle': 'For professionals',
+        'iconColor': const Color(0xFF0EA5E9),
+        'iconBgColor': const Color(0xFF0EA5E9).withValues(alpha: 0.1),
+        'availableSoon': false,
+      },
+      {
         'icon': Icons.school,
         'title': 'Education Loan',
         'subtitle': 'Fund your future',
@@ -601,6 +609,10 @@ class _LoanScreenState extends State<LoanScreen> {
             : () {
                 if (title == AppStrings.loanTypeBusiness || title == 'Business Loan') {
                   context.go(AppRoutes.businessLoanType);
+                  return;
+                }
+                if (title == AppStrings.loanTypeProfessional || title == 'Professional Loan') {
+                  context.go(AppRoutes.professionalLoanType);
                   return;
                 }
                 context.go('${AppRoutes.instructions}?loanType=$title');

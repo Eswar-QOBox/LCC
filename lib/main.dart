@@ -25,7 +25,9 @@ import 'screens/pdf_download_screen.dart';
 import 'screens/view_submitted_screen.dart';
 import 'screens/loan_calculator_screen.dart';
 import 'screens/business_loan_type_screen.dart';
+import 'screens/professional_loan_type_screen.dart';
 import 'screens/step5_business_docs_screen.dart';
+import 'screens/step5_professional_docs_screen.dart';
 import 'screens/step4_spouse_aadhaar_screen.dart';
 import 'screens/step5_spouse_pan_screen.dart';
 import 'screens/step6_msme_screen.dart';
@@ -112,15 +114,21 @@ final GoRouter _router = GoRouter(
       builder: (context, state) {
         final loanType = state.uri.queryParameters['loanType'];
         final businessLoanType = state.uri.queryParameters['businessLoanType'];
+        final professionalLoanType = state.uri.queryParameters['professionalLoanType'];
         return InstructionsScreen(
           loanType: loanType,
           businessLoanType: businessLoanType,
+          professionalLoanType: professionalLoanType,
         );
       },
     ),
     GoRoute(
       path: AppRoutes.businessLoanType,
       builder: (context, state) => const BusinessLoanTypeScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.professionalLoanType,
+      builder: (context, state) => const ProfessionalLoanTypeScreen(),
     ),
     GoRoute(
       path: AppRoutes.termsAndConditions,
@@ -183,6 +191,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.step5BusinessDocs,
       builder: (context, state) => const Step5BusinessDocsScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.step5ProfessionalDocs,
+      builder: (context, state) => const Step5ProfessionalDocsScreen(),
     ),
     GoRoute(
       path: AppRoutes.step6Msme,

@@ -133,8 +133,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   Future<void> _initOcrForExistingDocs() async {
     if (!mounted) return;
 
-    // Applicant flow: OCR completion is derived from already-filled personal data.
+    // Applicant flow: when data came from backend we already set _frontOcrComplete/_backOcrComplete in _loadExistingData.
+    // Do not overwrite with _syncOcrFlagsFromProvider (which needs DOB/address in personalData) so we don't ask for OCR again.
     if (!widget.isSpouse && !widget.isPartner) {
+      if (_frontOcrComplete && _backOcrComplete) return;
       setState(() {
         _syncOcrFlagsFromProvider();
       });
@@ -470,7 +472,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         return '${ApiConfig.baseUrl}$apiPath';
       }
       
-      // Prefer uploaded file URL over local blob path
+      // Prefer uploaded file URL over local blob path (same as business/bank flow: use backend data, do not re-OCR).
       final effectiveFront = buildFullUrl(frontUpload?['url'] as String?) ?? frontPath;
       final effectiveBack = buildFullUrl(backUpload?['url'] as String?) ?? backPath;
       
@@ -509,14 +511,6 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
       // Load address toggle state (for Step 5 conditional field)
       if (mounted) {
-        setState(() {
-          _addressDifferentFromAadhaar = addressDifferentFromAadhaar;
-          _frontAadhaarNumber = frontAadhaarNumber;
-          _backAadhaarNumber = backAadhaarNumber;
-          _aadhaarName = aadhaarName;
-          _aadhaarFrontRawText = aadhaarFrontRawText;
-          _syncOcrFlagsFromProvider();
-        });
         final provider = context.read<SubmissionProvider>();
         provider.updatePersonalDataField(
           addressDifferentFromAadhaar: addressDifferentFromAadhaar,
@@ -528,9 +522,28 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           provider.updatePersonalDataField(fullName: aadhaarName);
         }
 
-        // If personal data already has the extracted values, mark OCR as complete.
+        // When data is from backend (business/bank flow): do not re-run OCR. Mark OCR complete from step data.
+        final hasFrontOcrFromBackend = (frontAadhaarNumber ?? '').trim().isNotEmpty &&
+            (aadhaarName ?? '').trim().isNotEmpty;
+        final hasBackOcrFromBackend = (backAadhaarNumber ?? '').trim().isNotEmpty;
+
         setState(() {
-          _syncOcrFlagsFromProvider();
+          _addressDifferentFromAadhaar = addressDifferentFromAadhaar;
+          _frontAadhaarNumber = frontAadhaarNumber;
+          _backAadhaarNumber = backAadhaarNumber;
+          _aadhaarName = aadhaarName;
+          _aadhaarFrontRawText = aadhaarFrontRawText;
+          if (hasFrontOcrFromBackend) {
+            _frontOcrComplete = true;
+            _frontOcrIssue = null;
+          }
+          if (hasBackOcrFromBackend) {
+            _backOcrComplete = true;
+            _backOcrIssue = null;
+          }
+          if (!hasFrontOcrFromBackend || !hasBackOcrFromBackend) {
+            _syncOcrFlagsFromProvider();
+          }
         });
       }
       

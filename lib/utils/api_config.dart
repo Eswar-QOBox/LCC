@@ -6,6 +6,20 @@ class ApiConfig {
   //static const String baseUrl = 'http://localhost:5000';
   //static const String baseUrl = 'http://localhost:8081';
   static const String baseUrl = 'https://ai-lazycallagent.qualityoutsidethebox.org';
+
+  /// Loan types the app can create. Backend must allow these in POST /api/v1/applications (loanType).
+  /// See docs/BACKEND_LOAN_TYPES.md for backend requirements (include "Professional Loan").
+  static const List<String> supportedLoanTypes = [
+    'Personal Loan',
+    'Business Loan',
+    'Professional Loan',
+    'Education Loan',
+    'Home Loan',
+    'Car Loan',
+    'Mortgage',
+    'Loan Against Property',
+    'Emergency Loan',
+  ];
   // API endpoints (these are appended to baseUrl)
   // If baseUrl includes /api/v1, use '/auth/login'
   // If baseUrl doesn't include /api/v1, use '/api/v1/auth/login'

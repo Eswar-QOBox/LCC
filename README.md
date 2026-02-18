@@ -315,6 +315,8 @@ The backend README includes:
 
 **See also:** [MongoDB Setup Guide](./MONGODB_COMPASS_VPS_SETUP.md) for database configuration.
 
+**Loan types:** The app supports **Professional Loan** (Doctor/CA). The backend must allow `"Professional Loan"` in the `loanType` validation for `POST /api/v1/applications`. See [Backend loan types](./docs/BACKEND_LOAN_TYPES.md) for the exact change.
+
 ---
 
 ## Resources

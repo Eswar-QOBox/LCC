@@ -35,6 +35,8 @@ class AppStrings {
   static const String loanTypeHomeSubtitle = 'Buy or renovate your home';
   static const String loanTypeBusiness = 'Business Loan';
   static const String loanTypeBusinessSubtitle = 'Grow your business';
+  static const String loanTypeProfessional = 'Professional Loan';
+  static const String loanTypeProfessionalSubtitle = 'For professionals';
   static const String loanTypeEducation = 'Education Loan';
   static const String loanTypeEducationSubtitle = 'Fund your education';
   static const String loanTypeMortgage = 'Mortgage Loan';

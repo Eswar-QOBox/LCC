@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
+import '../utils/developer_mode.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
@@ -18,8 +19,14 @@ import '../utils/app_theme.dart';
 class InstructionsScreen extends StatefulWidget {
   final String? loanType;
   final String? businessLoanType;
-  
-  const InstructionsScreen({super.key, this.loanType, this.businessLoanType});
+  final String? professionalLoanType;
+
+  const InstructionsScreen({
+    super.key,
+    this.loanType,
+    this.businessLoanType,
+    this.professionalLoanType,
+  });
 
   @override
   State<InstructionsScreen> createState() => _InstructionsScreenState();
@@ -411,26 +418,32 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     final hasApproved = existingApps
                                         .any((app) => app.isApproved);
 
-                                    // Any submitted/in-progress applications that are NOT approved yet
-                                    final blockingApps = existingApps.where(
-                                      (app) =>
-                                          app.isSubmitted ||
-                                          app.isInProgress ||
-                                          app.isPaused,
-                                    );
+                                    // When developer mode is on, allow multiple applications
+                                    final developerMode =
+                                        await isDeveloperModeEnabled();
+                                    if (!developerMode) {
+                                      // Any submitted/in-progress applications that are NOT approved yet
+                                      final blockingApps = existingApps.where(
+                                        (app) =>
+                                            app.isSubmitted ||
+                                            app.isInProgress ||
+                                            app.isPaused,
+                                      );
 
-                                    if (!hasApproved &&
-                                        blockingApps.isNotEmpty) {
-                                      // Show "talk to our agent" style dialog and do NOT create a new app
-                                      final latest =
-                                          List<LoanApplication>.from(blockingApps)
-                                            ..sort(
-                                              (a, b) => b.updatedAt
-                                                  .compareTo(a.updatedAt),
-                                            );
-                                      _showInProgressDialog(
-                                          context, latest.first);
-                                      return;
+                                      if (!hasApproved &&
+                                          blockingApps.isNotEmpty) {
+                                        // Show "talk to our agent" style dialog and do NOT create a new app
+                                        final latest =
+                                            List<LoanApplication>.from(
+                                                blockingApps)
+                                              ..sort(
+                                                (a, b) => b.updatedAt
+                                                    .compareTo(a.updatedAt),
+                                              );
+                                        _showInProgressDialog(
+                                            context, latest.first);
+                                        return;
+                                      }
                                     }
 
                                     // Clear old draft data before starting new submission
@@ -446,6 +459,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     submissionProvider.setBusinessLoanType(
                                       widget.businessLoanType,
                                     );
+                                    submissionProvider.setProfessionalLoanType(
+                                      widget.professionalLoanType,
+                                    );
                                     debugPrint(
                                         'Creating application for loan type: $loanType');
                                     // Create application so step screens have an applicationId
@@ -457,9 +473,16 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                       status: 'draft',
                                     );
                                     if (!mounted) return;
+                                    // Backend may return Personal Loan when we sent it for Professional Loan; keep real type in app.
+                                    final applicationToSet = loanType == 'Professional Loan'
+                                        ? application.copyWith(loanType: 'Professional Loan')
+                                        : application;
+                                    if (loanType == 'Professional Loan') {
+                                      await setProfessionalLoanApplicationId(applicationToSet.id);
+                                    }
                                     context
                                         .read<ApplicationProvider>()
-                                        .setApplication(application);
+                                        .setApplication(applicationToSet);
                                     debugPrint(
                                         'Application created: ${application.id}');
                                     context.go(AppRoutes.step1Selfie);

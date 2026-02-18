@@ -85,6 +85,13 @@ class LoanApplicationService {
     }
   }
 
+  /// Backend currently allows only: Personal Loan, Car Loan, Home Loan, Business Loan, Education Loan.
+  /// Map Professional Loan → Personal Loan so creation succeeds until backend adds Professional Loan.
+  static String _loanTypeForBackend(String loanType) {
+    if (loanType == 'Professional Loan') return 'Personal Loan';
+    return loanType;
+  }
+
   /// Create a new loan application
   Future<LoanApplication> createApplication({
     required String loanType,
@@ -93,10 +100,11 @@ class LoanApplicationService {
     String status = 'draft',
   }) async {
     try {
+      final backendLoanType = _loanTypeForBackend(loanType);
       final response = await _apiClient.post(
         '/api/v1/applications',
         data: {
-          'loanType': loanType,
+          'loanType': backendLoanType,
           if (loanAmount != null) 'loanAmount': loanAmount,
           'currentStep': currentStep,
           'status': status,

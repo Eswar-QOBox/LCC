@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
+import '../utils/developer_mode.dart';
 
 /// Provider to manage the current loan application being worked on
 class ApplicationProvider with ChangeNotifier {
@@ -29,6 +30,19 @@ class ApplicationProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Backend stores Professional Loan as Personal Loan; preserve in-memory Professional Loan.
+  Future<LoanApplication> _preserveProfessionalLoan(LoanApplication fromServer) async {
+    if (fromServer.loanType != 'Personal Loan') return fromServer;
+    if (_currentApplication?.loanType == 'Professional Loan') {
+      return fromServer.copyWith(loanType: 'Professional Loan');
+    }
+    final isStoredAsPro = await isProfessionalLoanApplicationId(fromServer.id);
+    if (isStoredAsPro) {
+      return fromServer.copyWith(loanType: 'Professional Loan');
+    }
+    return fromServer;
+  }
+
   /// Load application by ID
   Future<void> loadApplication(String applicationId) async {
     _isLoading = true;
@@ -37,7 +51,7 @@ class ApplicationProvider with ChangeNotifier {
 
     try {
       final application = await _applicationService.getApplication(applicationId);
-      _currentApplication = application;
+      _currentApplication = await _preserveProfessionalLoan(application);
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -81,8 +95,7 @@ class ApplicationProvider with ChangeNotifier {
         step6Preview: step6Preview,
         step7Submission: step7Submission,
       );
-      
-      _currentApplication = updated;
+      _currentApplication = await _preserveProfessionalLoan(updated);
       _isLoading = false;
       notifyListeners();
     } catch (e) {

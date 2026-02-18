@@ -5,11 +5,15 @@ class DocumentSubmission {
   /// Business subtype for Business Loan (e.g. "proprietor", "partnership", "pvt_limited")
   String? businessLoanType;
 
+  /// Professional subtype for Professional Loan (e.g. "doctor", "ca")
+  String? professionalLoanType;
+
   String? selfiePath;
   AadhaarDocument? aadhaar;
   PanDocument? pan;
   BankStatement? bankStatement;
   BusinessDocuments? businessDocuments;
+  ProfessionalDocuments? professionalDocuments;
   PersonalData? personalData;
   SalarySlips? salarySlips;
   DateTime? submittedAt;
@@ -18,11 +22,13 @@ class DocumentSubmission {
   DocumentSubmission({
     this.loanType,
     this.businessLoanType,
+    this.professionalLoanType,
     this.selfiePath,
     this.aadhaar,
     this.pan,
     this.bankStatement,
     this.businessDocuments,
+    this.professionalDocuments,
     this.personalData,
     this.salarySlips,
     this.submittedAt,
@@ -81,6 +87,25 @@ class DocumentSubmission {
           personalData!.isComplete;
     }
 
+    // Professional Loan flow: requires professional docs + salary slips.
+    final isProfessionalLoan = (loanType ?? '').toLowerCase().contains('professional');
+    final professionalType = (professionalLoanType ?? '').toLowerCase();
+    if (isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca')) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          professionalDocuments != null &&
+          professionalDocuments!.isComplete(professionalType) &&
+          personalData != null &&
+          personalData!.isComplete &&
+          salarySlips != null &&
+          salarySlips!.isComplete;
+    }
+
     // Default (personal loan flow): requires salary slips.
     return selfiePath != null &&
         aadhaar != null &&
@@ -134,6 +159,15 @@ class DocumentSubmission {
       if (businessDocuments == null || !businessDocuments!.isCompleteForPvtLimited) {
         missing.add(
           'Partners / Business Documents (MOA, AOA) (${businessDocuments == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+    }
+    final isProfessionalLoan = (loanType ?? '').toLowerCase().contains('professional');
+    final professionalType = (professionalLoanType ?? '').toLowerCase();
+    if (isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca')) {
+      if (professionalDocuments == null || !professionalDocuments!.isComplete(professionalType)) {
+        missing.add(
+          'Professional Documents (${professionalDocuments == null ? "not uploaded" : "incomplete"})',
         );
       }
     }
@@ -260,6 +294,47 @@ class BusinessDocuments {
   /// - If partners exist (partnership flow), uses `isCompleteForPartnership`.
   /// - Otherwise, uses `isCompleteForProprietor`.
   bool get isComplete => hasPartners ? isCompleteForPartnership : isCompleteForProprietor;
+}
+
+/// Professional Loan documents: Doctor (degree, licence, prescription) or CA (degree, COP, ICAI).
+class ProfessionalDocuments {
+  /// Doctor: Medical degree certificate
+  UploadedDoc? medicalDegree;
+  /// Doctor: Medical licence / registration
+  UploadedDoc? medicalLicence;
+  /// Doctor: Prescription / clinic letterhead
+  UploadedDoc? prescription;
+
+  /// CA: CA degree / certificate
+  UploadedDoc? caDegree;
+  /// CA: Certificate of Practice
+  UploadedDoc? certificateOfPractice;
+  /// CA: ICAI membership certificate
+  UploadedDoc? icaiCertificate;
+
+  ProfessionalDocuments({
+    this.medicalDegree,
+    this.medicalLicence,
+    this.prescription,
+    this.caDegree,
+    this.certificateOfPractice,
+    this.icaiCertificate,
+  });
+
+  bool isComplete(String professionalType) {
+    final t = professionalType.toLowerCase();
+    if (t == 'doctor') {
+      return (medicalDegree?.isComplete ?? false) &&
+          (medicalLicence?.isComplete ?? false) &&
+          (prescription?.isComplete ?? false);
+    }
+    if (t == 'ca') {
+      return (caDegree?.isComplete ?? false) &&
+          (certificateOfPractice?.isComplete ?? false) &&
+          (icaiCertificate?.isComplete ?? false);
+    }
+    return false;
+  }
 }
 
 class PartnerKyc {

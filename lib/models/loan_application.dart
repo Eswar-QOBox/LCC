@@ -38,6 +38,29 @@ class LoanApplication {
     this.submittedAt,
   });
 
+  /// Copy with a different loanType (e.g. when backend returns Personal Loan for Professional Loan).
+  LoanApplication copyWith({String? loanType}) {
+    return LoanApplication(
+      id: id,
+      userId: userId,
+      loanType: loanType ?? this.loanType,
+      currentStep: currentStep,
+      status: status,
+      applicationId: applicationId,
+      loanAmount: loanAmount,
+      step1Selfie: step1Selfie,
+      step2Aadhaar: step2Aadhaar,
+      step3Pan: step3Pan,
+      step4BankStatement: step4BankStatement,
+      step5PersonalData: step5PersonalData,
+      step6Preview: step6Preview,
+      step7Submission: step7Submission,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      submittedAt: submittedAt,
+    );
+  }
+
   factory LoanApplication.fromJson(Map<String, dynamic> json) {
     return LoanApplication(
       id: json['id'] as String,

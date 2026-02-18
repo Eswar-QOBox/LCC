@@ -444,12 +444,17 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       final isBusinessProprietor = isBusiness && businessLoanType == 'proprietor';
       final isBusinessPartnership = isBusiness && businessLoanType == 'partnership';
       final isBusinessPvtLimited = isBusiness && businessLoanType == 'pvt_limited';
+      final isProfessional = loanType.contains('professional');
+      final professionalType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+      final isProfessionalDoctorOrCa = isProfessional && (professionalType == 'doctor' || professionalType == 'ca');
       context.go(
         isBusinessProprietor
             ? AppRoutes.step5BusinessDocs
             : (isBusinessPartnership || isBusinessPvtLimited
                 ? AppRoutes.partnerCount
-                : AppRoutes.step5_1SalarySlips),
+                : isProfessionalDoctorOrCa
+                    ? AppRoutes.step5ProfessionalDocs
+                    : AppRoutes.step5_1SalarySlips),
       );
     }
   }
@@ -485,7 +490,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
                 final isBusinessProprietor =
                     loanType.contains('business') && businessLoanType == 'proprietor';
-                context.go(isBusinessProprietor ? AppRoutes.step5SpousePan : AppRoutes.step3Pan);
+                final isProfessional = loanType.contains('professional');
+                context.go(isBusinessProprietor
+                    ? AppRoutes.step5SpousePan
+                    : (isProfessional ? AppRoutes.step3Pan : AppRoutes.step3Pan));
               },
               showHomeButton: true,
               actions: const [
