@@ -64,7 +64,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   children: [
                     // Title and subtitle
                     Text(
-                      'Application Guide',
+                      'Eligibility Verification Guide',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
@@ -73,7 +73,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Follow these steps for a smooth loan application.',
+                      'Follow these steps to submit your documents for eligibility verification.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontSize: 14,
@@ -127,7 +127,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
+                                  'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your submission.',
                                   textAlign: TextAlign.justify,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: AppTheme.primaryColor.withValues(alpha: 0.8),
@@ -339,7 +339,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         const SizedBox(height: 12),
                         _buildInstructionItem(
                           context,
-                          'Slide to submit at the final step to confirm your application.',
+                          'Slide to submit at the final step to confirm your submission.',
                         ),
                       ],
                     ),
@@ -398,7 +398,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           width: double.infinity,
                           child: SlideToConfirm(
                             label: _isCreatingApplication
-                                ? 'Creating Application...'
+                                ? 'Creating submission...'
                                 : 'Slide to start',
                             height: 60,
                             borderRadius: const BorderRadius.all(Radius.circular(16)),
@@ -492,7 +492,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                           'Error creating application: $e');
                                       PremiumToast.showError(
                                         context,
-                                        'Could not start application. '
+                                        'Could not start submission. '
                                         'Please check your connection and try again.',
                                       );
                                     }
@@ -559,14 +559,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 const SizedBox(height: 12),
                 // Message
                 Text(
-                  'Application is in progress. Please talk to our agent.',
+                  'Submission is in progress. Partner institutions may contact you regarding next steps.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                // Application details
+                // Submission details
                 PremiumCard(
                   padding: const EdgeInsets.all(12),
                   child: Row(

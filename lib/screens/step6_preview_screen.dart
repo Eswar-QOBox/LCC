@@ -593,7 +593,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     if (!appProvider.hasApplication) {
       PremiumToast.showError(
         context,
-        'No application found. Please start a new application.',
+        'No submission found. Please start a new submission.',
       );
       return;
     }

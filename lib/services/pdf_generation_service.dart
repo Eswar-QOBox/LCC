@@ -462,7 +462,7 @@ class PdfGenerationService {
                           pw.SizedBox(height: 15),
                         ],
                         pw.Text(
-                          'JSEE SOLUTIONS LOAN APPLICATION',
+                          'JSEE SOLUTIONS - DOCUMENT SUBMISSION',
                           style: pw.TextStyle(
                             fontSize: 24,
                             fontWeight: pw.FontWeight.bold,
@@ -477,7 +477,7 @@ class PdfGenerationService {
                   
                   // Subtitle
                   pw.Text(
-                    'Application Summary Report',
+                    'Document Submission Summary Report',
                     style: pw.TextStyle(
                       fontSize: 18,
                       fontWeight: pw.FontWeight.bold,
@@ -572,7 +572,7 @@ class PdfGenerationService {
                           pw.Padding(
                             padding: const pw.EdgeInsets.all(10),
                             child: pw.Text(
-                              'Loan Application Summary',
+                              'Document Submission Summary',
                               style: pw.TextStyle(fontSize: 11),
                             ),
                           ),
@@ -584,7 +584,7 @@ class PdfGenerationService {
                   
                   // Footer text
                   pw.Text(
-                    'This is a confidential document containing loan application information.',
+                    'This is a confidential document containing document submission information.',
                     style: pw.TextStyle(
                       fontSize: 10,
                       color: PdfColors.grey700,
@@ -1708,8 +1708,8 @@ class PdfGenerationService {
         try {
           await Share.shareXFiles(
             [XFile.fromData(bytes, mimeType: 'application/pdf', name: fileName)],
-            text: 'My Loan Application Data',
-            subject: 'Loan Application Export',
+            text: 'My Document Submission Data',
+            subject: 'Document Submission Export',
           );
         } catch (e) {
           throw Exception('Failed to share PDF on web. Error: $e');
@@ -1723,8 +1723,8 @@ class PdfGenerationService {
           
           await Share.shareXFiles(
             [XFile(file.path)],
-            text: 'My Loan Application Data',
-            subject: 'Loan Application Export',
+            text: 'My Document Submission Data',
+            subject: 'Document Submission Export',
           );
         } catch (e) {
           throw Exception('Failed to save or share PDF. Error: $e');

@@ -265,7 +265,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Track and manage your loan applications',
+                  'Track and manage your document submissions',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: Colors.white.withValues(alpha: 0.9),
                     fontSize: 13,
@@ -356,7 +356,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       context.go(resolveRouteForDraft(application));
     } catch (e) {
       if (!context.mounted) return;
-      PremiumToast.showError(context, 'Failed to load application: ${e.toString()}');
+      PremiumToast.showError(context, 'Failed to load submission: ${e.toString()}');
     }
   }
 
@@ -631,7 +631,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Tap to continue application',
+                      'Tap to continue submission',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.primary,
                         fontWeight: FontWeight.w600,

@@ -259,14 +259,14 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                           ),
                           const SizedBox(height: 20),
                           Text(
-                            'Download Your Application',
+                            'Download Your Submission',
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Generate a PDF summary of your loan application',
+                            'Generate a PDF summary of your document submission',
                             style: theme.textTheme.bodyMedium,
                             textAlign: TextAlign.center,
                           ),
@@ -574,7 +574,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'The PDF will contain a summary of your application data. Document files are stored securely on our servers.',
+                              'The PDF will contain a summary of your submission data. Document files are stored securely on our servers.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: Colors.blue.shade700,
                               ),

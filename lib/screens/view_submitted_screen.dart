@@ -156,8 +156,8 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                   children: [
                     const SizedBox(height: 20),
                     // Application summary
-                    _sectionTitle('Application'),
-                    _dataRow('Application ID', applicationId),
+                    _sectionTitle('Submission'),
+                    _dataRow('Submission ID', applicationId),
                     _dataRow('Loan Type', loanType),
                     _dataRow('Status', status.toUpperCase()),
                     if (submittedAt != null)
