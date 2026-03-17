@@ -81,7 +81,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
         if (errorStr.contains('isolate') || errorStr.contains('spawn')) {
           errorMessage = 'PDF generation encountered a system error. Please try again or restart the app.';
         } else if (errorStr.contains('permission') || errorStr.contains('access')) {
-          errorMessage = 'Permission denied. Please grant storage permissions and try again.';
+          errorMessage = 'Permission denied or access error. Please try again.';
         } else if (errorStr.contains('network') || errorStr.contains('connection')) {
           errorMessage = 'Network error. Please check your connection and try again.';
         } else {
