@@ -74,7 +74,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
                     ),
                     child: IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new, size: 18),
-                      onPressed: onBackPressed ?? () => Navigator.of(context).pop(),
+                      onPressed: onBackPressed ??
+                          () {
+                            final router = GoRouter.of(context);
+                            if (router.canPop()) {
+                              context.pop();
+                            } else {
+                              context.go(AppRoutes.home);
+                            }
+                          },
                       color: Colors.white,
                     ),
                   )

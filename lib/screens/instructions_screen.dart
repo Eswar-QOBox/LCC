@@ -20,12 +20,17 @@ class InstructionsScreen extends StatefulWidget {
   final String? loanType;
   final String? businessLoanType;
   final String? professionalLoanType;
+  final bool withCoApplicant;
+  /// Co-applicant firm type for Car Loan: 'partnership' | 'pvt_limited' | null.
+  final String? coApplicantFirmType;
 
   const InstructionsScreen({
     super.key,
     this.loanType,
     this.businessLoanType,
     this.professionalLoanType,
+    this.withCoApplicant = false,
+    this.coApplicantFirmType,
   });
 
   @override
@@ -41,6 +46,38 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     final businessLoanType = (widget.businessLoanType ?? '').toLowerCase();
     return loanType.contains('business') && businessLoanType == 'proprietor';
   }
+
+  bool get _isProfessionalLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    final proType = (widget.professionalLoanType ?? '').toLowerCase();
+    return loanType.contains('professional') && (proType == 'doctor' || proType == 'ca');
+  }
+
+  bool get _isStudentLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    return loanType.contains('student');
+  }
+
+  /// Personal loan (includes optional co-applicant / joint application flow).
+  bool get _isPersonalLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    return loanType.contains('personal') &&
+        !_isBusinessProprietor &&
+        !_isProfessionalLoan &&
+        !_isStudentLoan;
+  }
+
+  String get _professionalType => (widget.professionalLoanType ?? '').toLowerCase();
+  bool get _isProfessionalDoctor => _professionalType == 'doctor';
+  bool get _isProfessionalCa => _professionalType == 'ca';
+
+  bool get _isCarLoan => (widget.loanType ?? '').toLowerCase().contains('car');
+  bool get _isCarLoanPartnership =>
+      _isCarLoan && widget.coApplicantFirmType == 'partnership';
+  bool get _isCarLoanPvtLtd =>
+      _isCarLoan && widget.coApplicantFirmType == 'pvt_limited';
+  bool get _isCarLoanFirmCoApplicant =>
+      _isCarLoanPartnership || _isCarLoanPvtLtd;
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +101,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   children: [
                     // Title and subtitle
                     Text(
-                      'Application Guide',
+                      _isProfessionalLoan
+                          ? 'Professional Loan – Application Guide'
+                          : _isStudentLoan
+                              ? 'Student Loan – Application Guide'
+                              : _isCarLoanFirmCoApplicant
+                                  ? 'Car Loan – ${_isCarLoanPartnership ? "Partnership Firm" : "PVT LTD"} Co-applicant'
+                                  : 'Application Guide',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
@@ -73,7 +116,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Follow these steps for a smooth loan application.',
+                      _isProfessionalLoan
+                          ? 'Documents and steps for ${_isProfessionalDoctor ? "Doctor" : "CA"} professional loan.'
+                          : _isStudentLoan
+                              ? 'Documents and steps for student loan.'
+                              : _isCarLoanFirmCoApplicant
+                                  ? 'Firm documents and ${_isCarLoanPartnership ? "Partners" : "Authorized Person"} KYC required. Follow the steps below.'
+                                  : _isPersonalLoan
+                                      ? (widget.withCoApplicant
+                                          ? 'Apply with a co-applicant (joint loan). Follow the steps below.'
+                                          : 'Apply alone. Follow the steps below.')
+                                      : 'Follow these steps for a smooth loan application.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontSize: 14,
@@ -127,7 +180,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
+                                  _isPersonalLoan
+                                      ? (widget.withCoApplicant
+                                          ? 'Step-by-step: 1) Selfie 2) Aadhaar 3) PAN 4) Bank Statement 5) Co-applicant Aadhaar & PAN 6) Salary Slips 7) Personal Details 8) Preview & Submit. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.'
+                                          : 'Step-by-step: 1) Selfie 2) Aadhaar 3) PAN 4) Bank Statement 5) Salary Slips 6) Personal Details 7) Preview & Submit. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.')
+                                      : 'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
                                   textAlign: TextAlign.justify,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: AppTheme.primaryColor.withValues(alpha: 0.8),
@@ -201,17 +258,31 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         _buildDocumentItem(
                           context,
                           icon: Icons.face,
-                          title: _isBusinessProprietor ? 'Selfie (Proprietor)' : 'Selfie/Photo',
+                          title: _isBusinessProprietor
+                              ? 'Selfie (Proprietor)'
+                              : _isProfessionalLoan
+                                  ? 'Selfie (Professional)'
+                                  : _isStudentLoan
+                                      ? 'Selfie (Student)'
+                                      : 'Selfie/Photo',
                           description: _isBusinessProprietor
                               ? 'Clear photo of proprietor'
-                              : 'Passport-style photo with white background',
+                              : _isProfessionalLoan
+                                  ? 'Passport-style photo'
+                                  : 'Passport-style photo with white background',
                           iconColor: const Color(0xFF7C3AED),
                         ),
                         const SizedBox(height: 12),
                         _buildDocumentItem(
                           context,
                           icon: Icons.badge,
-                          title: _isBusinessProprietor ? 'Aadhaar (Proprietor)' : 'Aadhaar Card',
+                          title: _isBusinessProprietor
+                              ? 'Aadhaar (Proprietor)'
+                              : _isProfessionalLoan
+                                  ? 'Aadhaar Card (Professional)'
+                                  : _isStudentLoan
+                                      ? 'Aadhaar Card (Student)'
+                                      : 'Aadhaar Card',
                           description: 'Front and back sides required',
                           iconColor: AppTheme.successColor,
                         ),
@@ -219,7 +290,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         _buildDocumentItem(
                           context,
                           icon: Icons.credit_card,
-                          title: _isBusinessProprietor ? 'PAN (Proprietor)' : 'PAN Card',
+                          title: _isBusinessProprietor
+                              ? 'PAN (Proprietor)'
+                              : _isProfessionalLoan
+                                  ? 'PAN Card (Professional)'
+                                  : _isStudentLoan
+                                      ? 'PAN Card (Student)'
+                                      : 'PAN Card',
                           description: 'Front side required',
                           iconColor: const Color(0xFFF59E0B),
                         ),
@@ -245,21 +322,49 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         _buildDocumentItem(
                           context,
                           icon: Icons.account_balance,
-                          title: 'Bank Statement',
+                          title: _isProfessionalLoan
+                              ? 'Bank Statement (Professional)'
+                              : _isStudentLoan
+                                  ? 'Bank Statement (6 months)'
+                                  : 'Bank Statement',
                           description: 'Last 6 months statement',
                           iconColor: AppTheme.primaryColor,
                         ),
                         const SizedBox(height: 12),
-                        if (!_isBusinessProprietor) ...[
+                        if (_isStudentLoan) ...[
                           _buildDocumentItem(
                             context,
-                            icon: Icons.description,
-                            title: 'Salary Slips',
-                            description: 'Last 3 months for income verification',
+                            icon: Icons.badge_outlined,
+                            title: 'Passport (optional)',
+                            description: 'Photo or PDF, if available',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.school_outlined,
+                            title: 'Admission Letter',
+                            description: 'From your institution (photo or PDF)',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.description_outlined,
+                            title: 'Academic Mark Sheets',
+                            description: 'SSC, Inter, Graduation (photo or PDF)',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.work_outline,
+                            title: 'If working: 3 months payslips + ID card',
+                            description: 'Required only if you are currently working',
                             iconColor: const Color(0xFF0D9488),
                           ),
                           const SizedBox(height: 12),
-                        ] else ...[
+                        ] else if (_isBusinessProprietor) ...[
                           _buildDocumentItem(
                             context,
                             icon: Icons.receipt_long,
@@ -284,12 +389,206 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             iconColor: const Color(0xFF14B8A6),
                           ),
                           const SizedBox(height: 12),
+                        ] else if (_isProfessionalLoan) ...[
+                          if (_isProfessionalDoctor) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.school,
+                              title: 'MBBS / Medical Degree',
+                              description: 'Degree certificate (photo or PDF)',
+                              iconColor: const Color(0xFF0EA5E9),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.badge,
+                              title: 'Medical Licence',
+                              description: 'Council registration (photo or PDF)',
+                              iconColor: const Color(0xFF0EA5E9),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.medical_services,
+                              title: 'Prescription / Letterhead',
+                              description: 'Proof of practice (photo or PDF)',
+                              iconColor: const Color(0xFF0EA5E9),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.receipt_long,
+                              title: 'ITR (Income Tax Return)',
+                              description: 'Last 2 years (photo or PDF)',
+                              iconColor: const Color(0xFF0D9488),
+                            ),
+                            const SizedBox(height: 12),
+                          ] else if (_isProfessionalCa) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.school_outlined,
+                              title: 'CA Degree',
+                              description: 'ICAI qualification (photo or PDF)',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.description,
+                              title: 'Certificate of Practice (COP)',
+                              description: 'Photo or PDF',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.card_membership,
+                              title: 'ICAI Certificate',
+                              description: 'Membership certificate (photo or PDF)',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.receipt_long,
+                              title: 'ITR (Income Tax Return)',
+                              description: 'Last 2 years (photo or PDF)',
+                              iconColor: const Color(0xFF0D9488),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.account_balance,
+                              title: 'Balance Sheet',
+                              description: 'Practice/firm assets, liabilities (photo or PDF)',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.trending_up,
+                              title: 'P&L Statement',
+                              description: 'Profit & Loss (photo or PDF)',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                        ] else if (_isCarLoanFirmCoApplicant) ...[
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.badge,
+                            title: 'PAN Card (Firm)',
+                            description: 'Firm PAN card (photo or PDF)',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.receipt_long,
+                            title: 'GST',
+                            description: 'GST registration certificate',
+                            iconColor: const Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(height: 12),
+                          if (_isCarLoanPartnership) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.description_outlined,
+                              title: 'Partnership Deed',
+                              description: 'Partnership deed document',
+                              iconColor: const Color(0xFF0EA5E9),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (_isCarLoanPvtLtd) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.verified_outlined,
+                              title: 'Incorporation Certificate',
+                              description: 'Company incorporation certificate',
+                              iconColor: const Color(0xFF0EA5E9),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.article_outlined,
+                              title: 'AOA & MOA',
+                              description: 'Articles & Memorandum of Association',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.account_balance,
+                            title: 'Bank Statement (Firm)',
+                            description: 'Last 6 months firm bank statement',
+                            iconColor: AppTheme.primaryColor,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.receipt,
+                            title: 'ITR (Firm)',
+                            description: 'Latest 2 years ITR (firm)',
+                            iconColor: const Color(0xFF0D9488),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.photo_camera,
+                            title: '${_isCarLoanPartnership ? "Partners" : "Authorized Person"} Photo (×2)',
+                            description: 'Two passport-style photos',
+                            iconColor: const Color(0xFF14B8A6),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.credit_card,
+                            title: '${_isCarLoanPartnership ? "Partners" : "Authorized Person"} PAN',
+                            description: 'PAN card (photo or PDF)',
+                            iconColor: const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.home_outlined,
+                            title: 'Address Proof',
+                            description: 'Aadhaar, Passport, Voter ID or Driving Licence',
+                            iconColor: const Color(0xFF7C3AED),
+                          ),
+                          const SizedBox(height: 12),
+                        ] else ...[
+                          if (_isPersonalLoan && widget.withCoApplicant) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.person_add_alt_1,
+                              title: 'Co-applicant Aadhaar & PAN',
+                              description: 'Co-applicant Aadhaar (front & back) and PAN.',
+                              iconColor: const Color(0xFF14B8A6),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.description,
+                            title: 'Salary Slips',
+                            description: 'Last 3 months for income verification',
+                            iconColor: const Color(0xFF0D9488),
+                          ),
+                          const SizedBox(height: 12),
                         ],
                         _buildDocumentItem(
                           context,
                           icon: Icons.person,
-                          title: _isBusinessProprietor ? 'Personal Details (Proprietor)' : 'Personal Information',
-                          description: 'Complete the personal data form',
+                          title: _isBusinessProprietor
+                              ? 'Personal Details (Proprietor)'
+                              : _isProfessionalLoan
+                                  ? 'Personal Details (Professional)'
+                                  : 'Personal Information',
+                          description: _isProfessionalLoan
+                              ? 'KYC, residence, qualification & practice details'
+                              : 'Complete the personal data form',
                           iconColor: const Color(0xFF7C3AED),
                         ),
                       ],
@@ -462,6 +761,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     submissionProvider.setProfessionalLoanType(
                                       widget.professionalLoanType,
                                     );
+                                    submissionProvider.setHasCoApplicant(
+                                      widget.withCoApplicant,
+                                    );
+                                    if (widget.coApplicantFirmType != null) {
+                                      submissionProvider.setCoApplicantFirmType(
+                                        widget.coApplicantFirmType,
+                                      );
+                                    }
                                     debugPrint(
                                         'Creating application for loan type: $loanType');
                                     // Create application so step screens have an applicationId
@@ -473,12 +780,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                       status: 'draft',
                                     );
                                     if (!mounted) return;
-                                    // Backend may return Personal Loan when we sent it for Professional Loan; keep real type in app.
+                                    // Backend may return a different label; keep selected loan type in app.
                                     final applicationToSet = loanType == 'Professional Loan'
                                         ? application.copyWith(loanType: 'Professional Loan')
-                                        : application;
+                                        : loanType == 'Student Loan'
+                                            ? application.copyWith(loanType: 'Student Loan')
+                                            : application;
                                     if (loanType == 'Professional Loan') {
                                       await setProfessionalLoanApplicationId(applicationToSet.id);
+                                    }
+                                    if (loanType == 'Student Loan') {
+                                      await setStudentLoanApplicationId(applicationToSet.id);
                                     }
                                     context
                                         .read<ApplicationProvider>()

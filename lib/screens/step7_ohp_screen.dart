@@ -25,9 +25,13 @@ import '../widgets/premium_toast.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../services/storage_service.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class Step7OhpScreen extends StatefulWidget {
-  const Step7OhpScreen({super.key});
+  const Step7OhpScreen({super.key, this.fromPreview = false});
+
+  /// When true, Back and Continue return to Preview (opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step7OhpScreen> createState() => _Step7OhpScreenState();
@@ -334,7 +338,7 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
     try {
       final uploaded = await _uploadIfNeeded(
         path: _path,
-        documentType: 'custom_applicant_ohp_own_house_proof',
+        documentType: 'applicant_ohp_own_house_proof',
         bytes: kIsWeb ? _bytes : null,
       );
       if (uploaded != null) {
@@ -344,7 +348,11 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
       await context.read<ApplicationProvider>().updateApplication(currentStep: 7);
       if (mounted) {
         PremiumToast.showSuccess(context, 'Own House Proof saved successfully!');
-        context.go(AppRoutes.step5PersonalData);
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+        } else {
+          context.go(AppRoutes.step5PersonalData);
+        }
       }
     } catch (e) {
       if (mounted) PremiumToast.showError(context, 'Failed to save Own House Proof: $e');
@@ -361,7 +369,16 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
     final hasFile = path != null && path.trim().isNotEmpty;
     final previewPath = hasFile ? (_buildFullUrl(path) ?? path) : null;
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (_isSaving) return;
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+          return;
+        }
+        context.go(AppRoutes.step6Msme);
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -370,7 +387,15 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
               title: 'Own House Proof',
               icon: Icons.home_outlined,
               showBackButton: true,
-              onBackPressed: _isSaving ? null : () => context.go(AppRoutes.step6Msme),
+              onBackPressed: _isSaving
+                  ? null
+                  : () {
+                      if (widget.fromPreview) {
+                        context.go(AppRoutes.step6Preview);
+                        return;
+                      }
+                      context.go(AppRoutes.step6Msme);
+                    },
               showHomeButton: true,
               actions: const [
                 PreviewHeaderAction(backRoute: AppRoutes.step7Ohp),
@@ -675,7 +700,8 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(

@@ -19,6 +19,8 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/aadhaar_utils.dart';
+import '../utils/aadhaar_image_masker.dart';
 import 'aadhaar_grid_capture_screen.dart';
 import '../utils/local_file_persist.dart';
 import '../utils/ocr_pdf.dart';
@@ -27,6 +29,8 @@ import '../services/additional_documents_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
+import '../utils/debug_log.dart';
 
 class Step2AadhaarScreen extends StatefulWidget {
   const Step2AadhaarScreen({
@@ -34,6 +38,7 @@ class Step2AadhaarScreen extends StatefulWidget {
     this.fromPreview = false,
     this.isSpouse = false,
     this.isPartner = false,
+    this.isCoApplicant = false,
     this.partnerIndex,
     this.titleOverride,
     this.backRouteOverride,
@@ -50,6 +55,9 @@ class Step2AadhaarScreen extends StatefulWidget {
 
   /// Partnership flow: when true, saves into partner KYC bucket (no personal-data updates).
   final bool isPartner;
+
+  /// Co-applicant (joint loan): when true, saves into submission co-applicant Aadhaar.
+  final bool isCoApplicant;
 
   /// 1-based partner index for partnership flow.
   final int? partnerIndex;
@@ -104,6 +112,53 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   String? _frontOcrIssue;
   String? _backOcrIssue;
 
+  /// Normalized rects (0-1) for first two digit-groups on front image. Used for masking before upload.
+  List<Map<String, double>>? _frontAadhaarNumberRect;
+
+  /// Normalized rects (0-1) for first two digit-groups on back image. Used for masking before upload.
+  List<Map<String, double>>? _backAadhaarNumberRect;
+
+  /// When true, first 8 digits are masked in the uploaded image. When false, original uploaded as-is.
+  bool _maskAadhaar = true;
+
+  /// Returns display/storage string for Aadhaar based on _maskAadhaar.
+  String _aadhaarDisplay(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return '';
+    final digits = raw.replaceAll(RegExp(r'[^\d]'), '');
+    if (digits.length < 4) return raw;
+    if (_maskAadhaar) return AadhaarUtils.maskAadhaar(raw);
+    // Full number with spaces: 1234 5678 9012
+    if (digits.length >= 12) {
+      return '${digits.substring(0, 4)} ${digits.substring(4, 8)} ${digits.substring(8, 12)}';
+    }
+    if (digits.length >= 8) {
+      return '${digits.substring(0, 4)} ${digits.substring(4, 8)} ${digits.substring(8)}';
+    }
+    if (digits.length >= 4) {
+      return '${digits.substring(0, digits.length - 4)} ${digits.substring(digits.length - 4)}';
+    }
+    return digits;
+  }
+
+  /// Parse stored rect data — handles both legacy single-Map and new List format.
+  static List<Map<String, double>>? _parseRectsFromStorage(dynamic raw) {
+    if (raw is List) {
+      final result = <Map<String, double>>[];
+      for (final item in raw) {
+        if (item is Map) {
+          result.add(item.map<String, double>(
+              (k, v) => MapEntry(k.toString(), (v is num) ? v.toDouble() : 0.0)));
+        }
+      }
+      return result.isEmpty ? null : result;
+    }
+    if (raw is Map) {
+      return [raw.map<String, double>(
+          (k, v) => MapEntry(k.toString(), (v is num) ? v.toDouble() : 0.0))];
+    }
+    return null;
+  }
+
   bool _isRemoteOrServerPath(String? path) {
     if (path == null) return false;
     final p = path.trim();
@@ -118,7 +173,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
   }
 
   void _syncOcrFlagsFromProvider() {
-    if (widget.isSpouse || widget.isPartner) return;
+    if (widget.isSpouse || widget.isPartner || widget.isCoApplicant) return;
     final data = context.read<SubmissionProvider>().submission.personalData;
     if (data == null) return;
     final hasName = (data.nameAsPerAadhaar ?? '').trim().isNotEmpty;
@@ -126,7 +181,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     final hasDob = data.dateOfBirth != null;
     final hasAddress = (data.residenceAddress ?? '').trim().isNotEmpty;
 
-    _frontOcrComplete = hasName && hasAadhaar && hasDob;
+    // Consider front complete if DOB is present and at least one of name/aadhaar (per user feedback)
+    _frontOcrComplete = hasDob && (hasName || hasAadhaar);
     _backOcrComplete = hasAddress;
   }
 
@@ -135,7 +191,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
     // Applicant flow: when data came from backend we already set _frontOcrComplete/_backOcrComplete in _loadExistingData.
     // Do not overwrite with _syncOcrFlagsFromProvider (which needs DOB/address in personalData) so we don't ask for OCR again.
-    if (!widget.isSpouse && !widget.isPartner) {
+    if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
       if (_frontOcrComplete && _backOcrComplete) return;
       setState(() {
         _syncOcrFlagsFromProvider();
@@ -204,6 +260,30 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     return false;
   }
 
+  /// Strip Aadhaar card system text from OCR address so only user address is shown.
+  static String? _filterAadhaarAddressForDisplay(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return raw;
+    const systemPatterns = [
+      'GOVERNMENT OF INDIA',
+      'UNIQUE IDENTIFICATION AUTHORITY OF INDIA',
+      'UIDAI',
+      'AADHAAR',
+      'IDENTIFICATION',
+      'Address :',
+      'Address:',
+    ];
+    String out = raw;
+    for (final p in systemPatterns) {
+      out = out.replaceAll(RegExp(RegExp.escape(p), caseSensitive: false), ' ');
+    }
+    out = out
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\s,:\-]+'), '')
+        .replaceAll(RegExp(r'[\s,:\-]+$'), '')
+        .trim();
+    return out.isEmpty ? null : out;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -228,6 +308,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       if (partners.asMap().containsKey(idx) && (partners[idx].extractedAadhaarNumber ?? '').trim().isNotEmpty) {
         _frontAadhaarNumber = partners[idx].extractedAadhaarNumber;
         _backAadhaarNumber = partners[idx].extractedAadhaarNumber;
+      }
+    } else if (widget.isCoApplicant) {
+      _frontPath = provider.submission.coApplicantAadhaar?.frontPath;
+      _backPath = provider.submission.coApplicantAadhaar?.backPath;
+      _frontIsPdf = provider.submission.coApplicantAadhaar?.frontIsPdf ?? false;
+      _backIsPdf = provider.submission.coApplicantAadhaar?.backIsPdf ?? false;
+      final ext = provider.submission.coApplicantExtractedAadhaarNumber;
+      if ((ext ?? '').trim().isNotEmpty) {
+        _frontAadhaarNumber = ext;
+        _backAadhaarNumber = ext;
       }
     } else {
       _frontPath = provider.submission.aadhaar?.frontPath;
@@ -270,8 +360,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final path = files.single.path;
         debugPrint('[Aadhaar] retrieveLostData recovered path=$path');
         if (path.isNotEmpty && mounted) {
-          // Apply as front if missing, else back
-          final isFront = _frontPath == null || _frontPath!.isEmpty;
+          // Assign to the empty slot. When both are empty, assign to BACK so we never
+          // show a single recovered image (often the back side) as the front side.
+          final frontFilled = (_frontPath ?? '').trim().isNotEmpty;
+          final backFilled = (_backPath ?? '').trim().isNotEmpty;
+          final isFront = frontFilled ? false : (backFilled ? true : false);
           final storedPath = await persistLocalPathIfNeeded(
             path,
             preferredExtension: 'jpg',
@@ -324,11 +417,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
         final partnerIndex = widget.partnerIndex ?? 1;
         final frontType = widget.isSpouse
-            ? 'custom_spouse_aadhaar_front'
-            : 'custom_partner_${partnerIndex}_aadhaar_front';
+            ? 'spouse_aadhaar_front'
+            : 'partner_${partnerIndex}_aadhaar_front';
         final backType = widget.isSpouse
-            ? 'custom_spouse_aadhaar_back'
-            : 'custom_partner_${partnerIndex}_aadhaar_back';
+            ? 'spouse_aadhaar_back'
+            : 'partner_${partnerIndex}_aadhaar_back';
 
         final frontDoc = latestDocForType(frontType);
         final backDoc = latestDocForType(backType);
@@ -452,6 +545,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       final addressDifferentFromAadhaar = stepData['addressDifferentFromAadhaar'] as bool? ?? false;
       final frontAadhaarNumber = stepData['frontAadhaarNumber'] as String?;
       final backAadhaarNumber = stepData['backAadhaarNumber'] as String?;
+      final rawRect = stepData['frontAadhaarNumberRect'];
+      final frontAadhaarNumberRect = _parseRectsFromStorage(rawRect);
+      final rawBackRect = stepData['backAadhaarNumberRect'];
+      final backAadhaarNumberRect = _parseRectsFromStorage(rawBackRect);
       final aadhaarName = stepData['aadhaarName'] as String?;
       final aadhaarFrontRawText = stepData['aadhaarFrontRawText'] as String?;
 
@@ -516,7 +613,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           addressDifferentFromAadhaar: addressDifferentFromAadhaar,
         );
         if (frontAadhaarNumber != null && frontAadhaarNumber.trim().isNotEmpty) {
-          provider.updatePersonalDataField(aadhaarNumber: frontAadhaarNumber);
+          provider.updatePersonalDataField(aadhaarNumber: AadhaarUtils.maskAadhaar(frontAadhaarNumber));
         }
         if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
           provider.updatePersonalDataField(fullName: aadhaarName);
@@ -531,6 +628,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           _addressDifferentFromAadhaar = addressDifferentFromAadhaar;
           _frontAadhaarNumber = frontAadhaarNumber;
           _backAadhaarNumber = backAadhaarNumber;
+          _frontAadhaarNumberRect = frontAadhaarNumberRect;
+          _backAadhaarNumberRect = backAadhaarNumberRect;
           _aadhaarName = aadhaarName;
           _aadhaarFrontRawText = aadhaarFrontRawText;
           if (hasFrontOcrFromBackend) {
@@ -615,6 +714,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _backRotation = 0.0;
       _frontAadhaarNumber = null;
       _backAadhaarNumber = null;
+      _frontAadhaarNumberRect = null;
+      _backAadhaarNumberRect = null;
       _aadhaarName = null;
       _aadhaarFrontRawText = null;
       _frontInternalValid = true;
@@ -626,6 +727,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       provider.clearSpouseAadhaar();
     } else if (widget.isPartner) {
       provider.clearPartnerAadhaar(widget.partnerIndex ?? 1);
+    } else if (widget.isCoApplicant) {
+      provider.clearCoApplicantAadhaar();
     } else {
       provider.clearAadhaar();
     }
@@ -638,6 +741,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _frontRotation = 0.0;
       _frontPdfPassword = null;
       _frontAadhaarNumber = null;
+      _frontAadhaarNumberRect = null;
       _aadhaarName = null; // Name comes from front side
       _aadhaarFrontRawText = null;
       _frontInternalValid = true;
@@ -647,6 +751,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       provider.clearSpouseAadhaar();
     } else if (widget.isPartner) {
       provider.clearPartnerAadhaar(widget.partnerIndex ?? 1);
+    } else if (widget.isCoApplicant) {
+      provider.clearCoApplicantAadhaar();
     } else {
       provider.clearAadhaarFront();
     }
@@ -659,6 +765,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _backRotation = 0.0;
       _backPdfPassword = null;
       _backAadhaarNumber = null;
+      _backAadhaarNumberRect = null;
       _backInternalValid = true;
     });
     final provider = context.read<SubmissionProvider>();
@@ -666,6 +773,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       provider.clearSpouseAadhaar();
     } else if (widget.isPartner) {
       provider.clearPartnerAadhaar(widget.partnerIndex ?? 1);
+    } else if (widget.isCoApplicant) {
+      provider.clearCoApplicantAadhaar();
     } else {
       provider.clearAadhaarBack();
     }
@@ -730,6 +839,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           provider.setSpouseAadhaarFront(path, isPdf: false);
         } else if (widget.isPartner) {
           provider.setPartnerAadhaarFront(widget.partnerIndex ?? 1, path, isPdf: false);
+        } else if (widget.isCoApplicant) {
+          provider.setCoApplicantAadhaarFront(path, isPdf: false);
         } else {
           provider.setAadhaarFront(path, isPdf: false);
         }
@@ -746,6 +857,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           provider.setSpouseAadhaarBack(path, isPdf: false);
         } else if (widget.isPartner) {
           provider.setPartnerAadhaarBack(widget.partnerIndex ?? 1, path, isPdf: false);
+        } else if (widget.isCoApplicant) {
+          provider.setCoApplicantAadhaarBack(path, isPdf: false);
         } else {
           provider.setAadhaarBack(path, isPdf: false);
         }
@@ -929,21 +1042,32 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             _backInternalValid = result.isInternallyValid;
           }
         }
-        
+
+        // Store number bounding rects for masking before upload
+        if (result.aadhaarNumberRect != null) {
+          if (isFront) {
+            setState(() => _frontAadhaarNumberRect = result.aadhaarNumberRect!.rects);
+          } else {
+            setState(() => _backAadhaarNumberRect = result.aadhaarNumberRect!.rects);
+          }
+        }
+
         if (isFront) {
           // Front side: Show Aadhaar number, Name, and DOB, auto-fill to personal data
           if (result.hasAadhaarNumber) {
-            extractedData.add('Aadhaar: ${result.aadhaarNumber}');
-            if (!widget.isSpouse && !widget.isPartner) {
-              // Auto-fill Aadhaar number to personal data (applicant only)
-              provider.updatePersonalDataField(aadhaarNumber: result.aadhaarNumber);
+            final display = _aadhaarDisplay(result.aadhaarNumber);
+            extractedData.add('Aadhaar: $display');
+            if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
+              provider.updatePersonalDataField(aadhaarNumber: AadhaarUtils.maskAadhaar(result.aadhaarNumber));
             }
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
             // Store name for PAN cross-validation
             _aadhaarName = result.name;
-            if (!widget.isSpouse && !widget.isPartner) {
+            if (widget.isCoApplicant) {
+              provider.setCoApplicantExtractedNameFromAadhaar(result.name);
+            } else if (!widget.isSpouse && !widget.isPartner) {
               // Auto-fill name to personal data (applicant only)
               provider.updatePersonalDataField(fullName: result.name);
             }
@@ -954,7 +1078,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           if (result.hasDateOfBirth) {
             extractedData.add('DOB: ${result.dateOfBirth}');
-            if (!widget.isSpouse && !widget.isPartner) {
+            if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
               // Auto-fill DOB to personal data (applicant only)
               try {
                 final dobParts = result.dateOfBirth!.split('/');
@@ -976,12 +1100,29 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           if (!result.hasAadhaarNumber) missing.add('Aadhaar Number');
           if (!result.hasName) missing.add('Name');
           if (!result.hasDateOfBirth) missing.add('DOB');
+          // Consider front complete if DOB is present (user said "even if DOB is mentioned it shows incomplete")
+          final frontComplete = missing.isEmpty ||
+              (result.hasDateOfBirth && (result.hasName || result.hasAadhaarNumber));
+          // #region agent log
+          debugAgentLog(
+            location: 'step2_aadhaar_screen.dart:_performAadhaarOCR(front)',
+            message: 'Aadhaar front OCR result',
+            data: {
+              'hasDOB': result.hasDateOfBirth,
+              'hasName': result.hasName,
+              'hasAadhaarNumber': result.hasAadhaarNumber,
+              'missing': missing,
+              'frontComplete': frontComplete,
+            },
+            hypothesisId: 'H-A',
+          );
+          // #endregion
           setState(() {
-            _frontOcrComplete = missing.isEmpty;
+            _frontOcrComplete = frontComplete;
             _frontOcrIssue =
-                missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
+                frontComplete ? null : 'Missing: ${missing.join(', ')}';
           });
-          if (missing.isNotEmpty && mounted) {
+          if (!frontComplete && missing.isNotEmpty && mounted) {
             PremiumToast.showWarning(
               context,
               'Aadhaar front OCR incomplete: ${missing.join(', ')}',
@@ -991,16 +1132,35 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         } else {
           // Back side: Show address, auto-fill address
           if (result.hasAddress) {
-            extractedData.add('Address: ${result.address}');
-            if (!widget.isSpouse && !widget.isPartner) {
-              // Auto-fill address to personal data (applicant only)
-              provider.updatePersonalDataField(address: result.address);
+            final filteredAddress = _filterAadhaarAddressForDisplay(result.address);
+            // #region agent log
+            debugAgentLog(
+              location: 'step2_aadhaar_screen.dart:address(back)',
+              message: 'Address filter result',
+              data: {
+                'rawLength': result.address?.length ?? 0,
+                'filteredLength': filteredAddress?.length ?? 0,
+                'usedFiltered': filteredAddress != null && filteredAddress.length >= 10,
+              },
+              hypothesisId: 'H-B',
+            );
+            // #endregion
+            if (filteredAddress != null && filteredAddress.length >= 10) {
+              extractedData.add('Address: $filteredAddress');
+              if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
+                provider.updatePersonalDataField(address: filteredAddress);
+              }
+            } else {
+              extractedData.add('Address: ${result.address}');
+              if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant && result.address != null && result.address!.trim().length >= 10) {
+                provider.updatePersonalDataField(address: result.address!.trim());
+              }
             }
           }
           
           // Also store the back side Aadhaar number for cross-validation (extracted above)
           if (result.hasAadhaarNumber) {
-            extractedData.add('Aadhaar verified: ${result.aadhaarNumber}');
+            extractedData.add('Aadhaar verified: ${_aadhaarDisplay(result.aadhaarNumber)}');
           }
 
           final missing = <String>[];
@@ -1160,10 +1320,20 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
         }
 
+        // Store number bounding rects for masking before upload
+        if (result.aadhaarNumberRect != null) {
+          if (isFront) {
+            setState(() => _frontAadhaarNumberRect = result.aadhaarNumberRect!.rects);
+          } else {
+            setState(() => _backAadhaarNumberRect = result.aadhaarNumberRect!.rects);
+          }
+        }
+
         if (isFront) {
           if (result.hasAadhaarNumber) {
-            extractedData.add('Aadhaar: ${result.aadhaarNumber}');
-            provider.updatePersonalDataField(aadhaarNumber: result.aadhaarNumber);
+            final display = _aadhaarDisplay(result.aadhaarNumber);
+            extractedData.add('Aadhaar: $display');
+            provider.updatePersonalDataField(aadhaarNumber: AadhaarUtils.maskAadhaar(result.aadhaarNumber));
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
@@ -1194,11 +1364,27 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           if (!result.hasAadhaarNumber) missing.add('Aadhaar Number');
           if (!result.hasName) missing.add('Name');
           if (!result.hasDateOfBirth) missing.add('DOB');
+          final frontComplete = missing.isEmpty ||
+              (result.hasDateOfBirth && (result.hasName || result.hasAadhaarNumber));
+          // #region agent log
+          debugAgentLog(
+            location: 'step2_aadhaar_screen.dart:_performAadhaarOCRFromBytes(front)',
+            message: 'Aadhaar front OCR result',
+            data: {
+              'hasDOB': result.hasDateOfBirth,
+              'hasName': result.hasName,
+              'hasAadhaarNumber': result.hasAadhaarNumber,
+              'missing': missing,
+              'frontComplete': frontComplete,
+            },
+            hypothesisId: 'H-A',
+          );
+          // #endregion
           setState(() {
-            _frontOcrComplete = missing.isEmpty;
-            _frontOcrIssue = missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
+            _frontOcrComplete = frontComplete;
+            _frontOcrIssue = frontComplete ? null : 'Missing: ${missing.join(', ')}';
           });
-          if (missing.isNotEmpty && mounted) {
+          if (!frontComplete && missing.isNotEmpty && mounted) {
             PremiumToast.showWarning(
               context,
               'Aadhaar front OCR incomplete: ${missing.join(', ')}',
@@ -1207,11 +1393,29 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
         } else {
           if (result.hasAddress) {
-            extractedData.add('Address: ${result.address}');
-            provider.updatePersonalDataField(address: result.address);
+            final filteredAddress = _filterAadhaarAddressForDisplay(result.address);
+            // #region agent log
+            debugAgentLog(
+              location: 'step2_aadhaar_screen.dart:address(backBytes)',
+              message: 'Address filter result',
+              data: {
+                'rawLength': result.address?.length ?? 0,
+                'filteredLength': filteredAddress?.length ?? 0,
+                'usedFiltered': filteredAddress != null && filteredAddress.length >= 10,
+              },
+              hypothesisId: 'H-B',
+            );
+            // #endregion
+            if (filteredAddress != null && filteredAddress.length >= 10) {
+              extractedData.add('Address: $filteredAddress');
+              provider.updatePersonalDataField(address: filteredAddress);
+            } else if (result.address != null && result.address!.trim().length >= 10) {
+              extractedData.add('Address: ${result.address}');
+              provider.updatePersonalDataField(address: result.address!.trim());
+            }
           }
           if (result.hasAadhaarNumber) {
-            extractedData.add('Aadhaar verified: ${result.aadhaarNumber}');
+            extractedData.add('Aadhaar verified: ${_aadhaarDisplay(result.aadhaarNumber)}');
           }
           final missing = <String>[];
           if (!result.hasAddress) missing.add('Address');
@@ -1314,6 +1518,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         } else if (widget.isPartner) {
           provider.setPartnerAadhaarFront(widget.partnerIndex ?? 1, path, isPdf: true);
           provider.setPartnerAadhaarBack(widget.partnerIndex ?? 1, path, isPdf: true);
+        } else if (widget.isCoApplicant) {
+          provider.setCoApplicantAadhaarFront(path, isPdf: true);
+          provider.setCoApplicantAadhaarBack(path, isPdf: true);
         } else {
           provider.setAadhaarFront(path, isPdf: true);
           provider.setAadhaarBack(path, isPdf: true);
@@ -1438,19 +1645,50 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
         final provider = context.read<SubmissionProvider>();
         final partnerIndex = widget.partnerIndex ?? 1;
+
+        // Mask front image for spouse/partner when toggle is ON
+        Uint8List? spouseMaskedFrontBytes;
+        if (_maskAadhaar && !_frontIsPdf && _frontAadhaarNumberRect != null) {
+          final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_frontAadhaarNumberRect);
+          if (clampedRects != null) {
+            Uint8List? srcBytes = _frontBytes;
+            if (srcBytes == null && !kIsWeb) {
+              try { srcBytes = await XFile(_frontPath!).readAsBytes(); } catch (_) {}
+            }
+            if (srcBytes != null) {
+              spouseMaskedFrontBytes = await AadhaarImageMasker.maskAadhaarInImage(srcBytes, clampedRects);
+            }
+          }
+        }
+
         final uploadedFront = await uploadAdditional(
           path: _frontPath!,
           documentType: widget.isSpouse
-              ? 'custom_spouse_aadhaar_front'
-              : 'custom_partner_${partnerIndex}_aadhaar_front',
-          bytes: kIsWeb ? _frontBytes : null,
+              ? 'spouse_aadhaar_front'
+              : 'partner_${partnerIndex}_aadhaar_front',
+          bytes: spouseMaskedFrontBytes ?? (kIsWeb ? _frontBytes : null),
         );
+        // Mask back image for spouse/partner when toggle is ON
+        Uint8List? spouseMaskedBackBytes;
+        if (_maskAadhaar && !_backIsPdf && _backAadhaarNumberRect != null) {
+          final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_backAadhaarNumberRect);
+          if (clampedRects != null) {
+            Uint8List? srcBytes = _backBytes;
+            if (srcBytes == null && !kIsWeb) {
+              try { srcBytes = await XFile(_backPath!).readAsBytes(); } catch (_) {}
+            }
+            if (srcBytes != null) {
+              spouseMaskedBackBytes = await AadhaarImageMasker.maskAadhaarInImage(srcBytes, clampedRects);
+            }
+          }
+        }
+
         final uploadedBack = await uploadAdditional(
           path: _backPath!,
           documentType: widget.isSpouse
-              ? 'custom_spouse_aadhaar_back'
-              : 'custom_partner_${partnerIndex}_aadhaar_back',
-          bytes: kIsWeb ? _backBytes : null,
+              ? 'spouse_aadhaar_back'
+              : 'partner_${partnerIndex}_aadhaar_back',
+          bytes: spouseMaskedBackBytes ?? (kIsWeb ? _backBytes : null),
         );
         if (widget.isSpouse) {
           provider.setSpouseAadhaarFront(uploadedFront, isPdf: _frontIsPdf);
@@ -1471,12 +1709,47 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         return true;
       }
 
+      if (widget.isCoApplicant) {
+        final provider = context.read<SubmissionProvider>();
+        provider.setCoApplicantAadhaarFront(_frontPath!, isPdf: _frontIsPdf);
+        provider.setCoApplicantAadhaarBack(_backPath!, isPdf: _backIsPdf);
+        final normalizedNumber = (_frontAadhaarNumber ?? _backAadhaarNumber ?? '')
+            .trim()
+            .replaceAll(RegExp(r'[\s-]'), '');
+        if (normalizedNumber.isNotEmpty) {
+          provider.setCoApplicantExtractedAadhaarNumber(normalizedNumber);
+        }
+        await appProvider.updateApplication(currentStep: 5);
+        return true;
+      }
+
       Map<String, dynamic>? frontUpload;
       Map<String, dynamic>? backUpload;
 
       final currentApp = appProvider.currentApplication;
       final existingData = currentApp?.step2Aadhaar;
       bool isRemote(String? path) => path != null && path.startsWith('http');
+
+      // When mask toggle is ON and we have the number rects, burn black masks
+      // over each digit-group of the first 8 digits into the actual image bytes
+      // so the backend receives an irrecoverably masked image.
+      Uint8List? maskedFrontBytes;
+      if (_maskAadhaar && !_frontIsPdf && _frontAadhaarNumberRect != null) {
+        final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_frontAadhaarNumberRect);
+        if (clampedRects != null) {
+          Uint8List? srcBytes = _frontBytes;
+          if (srcBytes == null && !kIsWeb && _frontPath != null && !isRemote(_frontPath)) {
+            try {
+              srcBytes = await XFile(_frontPath!).readAsBytes();
+            } catch (_) {}
+          }
+          if (srcBytes != null) {
+            debugPrint('[Step2Aadhaar] Masking front image before upload...');
+            maskedFrontBytes = await AadhaarImageMasker.maskAadhaarInImage(srcBytes, clampedRects);
+            debugPrint('[Step2Aadhaar] Masking result: ${maskedFrontBytes != null ? '${maskedFrontBytes.length} bytes' : 'failed (uploading original)'}');
+          }
+        }
+      }
 
       if (isRemote(_frontPath)) {
         frontUpload = existingData?['frontUpload'] as Map<String, dynamic>?;
@@ -1485,7 +1758,27 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           XFile(_frontPath!),
           side: 'front',
           isPdf: _frontIsPdf,
+          maskedBytes: maskedFrontBytes,
         );
+      }
+
+      // Mask back image the same way as front
+      Uint8List? maskedBackBytes;
+      if (_maskAadhaar && !_backIsPdf && _backAadhaarNumberRect != null) {
+        final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_backAadhaarNumberRect);
+        if (clampedRects != null) {
+          Uint8List? srcBytes = _backBytes;
+          if (srcBytes == null && !kIsWeb && _backPath != null && !isRemote(_backPath)) {
+            try {
+              srcBytes = await XFile(_backPath!).readAsBytes();
+            } catch (_) {}
+          }
+          if (srcBytes != null) {
+            debugPrint('[Step2Aadhaar] Masking back image before upload...');
+            maskedBackBytes = await AadhaarImageMasker.maskAadhaarInImage(srcBytes, clampedRects);
+            debugPrint('[Step2Aadhaar] Back masking result: ${maskedBackBytes != null ? '${maskedBackBytes.length} bytes' : 'failed (uploading original)'}');
+          }
+        }
       }
 
       if (_frontIsPdf && _backIsPdf && _frontPath == _backPath && frontUpload != null) {
@@ -1497,6 +1790,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           XFile(_backPath!),
           side: 'back',
           isPdf: _backIsPdf,
+          maskedBytes: maskedBackBytes,
         );
       }
 
@@ -1512,10 +1806,14 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontPdfPassword': _frontPdfPassword,
           'backPdfPassword': _backPdfPassword,
           'savedAt': DateTime.now().toIso8601String(),
-          'frontAadhaarNumber': _frontAadhaarNumber,
-          'backAadhaarNumber': _backAadhaarNumber,
+          'frontAadhaarNumber': _frontAadhaarNumber != null ? AadhaarUtils.maskAadhaar(_frontAadhaarNumber) : null,
+          'backAadhaarNumber': _backAadhaarNumber != null ? AadhaarUtils.maskAadhaar(_backAadhaarNumber) : null,
+          'frontAadhaarNumberRect': _frontAadhaarNumberRect,
+          'backAadhaarNumberRect': _backAadhaarNumberRect,
           'aadhaarName': _aadhaarName,
           'aadhaarFrontRawText': _aadhaarFrontRawText,
+          'frontImageMasked': maskedFrontBytes != null,
+          'backImageMasked': maskedBackBytes != null,
           'addressDifferentFromAadhaar': _addressDifferentFromAadhaar,
           '_internalValidation': {
             'frontDocumentValid': _frontInternalValid,
@@ -1654,7 +1952,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
 
     // Applicant-only strict validations. Spouse/Partner flows should be simple.
-    if (!widget.isSpouse && !widget.isPartner) {
+    if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
       if (!_frontOcrComplete || !_backOcrComplete) {
         final issues = <String>[];
         if (!_frontOcrComplete) {
@@ -1684,7 +1982,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           _showValidationErrorDialog(
             title: 'Aadhaar Number Mismatch',
             message:
-                'The Aadhaar number on the front side ($frontNormalized) does not match the back side ($backNormalized).',
+                'The Aadhaar number on the front side (${_aadhaarDisplay(_frontAadhaarNumber)}) does not match the back side (${_aadhaarDisplay(_backAadhaarNumber)}).',
             instruction:
                 'Please ensure you upload the front and back of the SAME Aadhaar card. Re-capture or re-upload the correct images.',
             icon: Icons.error_outline,
@@ -1695,7 +1993,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     }
 
     // Spouse / Partner: Aadhaar cannot be the same as the main applicant (or, for partners, as another partner)
-    if (widget.isSpouse || widget.isPartner) {
+    if (widget.isSpouse || widget.isPartner || widget.isCoApplicant) {
       final provider = context.read<SubmissionProvider>();
       final mainAadhaar = (provider.submission.personalData?.aadhaarNumber ?? '').trim();
       final spouseOrPartnerAadhaar = (_frontAadhaarNumber ?? _backAadhaarNumber ?? '').trim();
@@ -1704,15 +2002,23 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       if (currentNorm.isEmpty) {
         // No number to validate
       } else {
-        // Cannot be same as main applicant
+        final currentLast4 = currentNorm.length >= 4 ? currentNorm.substring(currentNorm.length - 4) : currentNorm;
+        // Cannot be same as main applicant (main may be stored masked; compare last 4)
         if (mainAadhaar.isNotEmpty) {
           final mainNorm = mainAadhaar.replaceAll(RegExp(r'[\s-]'), '');
-          if (mainNorm == currentNorm) {
+          final mainLast4 = mainNorm.length >= 4 ? mainNorm.substring(mainNorm.length - 4) : mainNorm;
+          if (mainLast4 == currentLast4 && mainLast4.length == 4) {
             _showValidationErrorDialog(
-              title: widget.isSpouse ? 'Spouse Aadhaar Invalid' : 'Partner Aadhaar Invalid',
+              title: widget.isSpouse
+                  ? 'Spouse Aadhaar Invalid'
+                  : widget.isCoApplicant
+                      ? 'Co-applicant Aadhaar Invalid'
+                      : 'Partner Aadhaar Invalid',
               message: widget.isSpouse
                   ? 'The spouse Aadhaar number cannot be the same as the main applicant\'s Aadhaar. Please upload the spouse\'s own Aadhaar card.'
-                  : 'Partner ${widget.partnerIndex ?? 1} Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the partner\'s own Aadhaar card.',
+                  : widget.isCoApplicant
+                      ? 'Co-applicant Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the co-applicant\'s own Aadhaar card.'
+                      : 'Partner ${widget.partnerIndex ?? 1} Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the partner\'s own Aadhaar card.',
               instruction: 'Use a different person\'s Aadhaar card for this step.',
               icon: Icons.person_off_outlined,
             );
@@ -1720,15 +2026,16 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
         }
 
-        // Partner only: cannot be same as any other partner
+        // Partner only: cannot be same as any other partner (other may be masked; compare last 4)
         if (widget.isPartner) {
           final partners = provider.submission.businessDocuments?.partners ?? [];
           final thisIndex = (widget.partnerIndex ?? 1) - 1;
           for (int i = 0; i < partners.length; i++) {
             if (i == thisIndex) continue;
-            final other = (partners[i].extractedAadhaarNumber ?? '').trim();
+            final other = (partners[i].extractedAadhaarNumber ?? '').trim().replaceAll(RegExp(r'[\s-]'), '');
             if (other.isEmpty) continue;
-            if (other == currentNorm) {
+            final otherLast4 = other.length >= 4 ? other.substring(other.length - 4) : other;
+            if (otherLast4 == currentLast4 && otherLast4.length == 4) {
               _showValidationErrorDialog(
                 title: 'Partner Aadhaar Invalid',
                 message: 'Partner ${widget.partnerIndex ?? 1} Aadhaar cannot be the same as Partner ${i + 1}\'s Aadhaar. Each partner must have a unique Aadhaar card.',
@@ -1745,13 +2052,22 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
     if (_isSaving) return;
     final saved = await _saveToBackend();
     if (mounted && saved) {
-      context.go(widget.nextRouteOverride ?? AppRoutes.step3Pan);
+      context.go(widget.nextRouteOverride ??
+          (widget.isCoApplicant ? AppRoutes.coApplicantPan : AppRoutes.step3Pan));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        final back = widget.backRouteOverride ??
+            (widget.isCoApplicant
+                ? AppRoutes.step4BankStatement
+                : (widget.fromPreview ? AppRoutes.step6Preview : AppRoutes.step1Selfie));
+        context.go(back);
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -1761,24 +2077,30 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               title: widget.titleOverride ??
                   (widget.isSpouse
                       ? 'Spouse Aadhaar'
-                      : (widget.isPartner ? 'Partner Aadhaar' : 'Aadhaar Card')),
+                      : widget.isCoApplicant
+                          ? 'Co-applicant Aadhaar'
+                          : (widget.isPartner ? 'Partner Aadhaar' : 'Aadhaar Card')),
               icon: Icons.badge_outlined,
               showBackButton: true,
               onBackPressed: () {
                 final back = widget.backRouteOverride ??
-                    (widget.fromPreview
-                        ? AppRoutes.step6Preview
-                        : AppRoutes.step1Selfie);
+                    (widget.isCoApplicant
+                        ? AppRoutes.step4BankStatement
+                        : (widget.fromPreview
+                            ? AppRoutes.step6Preview
+                            : AppRoutes.step1Selfie));
                 context.go(back);
               },
               showHomeButton: true,
               actions: [
                 PreviewHeaderAction(
-                  backRoute: widget.isSpouse
-                      ? AppRoutes.step4SpouseAadhaar
-                      : (widget.isPartner
-                          ? '${AppRoutes.partnerAadhaar}?i=${widget.partnerIndex ?? 1}'
-                          : AppRoutes.step2Aadhaar),
+                  backRoute: widget.isCoApplicant
+                      ? AppRoutes.coApplicantAadhaar
+                      : (widget.isSpouse
+                          ? AppRoutes.step4SpouseAadhaar
+                          : (widget.isPartner
+                              ? '${AppRoutes.partnerAadhaar}?i=${widget.partnerIndex ?? 1}'
+                              : AppRoutes.step2Aadhaar)),
                 ),
               ],
             ),
@@ -1818,6 +2140,9 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   children: [
                     // Requirements Card
                     _buildRequirementsCard(context),
+                    const SizedBox(height: 16),
+                    // Mask Aadhaar toggle (applicant only; spouse/partner use same preference for consistency)
+                    _buildMaskAadhaarToggle(context),
                     const SizedBox(height: 24),
                     
                     // Show PDF card if PDF mode, otherwise show front/back sections
@@ -1832,7 +2157,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       _buildBackSideSection(context),
 
                       // Address proof toggle (applicant only)
-                      if (!widget.isSpouse && !widget.isPartner) ...[
+                      if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) ...[
                         const SizedBox(height: 16),
                         _buildAddressDifferentToggle(context),
                       ],
@@ -1855,7 +2180,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(
@@ -1976,6 +2302,73 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMaskAadhaarToggle(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.visibility_outlined, size: 22, color: colorScheme.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Mask Aadhaar number',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _maskAadhaar
+                      ? 'First 8 digits will be masked in both uploaded images'
+                      : 'Original images uploaded as-is (no masking)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: _maskAadhaar,
+            onChanged: (value) {
+              setState(() => _maskAadhaar = value);
+              // Always persist masked Aadhaar (RBI compliance); toggle only affects on-screen display
+              if (!widget.isSpouse && !widget.isPartner && !widget.isCoApplicant) {
+                final num = _frontAadhaarNumber ?? _backAadhaarNumber;
+                if (num != null && num.trim().isNotEmpty) {
+                  context.read<SubmissionProvider>().updatePersonalDataField(
+                    aadhaarNumber: AadhaarUtils.maskAadhaar(num),
+                  );
+                }
+              }
+            },
+            activeColor: colorScheme.primary,
+          ),
+        ],
+      ),
     );
   }
 
@@ -2361,41 +2754,41 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
           child: Stack(
-            children: [
-              (path.startsWith('http') && (_authToken == null || (isFront ? _frontImageFailed : _backImageFailed)))
-                  ? ((isFront ? _frontImageFailed : _backImageFailed)
-                      ? const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 64))
-                      : const Center(child: CircularProgressIndicator()))
-                  : Transform.rotate(
-                      angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
-                      child: PlatformImage(
-                        key: ValueKey(path),
-                        imagePath: path,
-                        imageBytes: isFront ? _frontBytes : _backBytes,
-                        fit: BoxFit.contain,
-                        headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+              children: [
+                (path.startsWith('http') && (_authToken == null || (isFront ? _frontImageFailed : _backImageFailed)))
+                    ? ((isFront ? _frontImageFailed : _backImageFailed)
+                        ? const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 64))
+                        : const Center(child: CircularProgressIndicator()))
+                    : Transform.rotate(
+                        angle: (isFront ? _frontRotation : _backRotation) * 3.14159 / 180,
+                        child: PlatformImage(
+                          key: ValueKey(path),
+                          imagePath: path,
+                          imageBytes: isFront ? _frontBytes : _backBytes,
+                          fit: BoxFit.contain,
+                          headers: _authToken != null ? {'Authorization': 'Bearer $_authToken'} : null,
+                        ),
+                      ),
+                  if (canPreview) ...[
+                    Positioned.fill(
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _openAadhaarPreviewDialog(
+                            context,
+                            path: path,
+                            isFront: isFront,
+                          ),
+                        ),
                       ),
                     ),
-              if (canPreview) ...[
-                Positioned.fill(
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _openAadhaarPreviewDialog(
-                        context,
-                        path: path,
-                        isFront: isFront,
-                      ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _tapToPreviewPill(),
                     ),
-                  ),
-                ),
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: _tapToPreviewPill(),
-                ),
+                  ],
               ],
-            ],
           ),
         ),
       ),
@@ -2991,6 +3384,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       _backRotation = 0.0;
       _frontAadhaarNumber = null;
       _backAadhaarNumber = null;
+      _frontAadhaarNumberRect = null;
+      _backAadhaarNumberRect = null;
       _aadhaarName = null;
       _aadhaarFrontRawText = null;
       _frontInternalValid = true;

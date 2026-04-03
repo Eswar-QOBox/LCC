@@ -12,10 +12,29 @@ class DocumentSubmission {
   AadhaarDocument? aadhaar;
   PanDocument? pan;
   BankStatement? bankStatement;
+  /// Co-applicant bank statement (joint personal loan only).
+  BankStatement? coApplicantBankStatement;
   BusinessDocuments? businessDocuments;
   ProfessionalDocuments? professionalDocuments;
+  StudentDocuments? studentDocuments;
   PersonalData? personalData;
   SalarySlips? salarySlips;
+  /// Co-applicant salary slips (joint personal loan only).
+  SalarySlips? coApplicantSalarySlips;
+  /// Co-applicant (joint applicant) for personal loan: when true, co-applicant Aadhaar & PAN required.
+  bool hasCoApplicant = false;
+  AadhaarDocument? coApplicantAadhaar;
+  PanDocument? coApplicantPan;
+  /// Extracted Aadhaar number for co-applicant (for duplicate validation).
+  String? coApplicantExtractedAadhaarNumber;
+  /// Name from co-applicant Aadhaar OCR (for bank / payslip name checks before personal data is filled).
+  String? coApplicantExtractedNameFromAadhaar;
+  /// Co-applicant personal details (when hasCoApplicant is true).
+  CoApplicantPersonalData? coApplicantPersonalData;
+  /// Co-applicant firm type for car loan: 'partnership' | 'pvt_limited' | null (individual).
+  String? coApplicantFirmType;
+  /// Co-applicant firm documents (when coApplicantFirmType is set).
+  CoApplicantFirmDocuments? coApplicantFirmDocuments;
   DateTime? submittedAt;
   SubmissionStatus status;
 
@@ -27,13 +46,27 @@ class DocumentSubmission {
     this.aadhaar,
     this.pan,
     this.bankStatement,
+    this.coApplicantBankStatement,
     this.businessDocuments,
     this.professionalDocuments,
+    this.studentDocuments,
     this.personalData,
     this.salarySlips,
+    this.coApplicantSalarySlips,
+    this.hasCoApplicant = false,
+    this.coApplicantAadhaar,
+    this.coApplicantPan,
+    this.coApplicantExtractedAadhaarNumber,
+    this.coApplicantExtractedNameFromAadhaar,
+    this.coApplicantPersonalData,
+    this.coApplicantFirmType,
+    this.coApplicantFirmDocuments,
     this.submittedAt,
     this.status = SubmissionStatus.inProgress,
   });
+
+  bool get isCoApplicantKycComplete =>
+      (coApplicantAadhaar?.isComplete ?? false) && (coApplicantPan?.isComplete ?? false);
 
   bool get isComplete {
     final isBusinessLoan = (loanType ?? '').toLowerCase().contains('business');
@@ -87,7 +120,7 @@ class DocumentSubmission {
           personalData!.isComplete;
     }
 
-    // Professional Loan flow: requires professional docs + salary slips.
+    // Professional Loan flow (Doctor/CA): requires professional docs only; no salary slips.
     final isProfessionalLoan = (loanType ?? '').toLowerCase().contains('professional');
     final professionalType = (professionalLoanType ?? '').toLowerCase();
     if (isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca')) {
@@ -101,13 +134,27 @@ class DocumentSubmission {
           professionalDocuments != null &&
           professionalDocuments!.isComplete(professionalType) &&
           personalData != null &&
-          personalData!.isComplete &&
-          salarySlips != null &&
-          salarySlips!.isComplete;
+          personalData!.isComplete;
     }
 
-    // Default (personal loan flow): requires salary slips.
-    return selfiePath != null &&
+    // Student Loan flow: requires student docs; no salary slips (unless "if working" then payslips + ID).
+    final isStudentLoan = (loanType ?? '').toLowerCase().contains('student');
+    if (isStudentLoan) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          studentDocuments != null &&
+          studentDocuments!.isComplete &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
+    // Default (personal loan flow): requires salary slips; if co-applicant, their KYC too.
+    final personalBase = selfiePath != null &&
         aadhaar != null &&
         aadhaar!.isComplete &&
         pan != null &&
@@ -118,6 +165,14 @@ class DocumentSubmission {
         personalData!.isComplete &&
         salarySlips != null &&
         salarySlips!.isComplete;
+    if (!hasCoApplicant) return personalBase;
+    return personalBase &&
+        isCoApplicantKycComplete &&
+        coApplicantBankStatement != null &&
+        coApplicantBankStatement!.isComplete &&
+        coApplicantSalarySlips != null &&
+        coApplicantSalarySlips!.isComplete &&
+        (coApplicantPersonalData?.isComplete ?? false);
   }
 
   /// Debug method to check which parts are missing
@@ -171,6 +226,14 @@ class DocumentSubmission {
         );
       }
     }
+    final isStudentLoan = (loanType ?? '').toLowerCase().contains('student');
+    if (isStudentLoan) {
+      if (studentDocuments == null || !studentDocuments!.isComplete) {
+        missing.add(
+          'Student Documents (${studentDocuments == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+    }
     if (personalData == null || !personalData!.isComplete) {
       if (personalData == null) {
         missing.add('Personal Data (not filled)');
@@ -179,7 +242,8 @@ class DocumentSubmission {
         missing.add('Personal Data - Missing: ${missingFields.join(", ")}');
       }
     }
-    if (!(isBusinessLoan && (isProprietor || isPartnership || isPvtLimited))) {
+    final isProfessionalDoctorOrCa = isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca');
+    if (!(isBusinessLoan && (isProprietor || isPartnership || isPvtLimited)) && !isProfessionalDoctorOrCa && !isStudentLoan) {
       if (salarySlips == null || !salarySlips!.isComplete) {
         final count = salarySlips?.uploadedCount ?? 0;
         missing.add(
@@ -187,7 +251,198 @@ class DocumentSubmission {
         );
       }
     }
+    if (hasCoApplicant) {
+      if (!isCoApplicantKycComplete) {
+        if (coApplicantAadhaar == null || !coApplicantAadhaar!.isComplete) {
+          missing.add('Co-applicant Aadhaar (incomplete)');
+        }
+        if (coApplicantPan == null || !coApplicantPan!.isComplete) {
+          missing.add('Co-applicant PAN (incomplete)');
+        }
+      }
+      if (coApplicantBankStatement == null || !coApplicantBankStatement!.isComplete) {
+        missing.add(
+          'Co-applicant Bank Statement (${coApplicantBankStatement == null ? "not uploaded" : "incomplete"})',
+        );
+      }
+      if (coApplicantSalarySlips == null || !coApplicantSalarySlips!.isComplete) {
+        final count = coApplicantSalarySlips?.uploadedCount ?? 0;
+        missing.add(
+          'Co-applicant Salary Slips (${coApplicantSalarySlips == null ? "not uploaded" : "$count/${SalarySlips.requiredSlipCount}"})',
+        );
+      }
+      if (coApplicantPersonalData == null || !coApplicantPersonalData!.isComplete) {
+        missing.add('Co-applicant Personal Details (incomplete)');
+      }
+    }
     return missing;
+  }
+}
+
+/// Co-applicant personal details (name, contact, address).
+class CoApplicantPersonalData {
+  String? nameAsPerAadhaar;
+  DateTime? dateOfBirth;
+  String? panNo;
+  String? aadhaarNumber;
+  String? mobileNumber;
+  String? personalEmailId;
+  String? residenceAddress;
+
+  CoApplicantPersonalData({
+    this.nameAsPerAadhaar,
+    this.dateOfBirth,
+    this.panNo,
+    this.aadhaarNumber,
+    this.mobileNumber,
+    this.personalEmailId,
+    this.residenceAddress,
+  });
+
+  bool get isComplete =>
+      nameAsPerAadhaar != null &&
+      nameAsPerAadhaar!.trim().isNotEmpty &&
+      dateOfBirth != null &&
+      panNo != null &&
+      panNo!.trim().isNotEmpty &&
+      aadhaarNumber != null &&
+      aadhaarNumber!.trim().isNotEmpty &&
+      mobileNumber != null &&
+      mobileNumber!.trim().isNotEmpty &&
+      personalEmailId != null &&
+      personalEmailId!.trim().isNotEmpty &&
+      residenceAddress != null &&
+      residenceAddress!.trim().isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'nameAsPerAadhaar': nameAsPerAadhaar,
+        'dateOfBirth': dateOfBirth?.toUtc().toIso8601String(),
+        'panNo': panNo,
+        'aadhaarNumber': aadhaarNumber,
+        'mobileNumber': mobileNumber,
+        'personalEmailId': personalEmailId,
+        'residenceAddress': residenceAddress,
+      };
+
+  static CoApplicantPersonalData? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final dob = json['dateOfBirth'];
+    return CoApplicantPersonalData(
+      nameAsPerAadhaar: json['nameAsPerAadhaar'] as String?,
+      dateOfBirth: dob != null ? DateTime.tryParse(dob as String) : null,
+      panNo: json['panNo'] as String?,
+      aadhaarNumber: json['aadhaarNumber'] as String?,
+      mobileNumber: json['mobileNumber'] as String?,
+      personalEmailId: json['personalEmailId'] as String?,
+      residenceAddress: json['residenceAddress'] as String?,
+    );
+  }
+}
+
+/// Firm documents for car loan co-applicant (Partnership or PVT LTD).
+class CoApplicantFirmDocuments {
+  String? firmPan;
+  String? gst;
+  String? partnershipDeed;
+  String? incorporationCert;
+  String? aoa;
+  String? moa;
+  String? bankStatement;
+  String? itr1;
+  String? itr2;
+  String? kycPhoto1;
+  String? kycPhoto2;
+  String? kycPan;
+  String? kycAddressProof;
+
+  CoApplicantFirmDocuments({
+    this.firmPan,
+    this.gst,
+    this.partnershipDeed,
+    this.incorporationCert,
+    this.aoa,
+    this.moa,
+    this.bankStatement,
+    this.itr1,
+    this.itr2,
+    this.kycPhoto1,
+    this.kycPhoto2,
+    this.kycPan,
+    this.kycAddressProof,
+  });
+
+  bool get isFirmPanUploaded => firmPan != null && firmPan!.trim().isNotEmpty;
+
+  String? getField(String key) {
+    switch (key) {
+      case 'firm_pan': return firmPan;
+      case 'gst': return gst;
+      case 'partnership_deed': return partnershipDeed;
+      case 'incorporation_cert': return incorporationCert;
+      case 'aoa': return aoa;
+      case 'moa': return moa;
+      case 'bank_statement': return bankStatement;
+      case 'itr_1': return itr1;
+      case 'itr_2': return itr2;
+      case 'kyc_photo_1': return kycPhoto1;
+      case 'kyc_photo_2': return kycPhoto2;
+      case 'kyc_pan': return kycPan;
+      case 'kyc_address_proof': return kycAddressProof;
+      default: return null;
+    }
+  }
+
+  void setField(String key, String? value) {
+    switch (key) {
+      case 'firm_pan': firmPan = value; break;
+      case 'gst': gst = value; break;
+      case 'partnership_deed': partnershipDeed = value; break;
+      case 'incorporation_cert': incorporationCert = value; break;
+      case 'aoa': aoa = value; break;
+      case 'moa': moa = value; break;
+      case 'bank_statement': bankStatement = value; break;
+      case 'itr_1': itr1 = value; break;
+      case 'itr_2': itr2 = value; break;
+      case 'kyc_photo_1': kycPhoto1 = value; break;
+      case 'kyc_photo_2': kycPhoto2 = value; break;
+      case 'kyc_pan': kycPan = value; break;
+      case 'kyc_address_proof': kycAddressProof = value; break;
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'firmPan': firmPan,
+    'gst': gst,
+    'partnershipDeed': partnershipDeed,
+    'incorporationCert': incorporationCert,
+    'aoa': aoa,
+    'moa': moa,
+    'bankStatement': bankStatement,
+    'itr1': itr1,
+    'itr2': itr2,
+    'kycPhoto1': kycPhoto1,
+    'kycPhoto2': kycPhoto2,
+    'kycPan': kycPan,
+    'kycAddressProof': kycAddressProof,
+  };
+
+  static CoApplicantFirmDocuments? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    return CoApplicantFirmDocuments(
+      firmPan: json['firmPan'] as String?,
+      gst: json['gst'] as String?,
+      partnershipDeed: json['partnershipDeed'] as String?,
+      incorporationCert: json['incorporationCert'] as String?,
+      aoa: json['aoa'] as String?,
+      moa: json['moa'] as String?,
+      bankStatement: json['bankStatement'] as String?,
+      itr1: json['itr1'] as String?,
+      itr2: json['itr2'] as String?,
+      kycPhoto1: json['kycPhoto1'] as String?,
+      kycPhoto2: json['kycPhoto2'] as String?,
+      kycPan: json['kycPan'] as String?,
+      kycAddressProof: json['kycAddressProof'] as String?,
+    );
   }
 }
 
@@ -243,6 +498,11 @@ class BusinessDocuments {
         (labourCertificate?.isComplete ?? false);
   }
 
+  /// At least one of GST, Labour licence, or UDYAM / MSME (policy: any one is enough).
+  bool get hasGstLabourOrMsme {
+    return hasGstOrLabour || (msmeCertificate?.isComplete ?? false);
+  }
+
   bool get hasPartners => (partnerCount ?? 0) > 0 || partners.isNotEmpty;
 
   bool get isPartnerKycComplete {
@@ -256,9 +516,7 @@ class BusinessDocuments {
   }
 
   bool get isCommonBusinessDocsComplete {
-    return hasGstOrLabour &&
-        msmeCertificate != null &&
-        msmeCertificate!.isComplete &&
+    return hasGstLabourOrMsme &&
         ownHouseProof != null &&
         ownHouseProof!.isComplete;
   }
@@ -296,7 +554,7 @@ class BusinessDocuments {
   bool get isComplete => hasPartners ? isCompleteForPartnership : isCompleteForProprietor;
 }
 
-/// Professional Loan documents: Doctor (degree, licence, prescription) or CA (degree, COP, ICAI).
+/// Professional Loan documents: Doctor (degree, licence, prescription, ITR) or CA (degree, COP, ICAI, ITR, Balance sheet, P&L).
 class ProfessionalDocuments {
   /// Doctor: Medical degree certificate
   UploadedDoc? medicalDegree;
@@ -312,6 +570,15 @@ class ProfessionalDocuments {
   /// CA: ICAI membership certificate
   UploadedDoc? icaiCertificate;
 
+  /// Both: ITR (Income Tax Return) for last 2 years
+  UploadedDoc? itrYear1;
+  UploadedDoc? itrYear2;
+
+  /// CA only: Balance sheet (assets, liabilities, net worth)
+  UploadedDoc? balanceSheet;
+  /// CA only: P&L (Profit & Loss) statement
+  UploadedDoc? plStatement;
+
   ProfessionalDocuments({
     this.medicalDegree,
     this.medicalLicence,
@@ -319,21 +586,72 @@ class ProfessionalDocuments {
     this.caDegree,
     this.certificateOfPractice,
     this.icaiCertificate,
+    this.itrYear1,
+    this.itrYear2,
+    this.balanceSheet,
+    this.plStatement,
   });
 
   bool isComplete(String professionalType) {
     final t = professionalType.toLowerCase();
+    final itrComplete = (itrYear1?.isComplete ?? false) && (itrYear2?.isComplete ?? false);
     if (t == 'doctor') {
       return (medicalDegree?.isComplete ?? false) &&
           (medicalLicence?.isComplete ?? false) &&
-          (prescription?.isComplete ?? false);
+          (prescription?.isComplete ?? false) &&
+          itrComplete;
     }
     if (t == 'ca') {
       return (caDegree?.isComplete ?? false) &&
           (certificateOfPractice?.isComplete ?? false) &&
-          (icaiCertificate?.isComplete ?? false);
+          (icaiCertificate?.isComplete ?? false) &&
+          itrComplete &&
+          (balanceSheet?.isComplete ?? false) &&
+          (plStatement?.isComplete ?? false);
     }
     return false;
+  }
+}
+
+/// Student Loan documents: PAN, Aadhaar, optional Passport, Admission letter, Mark sheets (SSC, Inter, Graduation), 6 months bank statement; if working: 3 months payslips, ID card.
+class StudentDocuments {
+  UploadedDoc? passport;
+  UploadedDoc? admissionLetter;
+  UploadedDoc? markSheetSsc;
+  UploadedDoc? markSheetInter;
+  UploadedDoc? markSheetGraduation;
+  /// If true, 3 months payslips and ID card are required.
+  bool isWorking;
+  UploadedDoc? payslip1;
+  UploadedDoc? payslip2;
+  UploadedDoc? payslip3;
+  UploadedDoc? idCard;
+
+  StudentDocuments({
+    this.passport,
+    this.admissionLetter,
+    this.markSheetSsc,
+    this.markSheetInter,
+    this.markSheetGraduation,
+    this.isWorking = false,
+    this.payslip1,
+    this.payslip2,
+    this.payslip3,
+    this.idCard,
+  });
+
+  bool get isComplete {
+    // Passport is optional; admission letter and all three mark sheets are required.
+    final base = (admissionLetter?.isComplete ?? false) &&
+        (markSheetSsc?.isComplete ?? false) &&
+        (markSheetInter?.isComplete ?? false) &&
+        (markSheetGraduation?.isComplete ?? false);
+    if (!isWorking) return base;
+    return base &&
+        (payslip1?.isComplete ?? false) &&
+        (payslip2?.isComplete ?? false) &&
+        (payslip3?.isComplete ?? false) &&
+        (idCard?.isComplete ?? false);
   }
 }
 
@@ -381,12 +699,18 @@ class BankStatement {
   String? pdfPassword;
   bool isPdf;
   DateTime? statementDate;
+  /// Account holder name extracted via OCR (approx match with Aadhaar name)
+  String? extractedAccountHolderName;
+  /// True when Aadhaar name words were found in bank statement OCR text; required to proceed.
+  bool? nameMatchesAadhaar;
 
   BankStatement({
     this.pages = const [],
     this.pdfPassword,
     this.isPdf = false,
     this.statementDate,
+    this.extractedAccountHolderName,
+    this.nameMatchesAadhaar,
   });
 
   bool get isComplete => pages.isNotEmpty;
@@ -650,7 +974,6 @@ class PersonalData {
   String? get employmentStatus => occupation;
 
   bool get isComplete {
-    final needsCurrentAddress = addressDifferentFromAadhaar == true;
     return nameAsPerAadhaar != null &&
         nameAsPerAadhaar!.trim().isNotEmpty &&
         dateOfBirth != null &&
@@ -663,16 +986,13 @@ class PersonalData {
         personalEmailId != null &&
         personalEmailId!.trim().isNotEmpty &&
         residenceAddress != null &&
-        residenceAddress!.trim().isNotEmpty &&
-        (!needsCurrentAddress ||
-            (currentResidenceAddress != null &&
-                currentResidenceAddress!.trim().isNotEmpty));
+        residenceAddress!.trim().isNotEmpty;
+    // Current/address-proof address is optional per business rule (electricity bill & address proof not compulsory)
   }
 
   /// Debug method to check which fields are missing
   List<String> getMissingFields() {
     final missing = <String>[];
-    final needsCurrentAddress = addressDifferentFromAadhaar == true;
     if (nameAsPerAadhaar == null || nameAsPerAadhaar!.trim().isEmpty) {
       missing.add('Name as per Aadhaar');
     }
@@ -694,11 +1014,7 @@ class PersonalData {
     if (residenceAddress == null || residenceAddress!.trim().isEmpty) {
       missing.add('Residence Address');
     }
-    if (needsCurrentAddress &&
-        (currentResidenceAddress == null ||
-            currentResidenceAddress!.trim().isEmpty)) {
-      missing.add('Current Residence Address');
-    }
+    // Current residence / address proof is optional (not compulsory per business rule)
     return missing;
   }
 }

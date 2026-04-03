@@ -22,6 +22,7 @@ import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class Step1SelfieScreen extends StatefulWidget {
   const Step1SelfieScreen({super.key});
@@ -552,7 +553,9 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () => context.go(AppRoutes.home),
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
@@ -643,7 +646,8 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         ),
       ),
       bottomNavigationBar: _buildFooter(context),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(

@@ -76,46 +76,52 @@ class FileUploadService {
     }
   }
 
-  /// Upload Aadhaar card (front or back)
+  /// Upload Aadhaar card (front or back).
+  /// When [maskedBytes] is provided, those bytes are uploaded instead of the
+  /// file contents — used when the user chose to mask the Aadhaar image.
   Future<Map<String, dynamic>> uploadAadhaar(
     XFile imageFile, {
     required String side, // 'front' or 'back'
-    bool isPdf = false, 
+    bool isPdf = false,
+    Uint8List? maskedBytes,
   }) async {
     try {
       MultipartFile multipartFile;
-      
-      if (kIsWeb) {
-        // On web, read bytes and use fromBytes
+
+      if (maskedBytes != null) {
+        String filename = imageFile.name;
+        if (filename.isEmpty) {
+          filename = 'aadhaar_masked_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        }
+        multipartFile = MultipartFile.fromBytes(
+          maskedBytes,
+          filename: filename,
+          contentType: DioMediaType.parse('image/jpeg'),
+        );
+      } else if (kIsWeb) {
         final bytes = await imageFile.readAsBytes();
         
-        // Ensure we have a valid filename
         String filename = imageFile.name;
         if (filename.isEmpty) {
           filename = 'aadhaar_${DateTime.now().millisecondsSinceEpoch}';
         }
         
-        // Determine content type and enforce correct extension if isPdf
         String contentType;
         if (isPdf) {
            contentType = 'application/pdf';
            if (!filename.toLowerCase().endsWith('.pdf')) {
-             // Remove existing extension if any wrong one exists
              if (filename.contains('.')) {
                filename = filename.split('.').first;
              }
              filename = '$filename.pdf';
            }
         } else {
-           // Default image handling
            contentType = 'image/jpeg';
            if (filename.toLowerCase().endsWith('.png')) {
              contentType = 'image/png';
            } else if (filename.toLowerCase().endsWith('.pdf')) {
-             // Fallback if isPdf was false but file is pdf
              contentType = 'application/pdf';
            } else if (!filename.toLowerCase().endsWith('.jpg') && !filename.toLowerCase().endsWith('.jpeg')) {
-             // Ensure it has an extension
              filename = '$filename.jpg';
            }
         }
@@ -126,7 +132,6 @@ class FileUploadService {
           contentType: DioMediaType.parse(contentType),
         );
       } else {
-        // On mobile/desktop, use fromFile
         multipartFile = await MultipartFile.fromFile(
           imageFile.path,
           filename: imageFile.name.isNotEmpty

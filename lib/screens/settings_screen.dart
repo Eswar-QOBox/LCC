@@ -242,6 +242,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     context, effectivePersonalData)
                               else
                                 _buildEmptyProfile(context),
+                              const SizedBox(height: 20),
+                              const Divider(height: 1),
+                              const SizedBox(height: 12),
+                              _buildProfileItem(
+                                context,
+                                icon: Icons.info_outline,
+                                label: 'Version',
+                                value: '1.0.0',
+                              ),
                             ],
                           ),
                         );
@@ -316,30 +325,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildPreviousLoansSection(context),
                     const SizedBox(height: 16),
 
-                    // App Settings
-                    PremiumCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'App Preferences',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildSettingItem(
-                            context,
-                            icon: Icons.notifications_outlined,
-                            title: 'Notifications',
-                            subtitle: 'Manage notification preferences',
-                            onTap: () {},
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
                     // Support
                     PremiumCard(
                       child: Column(
@@ -357,15 +342,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             icon: Icons.help_outline,
                             title: 'Help & Support',
                             subtitle: 'Get help and contact support',
-                            onTap: () {},
-                          ),
-                          const Divider(height: 32),
-                          _buildSettingItem(
-                            context,
-                            icon: Icons.info_outline,
-                            title: 'About',
-                            subtitle: 'App version and information',
-                            onTap: () {},
+                            onTap: () => context.push(AppRoutes.support),
                           ),
                         ],
                       ),

@@ -8,11 +8,14 @@ import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../models/document_submission.dart';
 import '../utils/app_routes.dart';
+import '../utils/aadhaar_utils.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
+import '../utils/date_formats.dart';
 import '../widgets/app_header.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 void main() {
   runApp(
@@ -29,7 +32,13 @@ void main() {
 }
 
 class Step5PersonalDataScreen extends StatefulWidget {
-  const Step5PersonalDataScreen({super.key});
+  const Step5PersonalDataScreen({
+    super.key,
+    this.fromPreview = false,
+  });
+
+  /// When true, Back returns to Preview (e.g. when opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step5PersonalDataScreen> createState() =>
@@ -82,7 +91,6 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     },
   );
   
-  final _aadhaarFormatter = FilteringTextInputFormatter.digitsOnly;
   final _phoneFormatter = FilteringTextInputFormatter.digitsOnly;
   
   // Basic Information Controllers
@@ -139,6 +147,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
   final _reference2AddressController = TextEditingController();
   final _reference2ContactController = TextEditingController();
 
+  // Co-applicant Details (when hasCoApplicant)
+  bool _coApplicantDetailsExpanded = false;
+  DateTime? _coApplicantDateOfBirth;
+  final _coApplicantNameController = TextEditingController();
+  final _coApplicantPanController = TextEditingController();
+  final _coApplicantAadhaarController = TextEditingController();
+  final _coApplicantMobileController = TextEditingController();
+  final _coApplicantEmailController = TextEditingController();
+  final _coApplicantAddressController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -190,6 +208,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _reference2NameController.addListener(updateSummary);
     _reference2AddressController.addListener(updateSummary);
     _reference2ContactController.addListener(updateSummary);
+    _coApplicantNameController.addListener(updateSummary);
+    _coApplicantPanController.addListener(updateSummary);
+    _coApplicantAadhaarController.addListener(updateSummary);
+    _coApplicantMobileController.addListener(updateSummary);
+    _coApplicantEmailController.addListener(updateSummary);
+    _coApplicantAddressController.addListener(updateSummary);
   }
 
   void _loadExistingData() {
@@ -240,10 +264,35 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         _reference2NameController.text = stepData['reference2Name'] ?? '';
         _reference2AddressController.text = stepData['reference2Address'] ?? '';
         _reference2ContactController.text = stepData['reference2Contact'] ?? '';
+        final coData = stepData['coApplicantPersonalData'] as Map<String, dynamic>?;
+        if (coData != null) {
+          _coApplicantNameController.text = coData['nameAsPerAadhaar'] ?? '';
+          _coApplicantPanController.text = coData['panNo'] ?? '';
+          _coApplicantAadhaarController.text = coData['aadhaarNumber'] ?? '';
+          _coApplicantMobileController.text = coData['mobileNumber'] ?? '';
+          _coApplicantEmailController.text = coData['personalEmailId'] ?? '';
+          _coApplicantAddressController.text = coData['residenceAddress'] ?? '';
+          if (coData['dateOfBirth'] != null) {
+            _coApplicantDateOfBirth = DateTime.tryParse(coData['dateOfBirth'] as String);
+          }
+        }
       }
       
       // Fallback to provider
       final provider = context.read<SubmissionProvider>();
+      // Load co-applicant personal data when applicable
+      if (provider.submission.hasCoApplicant) {
+        final co = provider.submission.coApplicantPersonalData;
+        if (co != null) {
+          _coApplicantNameController.text = co.nameAsPerAadhaar ?? '';
+          _coApplicantPanController.text = co.panNo ?? '';
+          _coApplicantAadhaarController.text = co.aadhaarNumber ?? '';
+          _coApplicantMobileController.text = co.mobileNumber ?? '';
+          _coApplicantEmailController.text = co.personalEmailId ?? '';
+          _coApplicantAddressController.text = co.residenceAddress ?? '';
+          _coApplicantDateOfBirth = co.dateOfBirth;
+        }
+      }
       final data = provider.submission.personalData;
       if (data != null) {
       _nameAsPerAadhaarController.text = data.nameAsPerAadhaar ?? '';
@@ -291,6 +340,22 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       _reference2NameController.text = data.reference2Name ?? '';
       _reference2AddressController.text = data.reference2Address ?? '';
       _reference2ContactController.text = data.reference2Contact ?? '';
+      }
+
+      // Professional Loan (Doctor/CA): pre-fill occupation, qualification, nationality if empty
+      final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+      final proType = (provider.submission.professionalLoanType ?? '').toLowerCase();
+      if (loanType.contains('professional') && (proType == 'doctor' || proType == 'ca')) {
+        if (_occupationController.text.trim().isEmpty) {
+          _occupationController.text = proType == 'doctor' ? 'Doctor' : 'Chartered Accountant';
+        }
+        if (_educationalQualificationController.text.trim().isEmpty) {
+          _educationalQualificationController.text =
+              proType == 'doctor' ? 'MBBS / MD / MS or equivalent' : 'CA';
+        }
+        if (_nationalityController.text.trim().isEmpty) {
+          _nationalityController.text = 'Indian';
+        }
       }
 
       // Even if backend personal data exists, always prefer doc-extracted values
@@ -377,6 +442,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     _reference2NameController.dispose();
     _reference2AddressController.dispose();
     _reference2ContactController.dispose();
+    _coApplicantNameController.dispose();
+    _coApplicantPanController.dispose();
+    _coApplicantAadhaarController.dispose();
+    _coApplicantMobileController.dispose();
+    _coApplicantEmailController.dispose();
+    _coApplicantAddressController.dispose();
     super.dispose();
   }
 
@@ -408,6 +479,34 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           duration: const Duration(seconds: 2),
           actionLabel: 'Retry',
           onAction: _selectDateOfBirth,
+        );
+      }
+    }
+  }
+
+  Future<void> _selectCoApplicantDateOfBirth() async {
+    if (_isSaving) return;
+    try {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _coApplicantDateOfBirth ?? DateTime.now().subtract(const Duration(days: 365 * 25)),
+        firstDate: DateTime(1900),
+        lastDate: DateTime.now(),
+        helpText: 'Co-applicant Date of Birth',
+        cancelText: 'Cancel',
+        confirmText: 'Select',
+      );
+      if (picked != null && mounted) {
+        setState(() {
+          _coApplicantDateOfBirth = picked;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Unable to select date. Please try again.',
+          duration: const Duration(seconds: 2),
         );
       }
     }
@@ -447,7 +546,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             : _panNoController.text.trim().toUpperCase(),
         aadhaarNumber: _aadhaarNumberController.text.trim().isEmpty
             ? null
-            : _aadhaarNumberController.text.trim().replaceAll(' ', '').replaceAll('-', ''),
+            : AadhaarUtils.maskAadhaar(_aadhaarNumberController.text.trim()),
         mobileNumber: _mobileNumberController.text.trim().isEmpty
             ? null 
             : _mobileNumberController.text.trim(),
@@ -567,6 +666,30 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       // Save to provider
       if (mounted) {
         context.read<SubmissionProvider>().setPersonalData(personalData);
+        final submissionProvider = context.read<SubmissionProvider>();
+        if (submissionProvider.submission.hasCoApplicant) {
+          submissionProvider.updateCoApplicantPersonalDataField(
+            nameAsPerAadhaar: _coApplicantNameController.text.trim().isEmpty
+                ? null
+                : _coApplicantNameController.text.trim(),
+            dateOfBirth: _coApplicantDateOfBirth,
+            panNo: _coApplicantPanController.text.trim().isEmpty
+                ? null
+                : _coApplicantPanController.text.trim().toUpperCase(),
+            aadhaarNumber: _coApplicantAadhaarController.text.trim().isEmpty
+                ? null
+                : AadhaarUtils.maskAadhaar(_coApplicantAadhaarController.text.trim()),
+            mobileNumber: _coApplicantMobileController.text.trim().isEmpty
+                ? null
+                : _coApplicantMobileController.text.trim(),
+            personalEmailId: _coApplicantEmailController.text.trim().isEmpty
+                ? null
+                : _coApplicantEmailController.text.trim().toLowerCase(),
+            residenceAddress: _coApplicantAddressController.text.trim().isEmpty
+                ? null
+                : _coApplicantAddressController.text.trim(),
+          );
+        }
       }
 
       // Save to backend
@@ -622,6 +745,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             'reference2Name': personalData.reference2Name,
             'reference2Address': personalData.reference2Address,
             'reference2Contact': personalData.reference2Contact,
+            'coApplicantPersonalData': submissionProvider.submission.coApplicantPersonalData?.toJson(),
             'savedAt': DateTime.now().toIso8601String(),
           },
         );
@@ -641,11 +765,37 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
             (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
         final isProfessionalLoan = loanType.contains('professional') &&
             (professionalType == 'doctor' || professionalType == 'ca');
-        // Professional flow: Personal Data -> Salary Slips -> Preview. Personal: Personal Data -> Preview.
-        if (isProfessionalLoan) {
-          context.go(AppRoutes.step5_1SalarySlips);
-        } else {
+        final isStudentLoan = loanType.contains('student');
+        final fromSubmission =
+            submissionProvider.submission.salarySlips?.isComplete ?? false;
+        final step4 = appProvider.currentApplication?.step4BankStatement;
+        final uploadedList = step4?['salarySlipsUploaded'] as List<dynamic>?;
+        final slipsList = step4?['salarySlips'] as List<dynamic>?;
+        final fromBackend = (uploadedList != null && uploadedList.length >= SalarySlips.requiredSlipCount) ||
+            (slipsList != null && slipsList.length >= SalarySlips.requiredSlipCount);
+        final salaryComplete = fromSubmission || fromBackend;
+        // When editing from Preview, always return to Preview after save
+        if (widget.fromPreview) {
           context.go(AppRoutes.step6Preview);
+          return;
+        }
+        // Professional: Personal Data -> Preview. Student: require academic docs first, then Preview.
+        // Personal loan: Salary Slips (if needed) -> Preview.
+        if (isStudentLoan) {
+          final studentDocs =
+              submissionProvider.submission.studentDocuments;
+          final studentDocsComplete =
+              studentDocs != null && studentDocs.isComplete;
+          context.go(
+            studentDocsComplete
+                ? AppRoutes.step6Preview
+                : AppRoutes.step5StudentDocs,
+          );
+        } else if (isProfessionalLoan) {
+          context.go(AppRoutes.step6Preview);
+        } else {
+          // Personal loan: go to Preview if salary slips already complete (from submission or backend), else Salary Slips first
+          context.go(salaryComplete ? AppRoutes.step6Preview : AppRoutes.step5_1SalarySlips);
         }
       }
     } catch (e) {
@@ -688,12 +838,63 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     }
   }
 
+  bool _isProfessionalDoctorOrCa(BuildContext context) {
+    final appProvider = context.read<ApplicationProvider>();
+    final submissionProvider = context.read<SubmissionProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final proType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+    return loanType.contains('professional') &&
+        (proType == 'doctor' || proType == 'ca');
+  }
+
+  String? _professionalType(BuildContext context) {
+    final submissionProvider = context.read<SubmissionProvider>();
+    final proType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+    if (proType == 'doctor' || proType == 'ca') return proType;
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isPro = _isProfessionalDoctorOrCa(context);
+    final proType = _professionalType(context);
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (!mounted || !context.mounted || _isSaving) return;
+        try {
+          if (widget.fromPreview) {
+            context.go(AppRoutes.step6Preview);
+            return;
+          }
+          final appProvider = context.read<ApplicationProvider>();
+          final submissionProvider = context.read<SubmissionProvider>();
+          final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+          final businessLoanType =
+              (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+          final professionalLoanType =
+              (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+          final isBusinessLoan = loanType.contains('business') &&
+              (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+          final isProfessionalLoan = loanType.contains('professional') &&
+              (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
+          final isStudentLoan = loanType.contains('student');
+          context.go(
+            isBusinessLoan
+                ? AppRoutes.step7Ohp
+                : isProfessionalLoan
+                    ? AppRoutes.step5ProfessionalDocs
+                    : isStudentLoan
+                        ? AppRoutes.step5StudentDocs
+                        : AppRoutes.step5_1SalarySlips,
+          );
+        } catch (e) {
+          if (Navigator.canPop(context)) Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -706,6 +907,10 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
               onBackPressed: _isSaving ? null : () {
                 if (mounted && context.mounted) {
                   try {
+                    if (widget.fromPreview) {
+                      context.go(AppRoutes.step6Preview);
+                      return;
+                    }
                     final appProvider = context.read<ApplicationProvider>();
                     final submissionProvider = context.read<SubmissionProvider>();
                     final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
@@ -717,12 +922,15 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
                     final isProfessionalLoan = loanType.contains('professional') &&
                         (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
+                    final isStudentLoan = loanType.contains('student');
                     context.go(
                       isBusinessLoan
                           ? AppRoutes.step7Ohp
                           : isProfessionalLoan
                               ? AppRoutes.step5ProfessionalDocs
-                              : AppRoutes.step5_1SalarySlips,
+                              : isStudentLoan
+                                  ? AppRoutes.step5StudentDocs
+                                  : AppRoutes.step5_1SalarySlips,
                     );
                   } catch (e) {
                     if (Navigator.canPop(context)) {
@@ -753,6 +961,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     loanType.contains('business') && (businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
                 final partnerCount =
                     submissionProvider.submission.businessDocuments?.partnerCount ?? 0;
+                final hasCoApplicant = submissionProvider.submission.hasCoApplicant;
 
                 return _buildProgressIndicator(
                   context,
@@ -760,12 +969,16 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       ? 10
                       : (isBusinessPartnership && partnerCount > 0
                           ? (9 + 2 * partnerCount)
-                          : 6),
+                          : hasCoApplicant
+                              ? 11
+                              : 6),
                   totalSteps: isBusinessProprietor
                       ? 10
                       : (isBusinessPartnership && partnerCount > 0
                           ? (10 + 2 * partnerCount)
-                          : 7),
+                          : hasCoApplicant
+                              ? 12
+                              : 7),
                 );
               },
             ),
@@ -779,7 +992,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Info Card
-                      _buildInfoCard(context),
+                      _buildInfoCard(context, isPro: isPro),
                       const SizedBox(height: 16),
                       // Section 1: Basic Information
                       _buildExpandableSection(
@@ -848,19 +1061,22 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               icon: Icons.fingerprint,
                               isRequired: true,
                               inputFormatters: [
-                                _aadhaarFormatter,
-                                LengthLimitingTextInputFormatter(12),
+                                // Allow digits and masked format (xxxx-xxxx-1234)
+                                FilteringTextInputFormatter.allow(RegExp(r'[\dxX\s-]')),
+                                LengthLimitingTextInputFormatter(14),
                               ],
                               keyboardType: TextInputType.number,
                               validator: (value) {
                                 if (value == null || value.trim().isEmpty) {
                                   return 'Please enter Aadhaar number';
                                 }
-                                final aadhaar = value.trim().replaceAll(' ', '').replaceAll('-', '');
-                                if (aadhaar.length != 12) {
+                                final trimmed = value.trim().replaceAll(' ', '').replaceAll('-', '');
+                                // Accept 12 digits or already masked (xxxx-xxxx-1234)
+                                if (AadhaarUtils.isMasked(value.trim())) return null;
+                                if (trimmed.length != 12) {
                                   return 'Aadhaar number must be 12 digits';
                                 }
-                                if (!_aadhaarRegex.hasMatch(aadhaar)) {
+                                if (!_aadhaarRegex.hasMatch(trimmed)) {
                                   return 'Invalid Aadhaar format. Must be 12 digits';
                                 }
                                 return null;
@@ -916,7 +1132,159 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
+                      // Co-applicant Details (when applying with co-applicant)
+                      if (context.watch<SubmissionProvider>().submission.hasCoApplicant) ...[
+                        _buildExpandableSection(
+                          context: context,
+                          title: 'Co-applicant Details',
+                          icon: Icons.person_add_alt_1,
+                          summary: _getCoApplicantSummary(),
+                          isExpanded: _coApplicantDetailsExpanded,
+                          isActive: _coApplicantDetailsExpanded,
+                          onExpansionChanged: () {
+                            setState(() {
+                              _coApplicantDetailsExpanded = !_coApplicantDetailsExpanded;
+                            });
+                          },
+                          expandedContent: Column(
+                            children: [
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantNameController,
+                                label: 'Co-applicant Name as per Aadhaar',
+                                icon: Icons.person_outline,
+                                isRequired: true,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant name';
+                                  }
+                                  if (value.trim().length < 3) {
+                                    return 'Name must be at least 3 characters';
+                                  }
+                                  if (!_nameRegex.hasMatch(value.trim())) {
+                                    return 'Name can only contain letters and spaces';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildCoApplicantDatePickerField(context),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantPanController,
+                                label: 'Co-applicant PAN No',
+                                icon: Icons.credit_card,
+                                isRequired: true,
+                                inputFormatters: [_panFormatter],
+                                textCapitalization: TextCapitalization.characters,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant PAN number';
+                                  }
+                                  final pan = value.trim().toUpperCase();
+                                  if (pan.length != 10) {
+                                    return 'PAN number must be 10 characters';
+                                  }
+                                  if (!_panRegex.hasMatch(pan)) {
+                                    return 'Invalid PAN format. Format: ABCDE1234F';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantAadhaarController,
+                                label: 'Co-applicant Aadhaar No',
+                                icon: Icons.fingerprint,
+                                isRequired: true,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'[\dxX\s-]')),
+                                  LengthLimitingTextInputFormatter(14),
+                                ],
+                                keyboardType: TextInputType.number,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant Aadhaar number';
+                                  }
+                                  final trimmed = value.trim().replaceAll(' ', '').replaceAll('-', '');
+                                  if (AadhaarUtils.isMasked(value.trim())) return null;
+                                  if (trimmed.length != 12) {
+                                    return 'Aadhaar number must be 12 digits';
+                                  }
+                                  if (!_aadhaarRegex.hasMatch(trimmed)) {
+                                    return 'Invalid Aadhaar format. Must be 12 digits';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantMobileController,
+                                label: 'Co-applicant Mobile Number',
+                                icon: Icons.phone_iphone,
+                                isRequired: true,
+                                keyboardType: TextInputType.phone,
+                                inputFormatters: [
+                                  _phoneFormatter,
+                                  LengthLimitingTextInputFormatter(10),
+                                ],
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant mobile number';
+                                  }
+                                  if (value.trim().length != 10) {
+                                    return 'Mobile number must be 10 digits';
+                                  }
+                                  if (!_phoneRegex.hasMatch(value.trim())) {
+                                    return 'Invalid mobile number';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantEmailController,
+                                label: 'Co-applicant Email ID',
+                                icon: Icons.email_outlined,
+                                isRequired: true,
+                                keyboardType: TextInputType.emailAddress,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant email';
+                                  }
+                                  if (!_emailRegex.hasMatch(value.trim())) {
+                                    return 'Please enter a valid email address';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              _buildPremiumTextField(
+                                context,
+                                controller: _coApplicantAddressController,
+                                label: 'Co-applicant Residence Address',
+                                icon: Icons.home_outlined,
+                                isRequired: true,
+                                maxLines: 3,
+                                validator: (value) {
+                                  if (value == null || value.trim().isEmpty) {
+                                    return 'Please enter co-applicant residence address';
+                                  }
+                                  if (value.trim().length < 10) {
+                                    return 'Address must be at least 10 characters';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       // Section 2: Residence Information
                       _buildExpandableSection(
                         context: context,
@@ -994,16 +1362,13 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               _buildPremiumTextField(
                                 context,
                                 controller: _currentResidenceAddressController,
-                                label: 'Current / Address-proof Address',
+                                label: 'Current / Address-proof Address (optional)',
                                 icon: Icons.home_work,
-                                isRequired: true,
+                                isRequired: false,
                                 maxLines: 3,
                                 validator: (value) {
                                   if (!_addressDifferentFromAadhaar) return null;
-                                  if (value == null || value.trim().isEmpty) {
-                                    return 'Please enter your current/address-proof address';
-                                  }
-                                  if (value.trim().length < 10) {
+                                  if (value != null && value.trim().isNotEmpty && value.trim().length < 10) {
                                     return 'Address must be at least 10 characters';
                                   }
                                   return null;
@@ -1033,8 +1398,11 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       ),
                       const SizedBox(height: 16),
                       
-                      // Section 3: Work Info (formerly Company Information)
-                      _buildExpandableSection(
+                      // Section 3: Work Info or Professional Practice Details
+                      if (isPro && proType != null)
+                        _buildProfessionalPracticeSection(context, proType)
+                      else
+                        _buildExpandableSection(
                         context: context,
                         title: 'Work Info',
                         icon: Icons.work_outline,
@@ -1349,7 +1717,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                       ),
                       const SizedBox(height: 16),
                       
-                      // Section 5: Family Information
+                      // Section 5: Family Information (not shown for Professional Loan)
+                      if (!isPro) ...[
                       _buildExpandableSection(
                         context: context,
                         title: 'Family Information',
@@ -1427,11 +1796,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
+                      ],
                       
-                      // Section 6: Reference Details
+                      // Section 6: Reference Details (one reference for Professional)
                       _buildExpandableSection(
                         context: context,
-                        title: 'Two Reference Details',
+                        title: isPro ? 'Reference Details' : 'Two Reference Details',
                         icon: Icons.record_voice_over,
                         summary: _getReferenceInfoSummary(),
                         isExpanded: _referenceInfoExpanded,
@@ -1537,6 +1907,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 ],
                               ),
                             ),
+                            if (!isPro) ...[
                             const SizedBox(height: 16),
                             Container(
                               padding: const EdgeInsets.all(16),
@@ -1632,6 +2003,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                                 ],
                               ),
                             ),
+                            ],
                           ],
                         ),
                       ),
@@ -1645,7 +2017,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         ),
       ),
       bottomNavigationBar: _buildFooter(context),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(
@@ -1660,7 +2033,62 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
     );
   }
 
-  Widget _buildInfoCard(BuildContext context) {
+  Widget _buildProfessionalPracticeSection(BuildContext context, String proType) {
+    final isDoctor = proType == 'doctor';
+    return _buildExpandableSection(
+      context: context,
+      title: isDoctor ? 'Practice / Clinic Details' : 'Practice / Firm Details',
+      icon: isDoctor ? Icons.medical_services : Icons.account_balance,
+      summary: _getWorkInfoSummary(),
+      isExpanded: _workInfoExpanded,
+      isActive: false,
+      onExpansionChanged: () {
+        setState(() {
+          _workInfoExpanded = !_workInfoExpanded;
+        });
+      },
+      expandedContent: Column(
+        children: [
+          _buildPremiumTextField(
+            context,
+            controller: _occupationController,
+            label: 'Occupation',
+            icon: Icons.work,
+            isRequired: false,
+            hintText: isDoctor ? 'Doctor' : 'Chartered Accountant',
+          ),
+          const SizedBox(height: 16),
+          _buildPremiumTextField(
+            context,
+            controller: _educationalQualificationController,
+            label: 'Educational Qualification',
+            icon: Icons.school,
+            isRequired: false,
+            hintText: isDoctor ? 'MBBS / MD / MS or equivalent' : 'CA',
+          ),
+          const SizedBox(height: 16),
+          _buildPremiumTextField(
+            context,
+            controller: _companyNameController,
+            label: isDoctor ? 'Clinic / Practice Name' : 'Firm / Practice Name',
+            icon: Icons.business_center,
+            isRequired: false,
+          ),
+          const SizedBox(height: 16),
+          _buildPremiumTextField(
+            context,
+            controller: _companyAddressController,
+            label: 'Practice Address',
+            icon: Icons.location_city,
+            isRequired: false,
+            maxLines: 3,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(BuildContext context, {bool isPro = false}) {
     final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1701,7 +2129,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Personal Information',
+                  isPro ? 'Professional Loan – Personal Details' : 'Personal Information',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontSize: 20,
@@ -1710,7 +2138,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Please fill in all required fields',
+                  isPro
+                      ? 'KYC, residence, qualification & loan details as per professional loan requirements'
+                      : 'Please fill in all required fields',
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 14,
                     color: const Color(0xFF64748B),
@@ -1914,7 +2344,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                   Expanded(
                     child: Text(
                       _dateOfBirth != null
-                          ? DateFormat('MMMM dd, yyyy').format(_dateOfBirth!)
+                          ? DateFormat(AppDateFormats.dateOnly).format(_dateOfBirth!)
                           : 'Select date',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontSize: 14,
@@ -1954,9 +2384,95 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       parts.add(_personalEmailIdController.text);
     }
     if (_dateOfBirth != null) {
-      parts.add(DateFormat('dd MMM yyyy').format(_dateOfBirth!));
+      parts.add(DateFormat(AppDateFormats.dateOnly).format(_dateOfBirth!));
     }
     return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  String _getCoApplicantSummary() {
+    final parts = <String>[];
+    if (_coApplicantNameController.text.isNotEmpty) {
+      parts.add(_coApplicantNameController.text);
+    }
+    if (_coApplicantPanController.text.isNotEmpty) {
+      parts.add('PAN: ${_coApplicantPanController.text}');
+    }
+    if (_coApplicantMobileController.text.isNotEmpty) {
+      parts.add('Mobile: ${_coApplicantMobileController.text}');
+    }
+    if (_coApplicantEmailController.text.isNotEmpty) {
+      parts.add(_coApplicantEmailController.text);
+    }
+    if (_coApplicantDateOfBirth != null) {
+      parts.add(DateFormat(AppDateFormats.dateOnly).format(_coApplicantDateOfBirth!));
+    }
+    return parts.isEmpty ? 'Not filled' : parts.join(' • ');
+  }
+
+  Widget _buildCoApplicantDatePickerField(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Co-applicant Date of Birth *',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF64748B),
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: _selectCoApplicantDateOfBirth,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: const Color(0xFFE2E8F0),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    color: Colors.grey.shade400,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _coApplicantDateOfBirth != null
+                          ? DateFormat(AppDateFormats.dateOnly).format(_coApplicantDateOfBirth!)
+                          : 'Select date',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 14,
+                        color: _coApplicantDateOfBirth != null
+                            ? const Color(0xFF1E293B)
+                            : Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: Colors.grey.shade400,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   String _getResidenceInfoSummary() {

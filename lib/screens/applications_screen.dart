@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
+import '../utils/developer_mode.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
 import '../providers/application_provider.dart';
@@ -59,9 +60,28 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         status: 'all',
         limit: 100,
       );
-      
+      // Backend normalizes Professional Loan → Personal Loan; restore display type
+      // so routing works. (Education Loan → Student Loan is handled in fromJson.)
+      final restored = <LoanApplication>[];
+      for (final app in apps) {
+        if (app.loanType == AppStrings.loanTypePersonal) {
+          final isPro = await isProfessionalLoanApplicationId(app.id);
+          if (isPro) {
+            restored.add(app.copyWith(loanType: AppStrings.loanTypeProfessional));
+            continue;
+          }
+          final isStudent = await isStudentLoanApplicationId(app.id);
+          if (isStudent) {
+            restored.add(app.copyWith(loanType: 'Student Loan'));
+            continue;
+          }
+          restored.add(app);
+        } else {
+          restored.add(app);
+        }
+      }
       setState(() {
-        _applications = apps;
+        _applications = restored;
         _isLoading = false;
       });
     } catch (e) {
@@ -339,6 +359,14 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
               return AppRoutes.step6Preview;
           }
         }
+        // Student loan: backend step 5 is used after bank save and after academic docs save.
+        // Until personal data exists on the application, resume at academic documents (not personal).
+        final isStudent = (app.loanType).toLowerCase().contains('student');
+        if (isStudent &&
+            app.currentStep == 5 &&
+            (app.step5PersonalData == null || app.step5PersonalData!.isEmpty)) {
+          return AppRoutes.step5StudentDocs;
+        }
         return AppRoutes.getStepRoute(app.currentStep);
       }
 
@@ -392,6 +420,10 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       case AppStrings.loanTypeProfessional:
         loanIcon = Icons.work_outline;
         loanColor = const Color(0xFF0EA5E9);
+        break;
+      case 'Student Loan':
+        loanIcon = Icons.school;
+        loanColor = const Color(0xFFF59E0B);
         break;
       case AppStrings.loanTypeEducation:
         loanIcon = Icons.school;

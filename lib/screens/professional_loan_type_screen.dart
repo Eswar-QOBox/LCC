@@ -7,13 +7,14 @@ import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class ProfessionalLoanTypeScreen extends StatelessWidget {
   const ProfessionalLoanTypeScreen({super.key});
 
   void _goToInstructions(BuildContext context, String professionalLoanType) {
-    context.go(
-      '${AppRoutes.instructions}?loanType=${AppStrings.loanTypeProfessional}&professionalLoanType=$professionalLoanType',
+    context.push(
+      '${AppRoutes.instructions}?loanType=${Uri.encodeComponent(AppStrings.loanTypeProfessional)}&professionalLoanType=${Uri.encodeComponent(professionalLoanType)}',
     );
   }
 
@@ -22,7 +23,9 @@ class ProfessionalLoanTypeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      backRoute: AppRoutes.home,
+      child: Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
       body: SafeArea(
         child: Column(
@@ -82,7 +85,8 @@ class ProfessionalLoanTypeScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _typeCard(

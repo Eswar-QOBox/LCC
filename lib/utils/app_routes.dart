@@ -12,7 +12,8 @@ class AppRoutes {
   static const String businessLoanType = '/business-loan-type';
   static const String professionalLoanType = '/professional-loan-type';
   static const String step5ProfessionalDocs = '/step5-professional-docs';
-  
+  static const String step5StudentDocs = '/step5-student-docs';
+
   // Document Steps
   static const String step1Selfie = '/step1-selfie';
   static const String step2Aadhaar = '/step2-aadhaar';
@@ -20,6 +21,13 @@ class AppRoutes {
   static const String step4SpouseAadhaar = '/step4-spouse-aadhaar';
   static const String step5SpousePan = '/step5-spouse-pan';
   static const String step4BankStatement = '/step4-bank-statement';
+  static const String coApplicantChoice = '/co-applicant-choice';
+  static const String coApplicantAadhaar = '/co-applicant-aadhaar';
+  static const String coApplicantPan = '/co-applicant-pan';
+  static const String coApplicantBankStatement = '/co-applicant-bank-statement';
+  static const String coApplicantSalarySlips = '/co-applicant-salary-slips';
+  static const String coApplicantFirmDocs = '/co-applicant-firm-docs';
+  static const String coApplicantFirmKyc = '/co-applicant-firm-kyc';
   static const String step5PersonalData = '/step5-personal-data';
   static const String step5_1SalarySlips = '/step5-1-salary-slips';
   static const String step5BusinessDocs = '/step5-business-docs';
@@ -39,6 +47,9 @@ class AppRoutes {
   
   // Tools
   static const String loanCalculator = '/loan-calculator';
+
+  // Settings & Support
+  static const String support = '/support';
 
   /// Get the route for a specific step number
   static String getStepRoute(int step) {

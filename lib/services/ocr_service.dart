@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:image/image.dart' as img;
+import 'dart:ui' show Rect;
 
 // Conditional import - only import dart:io on non-web platforms
 import 'dart:io' if (dart.library.html) 'file_helper_stub.dart' as io;
@@ -33,6 +35,25 @@ class OcrService {
         }
         debugPrint('[OcrService] extractAadhaarText InputImage.fromFilePath(imagePath)');
         inputImage = InputImage.fromFilePath(imagePath);
+      }
+
+      // Get image dimensions for normalizing Aadhaar number rect (for preview mask).
+      Uint8List? bytesForSize = imageBytes;
+      if (bytesForSize == null && !kIsWeb) {
+        try {
+          final pathToRead = imagePath.startsWith('file://') ? imagePath.replaceFirst('file://', '') : imagePath;
+          final f = io.File(pathToRead);
+          if (await f.exists()) bytesForSize = await f.readAsBytes();
+        } catch (_) {}
+      }
+      int? imgW;
+      int? imgH;
+      if (bytesForSize != null) {
+        final decoded = img.decodeImage(bytesForSize);
+        if (decoded != null) {
+          imgW = decoded.width;
+          imgH = decoded.height;
+        }
       }
 
       debugPrint('[OcrService] extractAadhaarText creating TextRecognizer');
@@ -729,6 +750,74 @@ class OcrService {
         debugPrint('OCR Results (Aadhaar Back) - Address: $address, Aadhaar: $aadhaarNumber');
       }
 
+      // Find bounding rects for the first two 4-digit groups of EVERY
+      // occurrence of the Aadhaar number on the image. A single big card
+      // (e-Aadhaar / letter format) prints the number on both the front and
+      // back sections, so we must mask all instances — not just the first.
+      AadhaarNumberRect? aadhaarNumberRect;
+      if (aadhaarNumber != null && imgW != null && imgH != null && imgW > 0 && imgH > 0) {
+        final numNorm = aadhaarNumber.replaceAll(RegExp(r'\s+'), '');
+        final iw = imgW;
+        final ih = imgH;
+        final allGroupRects = <Map<String, double>>[];
+
+        for (final block in recognizedText.blocks) {
+          for (final line in block.lines) {
+            final lineNorm = line.text.replaceAll(RegExp(r'\s+'), '');
+            if (lineNorm.contains(numNorm)) {
+              final digitBoxes = <Rect>[];
+              for (final elem in line.elements) {
+                final elemDigits = elem.text.replaceAll(RegExp(r'[^\d]'), '');
+                if (elemDigits.isEmpty) continue;
+                digitBoxes.add(elem.boundingBox);
+              }
+
+              if (digitBoxes.length >= 2) {
+                // One rect per digit-group — mask groups 1 and 2 individually.
+                // Trim each group's right edge to the midpoint of the gap before
+                // the next group so the mask never bleeds into the next digit.
+                for (var i = 0; i < 2; i++) {
+                  final box = digitBoxes[i];
+                  double rightEdge = box.right;
+                  if (i + 1 < digitBoxes.length) {
+                    final nextLeft = digitBoxes[i + 1].left;
+                    final gap = nextLeft - box.right;
+                    if (gap > 0) {
+                      rightEdge = box.right + gap * 0.15;
+                    } else {
+                      rightEdge = box.right - box.width * 0.03;
+                    }
+                  }
+                  allGroupRects.add({
+                    'left': box.left / iw,
+                    'top': box.top / ih,
+                    'right': rightEdge / iw,
+                    'bottom': box.bottom / ih,
+                  });
+                }
+              } else {
+                // Fallback: split proportionally into two halves of the first 8/12.
+                final box = line.boundingBox;
+                final groupW = box.width * (4 / 12);
+                final r1 = Rect.fromLTWH(box.left, box.top, groupW, box.height);
+                final r2 = Rect.fromLTWH(box.left + groupW, box.top, groupW, box.height);
+                allGroupRects.addAll([
+                  {'left': r1.left / iw, 'top': r1.top / ih, 'right': r1.right / iw, 'bottom': r1.bottom / ih},
+                  {'left': r2.left / iw, 'top': r2.top / ih, 'right': r2.right / iw, 'bottom': r2.bottom / ih},
+                ]);
+              }
+              // Don't break — continue scanning for more occurrences of the
+              // same number elsewhere on the image (e.g. big single-card).
+            }
+          }
+        }
+
+        if (allGroupRects.isNotEmpty) {
+          aadhaarNumberRect = AadhaarNumberRect(allGroupRects);
+          debugPrint('Aadhaar number rects (${allGroupRects.length} groups across all occurrences): $allGroupRects');
+        }
+      }
+
       return AadhaarOcrResult(
         success: true,
         aadhaarNumber: aadhaarNumber,
@@ -736,6 +825,7 @@ class OcrService {
         address: address,
         name: name,
         fullText: recognizedText.text,
+        aadhaarNumberRect: aadhaarNumberRect,
         internalDocumentValid: internalDocumentValid,
       );
     } catch (e, st) {
@@ -800,7 +890,7 @@ class OcrService {
 
       // Extract PAN number (format: ABCDE1234F)
       String? panNumber;
-      final panRegex = RegExp(r'\b[A-Z]{5}\d{4}[A-Z]\b');
+      final panRegex = RegExp(r'[A-Z]{5}\d{4}[A-Z]');
       
       for (final textBlock in recognizedText.blocks) {
         final match = panRegex.firstMatch(textBlock.text.replaceAll(' ', '').toUpperCase());
@@ -808,6 +898,12 @@ class OcrService {
           panNumber = match.group(0);
           break;
         }
+      }
+      // Fallback: search full recognized text (e.g. when PAN appears in one long line)
+      if (panNumber == null) {
+        final full = recognizedText.text.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+        final match = panRegex.firstMatch(full);
+        if (match != null) panNumber = match.group(0);
       }
 
       // Extract Name + Father's/Parent name from OCR lines (label-based, more reliable than "first uppercase block")
@@ -831,6 +927,303 @@ class OcrService {
         success: false,
         errorMessage: 'Failed to extract text: ${e.toString()}',
         internalDocumentValid: false,
+      );
+    }
+  }
+
+  /// Inclusive calendar months from [start] through [end] as `year * 100 + month`.
+  static Set<int> _monthKeysForStatementPeriod(DateTime start, DateTime end) {
+    final keys = <int>{};
+    var y = start.year;
+    var m = start.month;
+    final lastKey = end.year * 100 + end.month;
+    for (var i = 0; i < 18; i++) {
+      final key = y * 100 + m;
+      if (key > lastKey) break;
+      keys.add(key);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+    }
+    return keys;
+  }
+
+  /// Month+year keys found in [text] (same patterns as bank-statement validation).
+  static Set<int> _extractMonthKeysFromBankStatementOcr(String text) {
+    final out = <int>{};
+    final upper = text.toUpperCase();
+
+    const monthMap = <String, int>{
+      'JAN': 1,
+      'FEB': 2,
+      'MAR': 3,
+      'APR': 4,
+      'MAY': 5,
+      'JUN': 6,
+      'JUL': 7,
+      'AUG': 8,
+      'SEP': 9,
+      'OCT': 10,
+      'NOV': 11,
+      'DEC': 12,
+    };
+
+    final monthNameRe = RegExp(
+      r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[\s\-/.,]*(20\d{2})\b',
+      caseSensitive: false,
+    );
+    for (final match in monthNameRe.allMatches(upper)) {
+      final mon = match.group(1)?.substring(0, 3).toUpperCase();
+      final yr = int.tryParse(match.group(2) ?? '');
+      if (mon == null || yr == null) continue;
+      final mm = monthMap[mon];
+      if (mm == null) continue;
+      out.add(yr * 100 + mm);
+    }
+
+    final monthNumRe = RegExp(r'\b(0?[1-9]|1[0-2])[\/\-](20\d{2})\b');
+    for (final match in monthNumRe.allMatches(upper)) {
+      final mm = int.tryParse(match.group(1) ?? '');
+      final yy = int.tryParse(match.group(2) ?? '');
+      if (mm == null || yy == null) continue;
+      out.add(yy * 100 + mm);
+    }
+
+    return out;
+  }
+
+  /// Keeps OCR fragments that have no month/year, or at least one month in [allowedKeys].
+  static bool _keepBankStatementOcrFragment(String fragment, Set<int> allowedKeys) {
+    final keys = _extractMonthKeysFromBankStatementOcr(fragment);
+    if (keys.isEmpty) return true;
+    return keys.any(allowedKeys.contains);
+  }
+
+  /// Drops lines whose only detected months fall outside the required statement period.
+  static String _filterBankStatementOcrTextByPeriod(
+    String fullText,
+    DateTime periodStart,
+    DateTime periodEnd,
+  ) {
+    final allowed = _monthKeysForStatementPeriod(periodStart, periodEnd);
+    final kept = <String>[];
+    for (final raw in fullText.split(RegExp(r'[\r\n]+'))) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      if (_keepBankStatementOcrFragment(line, allowed)) {
+        kept.add(line);
+      }
+    }
+    return kept.join('\n');
+  }
+
+  /// Extract account holder name from bank statement image.
+  /// Uses [aadhaarNameReference] for approximate matching when provided.
+  /// When [statementPeriodStart] and [statementPeriodEnd] are set, name extraction
+  /// and Aadhaar matching use only OCR lines that belong to that period (or lines
+  /// with no parseable month, e.g. headers / account holder labels).
+  /// Works with image path or bytes (path not available on web; ML Kit is mobile-only).
+  static Future<BankStatementOcrResult> extractBankStatementName(
+    String imagePath, {
+    Uint8List? imageBytes,
+    String? aadhaarNameReference,
+    DateTime? statementPeriodStart,
+    DateTime? statementPeriodEnd,
+  }) async {
+    try {
+      if (kIsWeb) {
+        return BankStatementOcrResult(
+          success: false,
+          errorMessage: 'Bank statement OCR not supported on web',
+        );
+      }
+      InputImage inputImage;
+      if (imageBytes != null) {
+        final tempFile = await _createTempFile(imageBytes);
+        inputImage = InputImage.fromFilePath(tempFile.path);
+      } else {
+        inputImage = InputImage.fromFilePath(imagePath);
+      }
+
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+      textRecognizer.close();
+
+      final fullText = recognizedText.text;
+      debugPrint('=== Bank Statement OCR Full Text ===');
+      debugPrint(fullText);
+      debugPrint('=== End Bank Statement OCR ===');
+
+      final Set<int>? allowedMonthKeys;
+      final String textForAnalysis;
+      if (statementPeriodStart != null && statementPeriodEnd != null) {
+        final start = statementPeriodStart;
+        final end = statementPeriodEnd;
+        allowedMonthKeys = _monthKeysForStatementPeriod(start, end);
+        textForAnalysis = _filterBankStatementOcrTextByPeriod(fullText, start, end);
+      } else {
+        allowedMonthKeys = null;
+        textForAnalysis = fullText;
+      }
+
+      if (allowedMonthKeys != null && textForAnalysis.trim().isEmpty) {
+        debugPrint(
+            '[BankStatement OCR] Period filter removed all lines; using full text for analysis.');
+      }
+      final analysisSource =
+          textForAnalysis.trim().isEmpty ? fullText : textForAnalysis;
+
+      final bannedUpper = <String>[
+        'BANK', 'ACCOUNT', 'STATEMENT', 'BALANCE', 'DEBIT', 'CREDIT',
+        'TRANSACTION', 'DATE', 'NARRATIVE', 'REFERENCE', 'CUSTOMER',
+        'ADDRESS', 'IFSC', 'BRANCH', 'MOBILE', 'EMAIL',
+      ];
+
+      bool looksLikePersonName(String s) {
+        final t = s.trim();
+        if (t.length < 4 || t.length > 50) return false;
+        if (RegExp(r'\d{4,}').hasMatch(t)) return false;
+        if (!RegExp(r'^[A-Za-z.\s]+$').hasMatch(t)) return false;
+        final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        if (words.length < 2 || words.length > 6) return false;
+        final upper = t.toUpperCase();
+        for (final b in bannedUpper) {
+          if (upper.contains(b)) return false;
+        }
+        return true;
+      }
+
+      int scoreNameCandidate(String s, [String? reference]) {
+        final t = s.trim();
+        int score = 0;
+        final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+        if (words.length >= 2 && words.length <= 4) score += 3;
+        if (reference != null && reference.trim().isNotEmpty) {
+          final refWords = reference.toUpperCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toSet();
+          final candWords = t.toUpperCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toSet();
+          final matches = refWords.intersection(candWords).length;
+          if (matches >= 1) score += 5;
+          if (matches >= 2) score += 5;
+        }
+        return score;
+      }
+
+      final lines = analysisSource
+          .split(RegExp(r'[\r\n]+'))
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty)
+          .toList();
+
+      String? best;
+      int bestScore = -1;
+      for (final line in lines) {
+        if (!looksLikePersonName(line)) continue;
+        final s = scoreNameCandidate(line, aadhaarNameReference);
+        if (s > bestScore) {
+          bestScore = s;
+          best = line;
+        }
+      }
+      if (best == null) {
+        for (final block in recognizedText.blocks) {
+          final text = block.text.trim();
+          if (text.isEmpty) continue;
+          if (allowedMonthKeys != null &&
+              !_keepBankStatementOcrFragment(text, allowedMonthKeys)) {
+            continue;
+          }
+          if (!looksLikePersonName(text)) continue;
+          final s = scoreNameCandidate(text, aadhaarNameReference);
+          if (s > bestScore) {
+            bestScore = s;
+            best = text;
+          }
+        }
+      }
+
+      // Check if Aadhaar name words appear in period-relevant statement text only.
+      final nameMatchesAadhaar = aadhaarNameReference != null &&
+          aadhaarNameReference.trim().isNotEmpty &&
+          _aadhaarNameWordsFoundInBankStatementText(
+              aadhaarNameReference.trim(), analysisSource);
+
+      debugPrint(
+          'Bank Statement OCR - extracted: $best, nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
+      return BankStatementOcrResult(
+        success: true,
+        accountHolderName: best,
+        fullText: fullText,
+        nameMatchesAadhaar: nameMatchesAadhaar,
+      );
+    } catch (e) {
+      debugPrint('Bank Statement OCR Error: $e');
+      return BankStatementOcrResult(
+        success: false,
+        errorMessage: 'Failed to extract: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Returns true if words from [aadhaarName] (from Aadhaar card) appear in
+  /// [bankStatementText] (OCR text). Used to verify account holder name.
+  static bool _aadhaarNameWordsFoundInBankStatementText(
+      String aadhaarName, String bankStatementText) {
+    final nameWords = aadhaarName
+        .split(RegExp(r'\s+'))
+        .map((w) => w.trim().toUpperCase())
+        .where((w) => w.length >= 2)
+        .toList();
+    if (nameWords.isEmpty) return false;
+    final textUpper = bankStatementText.toUpperCase();
+    for (final word in nameWords) {
+      if (word.isEmpty) continue;
+      if (!textUpper.contains(word)) {
+        debugPrint('Bank statement name check: word "$word" not found in text');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Extract full text from any document image (e.g. professional loan docs).
+  /// Uses same ML Kit OCR as Aadhaar/PAN/bank statement. Supports image path or bytes.
+  /// For PDFs, render first page to image bytes elsewhere and pass imageBytes.
+  static Future<DocumentOcrResult> extractDocumentText(
+    String imagePath, {
+    Uint8List? imageBytes,
+  }) async {
+    try {
+      if (kIsWeb) {
+        return DocumentOcrResult(
+          success: false,
+          errorMessage: 'Document OCR is not supported on web',
+        );
+      }
+      InputImage inputImage;
+      if (imageBytes != null) {
+        final tempFile = await _createTempFile(imageBytes);
+        inputImage = InputImage.fromFilePath(tempFile.path);
+      } else {
+        inputImage = InputImage.fromFilePath(imagePath);
+      }
+      final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+      final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
+      textRecognizer.close();
+      final fullText = recognizedText.text;
+      debugPrint('=== Document OCR Full Text ===');
+      debugPrint(fullText.isEmpty ? '(empty)' : fullText);
+      debugPrint('=== End Document OCR ===');
+      return DocumentOcrResult(
+        success: true,
+        fullText: fullText.isEmpty ? null : fullText,
+      );
+    } catch (e) {
+      debugPrint('Document OCR Error: $e');
+      return DocumentOcrResult(
+        success: false,
+        errorMessage: 'Failed to extract text: ${e.toString()}',
       );
     }
   }
@@ -1082,6 +1475,60 @@ class OcrService {
   }
 }
 
+/// Normalized rects (0-1) for each masked digit-group of the Aadhaar number.
+/// Aadhaar is printed as "XXXX XXXX XXXX" — we store one rect per group to mask
+/// (typically the first two groups). Each rect is {left, top, right, bottom}.
+class AadhaarNumberRect {
+  /// Individual group rects (each normalized 0-1).
+  final List<Map<String, double>> rects;
+
+  const AadhaarNumberRect(this.rects);
+
+  /// Backward-compatible single-rect constructor.
+  AadhaarNumberRect.single({
+    required double left,
+    required double top,
+    required double right,
+    required double bottom,
+  }) : rects = [{'left': left, 'top': top, 'right': right, 'bottom': bottom}];
+
+  /// Serializes to a single Map when only one rect (backward compat) or a list.
+  dynamic toJson() {
+    if (rects.length == 1) return rects.first;
+    return rects;
+  }
+
+  /// Deserializes from either a single {left,top,right,bottom} Map (legacy)
+  /// or a List of such Maps (new format).
+  static AadhaarNumberRect? fromJson(dynamic json) {
+    if (json == null) return null;
+    if (json is List) {
+      final parsed = <Map<String, double>>[];
+      for (final item in json) {
+        if (item is Map) {
+          final r = _parseRect(item);
+          if (r != null) parsed.add(r);
+        }
+      }
+      return parsed.isEmpty ? null : AadhaarNumberRect(parsed);
+    }
+    if (json is Map) {
+      final r = _parseRect(json);
+      return r == null ? null : AadhaarNumberRect([r]);
+    }
+    return null;
+  }
+
+  static Map<String, double>? _parseRect(Map json) {
+    final l = json['left'] is num ? (json['left'] as num).toDouble() : null;
+    final t = json['top'] is num ? (json['top'] as num).toDouble() : null;
+    final r = json['right'] is num ? (json['right'] as num).toDouble() : null;
+    final b = json['bottom'] is num ? (json['bottom'] as num).toDouble() : null;
+    if (l == null || t == null || r == null || b == null) return null;
+    return {'left': l, 'top': t, 'right': r, 'bottom': b};
+  }
+}
+
 /// Result class for Aadhaar OCR
 class AadhaarOcrResult {
   final bool success;
@@ -1091,6 +1538,8 @@ class AadhaarOcrResult {
   final String? name;
   final String? fullText;
   final String? errorMessage;
+  /// Normalized (0-1) rect for first 8 digits on front image, for blur overlay in preview.
+  final AadhaarNumberRect? aadhaarNumberRect;
   
   /// Internal flag - true if document validation passed (e.g., "GOVERNMENT OF INDIA" text found)
   /// This is for internal use only - don't expose to user
@@ -1104,6 +1553,7 @@ class AadhaarOcrResult {
     this.name,
     this.fullText,
     this.errorMessage,
+    this.aadhaarNumberRect,
     bool internalDocumentValid = true,
   }) : _internalDocumentValid = internalDocumentValid;
 
@@ -1145,6 +1595,40 @@ class PanOcrResult {
   
   /// Internal validation status - for backend/admin use only
   bool get isInternallyValid => _internalDocumentValid;
+}
+
+/// Result class for generic document OCR (e.g. professional loan documents).
+class DocumentOcrResult {
+  final bool success;
+  final String? fullText;
+  final String? errorMessage;
+
+  DocumentOcrResult({
+    required this.success,
+    this.fullText,
+    this.errorMessage,
+  });
+}
+
+/// Result class for Bank Statement OCR
+class BankStatementOcrResult {
+  final bool success;
+  final String? accountHolderName;
+  final String? fullText;
+  final String? errorMessage;
+  /// True when Aadhaar name words were found in bank statement text (required to proceed).
+  final bool nameMatchesAadhaar;
+
+  BankStatementOcrResult({
+    required this.success,
+    this.accountHolderName,
+    this.fullText,
+    this.errorMessage,
+    this.nameMatchesAadhaar = false,
+  });
+
+  bool get hasAccountHolderName =>
+      accountHolderName != null && accountHolderName!.trim().isNotEmpty;
 }
 
 class _PanPersonDetails {

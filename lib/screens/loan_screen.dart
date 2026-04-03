@@ -86,6 +86,10 @@ class _LoanScreenState extends State<LoanScreen> {
                     
                     // Why Choose Us Section
                     _buildWhyChooseUsSection(context),
+                    const SizedBox(height: 24),
+
+                    // Our Partner Banks Section
+                    _buildPartnerBanksSection(context),
                     const SizedBox(height: 100), // Space for FAB and bottom nav
                   ],
                 ),
@@ -448,6 +452,14 @@ class _LoanScreenState extends State<LoanScreen> {
         'availableSoon': false,
       },
       {
+        'icon': Icons.person_add_alt_1,
+        'title': 'Loan with Co-applicant',
+        'subtitle': 'Joint application',
+        'iconColor': const Color(0xFF14B8A6),
+        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
+        'availableSoon': false,
+      },
+      {
         'icon': Icons.business,
         'title': 'Business Loan',
         'subtitle': 'Grow your business',
@@ -465,11 +477,11 @@ class _LoanScreenState extends State<LoanScreen> {
       },
       {
         'icon': Icons.school,
-        'title': 'Education Loan',
-        'subtitle': 'Fund your future',
+        'title': 'Student Loan',
+        'subtitle': 'Fund your education',
         'iconColor': const Color(0xFFF59E0B),
         'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.1),
-        'availableSoon': true,
+        'availableSoon': false,
       },
       {
         'icon': Icons.home,
@@ -477,7 +489,7 @@ class _LoanScreenState extends State<LoanScreen> {
         'subtitle': 'Buy or renovate',
         'iconColor': AppTheme.successColor,
         'iconBgColor': AppTheme.successColor.withValues(alpha: 0.1),
-        'availableSoon': true,
+        'availableSoon': false,
       },
       {
         'icon': Icons.directions_car,
@@ -485,7 +497,7 @@ class _LoanScreenState extends State<LoanScreen> {
         'subtitle': 'Finance your vehicle',
         'iconColor': const Color(0xFF14B8A6),
         'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
-        'availableSoon': true,
+        'availableSoon': false,
       },
       {
         'icon': Icons.home_work,
@@ -563,7 +575,7 @@ class _LoanScreenState extends State<LoanScreen> {
               children: loanTypesToShow.map((loanType) {
                 return SizedBox(
                   width: cardWidth,
-                  height: 122,
+                  height: 142,
                   child: _buildLoanTypeCard(
                     context,
                     icon: loanType['icon'] as IconData,
@@ -605,17 +617,40 @@ class _LoanScreenState extends State<LoanScreen> {
       opacity: availableSoon ? 0.7 : 1,
       child: InkWell(
         onTap: availableSoon
-            ? null
+            ? () {
+                PremiumToast.showInfo(
+                  context,
+                  'This loan type will be available soon.',
+                  duration: const Duration(seconds: 2),
+                );
+              }
             : () {
                 if (title == AppStrings.loanTypeBusiness || title == 'Business Loan') {
-                  context.go(AppRoutes.businessLoanType);
+                  context.push(AppRoutes.businessLoanType);
                   return;
                 }
                 if (title == AppStrings.loanTypeProfessional || title == 'Professional Loan') {
-                  context.go(AppRoutes.professionalLoanType);
+                  context.push(AppRoutes.professionalLoanType);
                   return;
                 }
-                context.go('${AppRoutes.instructions}?loanType=$title');
+                if (title == 'Student Loan') {
+                  context.push('${AppRoutes.instructions}?loanType=${Uri.encodeComponent(title)}');
+                  return;
+                }
+                // Loan with Co-applicant: collect co-applicant docs after bank statement
+                if (title == 'Loan with Co-applicant') {
+                  context.push(
+                    '${AppRoutes.instructions}?loanType=${Uri.encodeComponent('Personal Loan')}&withCoApplicant=true',
+                  );
+                  return;
+                }
+                if (title == 'Home Loan' || title == 'Car Loan') {
+                  context.push(
+                    '${AppRoutes.coApplicantChoice}?loanType=${Uri.encodeComponent(title)}',
+                  );
+                  return;
+                }
+                context.push('${AppRoutes.instructions}?loanType=${Uri.encodeComponent(title)}');
               },
         borderRadius: BorderRadius.circular(24),
         child: ClipRect(
@@ -745,6 +780,156 @@ class _LoanScreenState extends State<LoanScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPartnerBanksSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    const partnerBanks = [
+      'Aditya Birla Capital',
+      'Axis Bank',
+      'Bajaj Finserv',
+      'Bandhan Bank',
+      'Cholamandalam Finance',
+      'Credit Saison',
+      'DCB Bank',
+      'Godrej Capital',
+      'L&T Finance',
+      'Neo Growth',
+      'Poonawalla Fincorp',
+      'SMFG India Credit',
+      'Tata Capital',
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.2),
+          width: 1.5,
+        ),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colorScheme.surface,
+            colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header strip with accent
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    colorScheme.primary.withValues(alpha: 0.12),
+                    colorScheme.primary.withValues(alpha: 0.04),
+                  ],
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.account_balance_rounded,
+                      color: colorScheme.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Our Partner Banks & NBFCs',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Trusted institutions for the best loan options.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const crossAxisCount = 2;
+                  final itemWidth = (constraints.maxWidth - 12) / crossAxisCount;
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: List.generate(partnerBanks.length, (i) {
+                      return SizedBox(
+                        width: itemWidth,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: colorScheme.primary.withValues(alpha: 0.8),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                partnerBanks[i],
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                  color: colorScheme.onSurface,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

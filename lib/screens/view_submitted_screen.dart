@@ -7,6 +7,7 @@ import '../providers/application_provider.dart';
 import '../providers/submission_provider.dart';
 import '../services/pdf_generation_service.dart';
 import '../utils/app_routes.dart';
+import '../utils/aadhaar_utils.dart';
 import '../widgets/premium_toast.dart';
 
 /// Classic, clean screen for viewing a submitted application.
@@ -86,6 +87,39 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
     );
   }
 
+  Widget _aadhaarDataRow(String? aadhaarNumber) {
+    final display = AadhaarUtils.maskAadhaar(aadhaarNumber);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              'Aadhaar',
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              display.isEmpty ? '—' : display,
+              style: const TextStyle(
+                color: _royalBlue,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 12),
@@ -107,11 +141,24 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
     final submission = context.watch<SubmissionProvider>().submission;
     final applicationId = app?.applicationId ?? '—';
     final status = app?.status ?? 'submitted';
-    final loanType = app?.loanType ?? '—';
+    final appLoanType = app?.loanType ?? submission.loanType ?? '—';
+    final normalizedLoanType = appLoanType.toString().toLowerCase();
+    final proType = (submission.professionalLoanType ?? '').toLowerCase();
+    final isStudentLoan = normalizedLoanType.contains('student');
+    final loanTypeDisplay = proType == 'doctor'
+        ? 'Professional Loan (Doctor)'
+        : proType == 'ca'
+            ? 'Professional Loan (CA)'
+            : isStudentLoan
+                ? 'Student Loan'
+                : appLoanType;
     final submittedAt = app?.submittedAt ?? submission.submittedAt;
     final pd = submission.personalData;
     final businessDocs = submission.businessDocuments;
-    final isBusinessLoan = loanType.toLowerCase().contains('business');
+    final isBusinessLoan = normalizedLoanType.contains('business');
+    final isProfessionalLoan =
+        normalizedLoanType.contains('professional') &&
+        (proType == 'doctor' || proType == 'ca');
     final businessLoanType = (submission.businessLoanType ?? '').toLowerCase();
     final hasPartners = businessDocs?.hasPartners ?? false;
     final isBusinessProprietor = isBusinessLoan &&
@@ -158,7 +205,7 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     // Application summary
                     _sectionTitle('Application'),
                     _dataRow('Application ID', applicationId),
-                    _dataRow('Loan Type', loanType),
+                    _dataRow('Loan Type', loanTypeDisplay),
                     _dataRow('Status', status.toUpperCase()),
                     if (submittedAt != null)
                       _dataRow('Submitted', dateFormat.format(submittedAt)),
@@ -172,7 +219,7 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                           : '',
                     ),
                     _dataRow('PAN', pd?.panNo ?? ''),
-                    _dataRow('Aadhaar', pd?.aadhaarNumber ?? ''),
+                    _aadhaarDataRow(pd?.aadhaarNumber),
                     _dataRow('Mobile', pd?.mobileNumber ?? ''),
                     _dataRow('Email', pd?.personalEmailId ?? ''),
                     _dataRow('Address', pd?.residenceAddress ?? ''),
@@ -203,17 +250,51 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     _dataRow(
                       'Bank Statement',
                       submission.bankStatement?.isComplete == true
-                          ? '${submission.bankStatement!.pages.length} page(s)'
+                          ? '${submission.bankStatement!.pages.length} ${submission.bankStatement!.isPdf ? 'PDF(s)' : 'page(s)'}'
                           : '—',
                     ),
                     _dataRow(
                       'Salary Slips',
-                      (isBusinessProprietor || isBusinessPartnership)
-                          ? 'Not required (Business Loan)'
-                          : (submission.salarySlips?.isComplete == true
-                              ? '${submission.salarySlips!.uploadedCount} slip(s)'
-                              : '—'),
+                      isProfessionalLoan
+                          ? 'Not required (Professional Loan)'
+                          : isStudentLoan
+                              ? 'Not required (Student Loan)'
+                              : (isBusinessProprietor || isBusinessPartnership)
+                                  ? 'Not required (Business Loan)'
+                                  : (submission.salarySlips?.isComplete == true
+                                      ? '${submission.salarySlips!.uploadedCount} slip(s)'
+                                      : '—'),
                     ),
+                    if (isStudentLoan && submission.studentDocuments != null) ...[
+                      _sectionTitle('Student Documents'),
+                      _dataRow('Passport', submission.studentDocuments!.passport?.isComplete == true ? 'Uploaded' : '—'),
+                      _dataRow('Admission Letter', submission.studentDocuments!.admissionLetter?.isComplete == true ? 'Uploaded' : '—'),
+                      _dataRow('SSC Mark Sheet', submission.studentDocuments!.markSheetSsc?.isComplete == true ? 'Uploaded' : '—'),
+                      _dataRow('Inter Mark Sheet', submission.studentDocuments!.markSheetInter?.isComplete == true ? 'Uploaded' : '—'),
+                      _dataRow('Graduation Mark Sheet', submission.studentDocuments!.markSheetGraduation?.isComplete == true ? 'Uploaded' : '—'),
+                      if (submission.studentDocuments!.isWorking) ...[
+                        _dataRow('Payslips (3 months)', (submission.studentDocuments!.payslip1?.isComplete == true && submission.studentDocuments!.payslip2?.isComplete == true && submission.studentDocuments!.payslip3?.isComplete == true) ? 'Uploaded' : '—'),
+                        _dataRow('ID Card', submission.studentDocuments!.idCard?.isComplete == true ? 'Uploaded' : '—'),
+                      ],
+                    ],
+                    if (isProfessionalLoan && submission.professionalDocuments != null) ...[
+                      _sectionTitle(proType == 'doctor' ? 'Doctor Documents' : 'CA Documents'),
+                      if (proType == 'doctor') ...[
+                        _dataRow('MBBS / Medical Degree', submission.professionalDocuments!.medicalDegree?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('Medical Licence', submission.professionalDocuments!.medicalLicence?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('Prescription / Letterhead', submission.professionalDocuments!.prescription?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('ITR Year 1', submission.professionalDocuments!.itrYear1?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('ITR Year 2', submission.professionalDocuments!.itrYear2?.isComplete == true ? 'Uploaded' : '—'),
+                      ] else if (proType == 'ca') ...[
+                        _dataRow('CA Degree', submission.professionalDocuments!.caDegree?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('Certificate of Practice', submission.professionalDocuments!.certificateOfPractice?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('ICAI Certificate', submission.professionalDocuments!.icaiCertificate?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('ITR Year 1', submission.professionalDocuments!.itrYear1?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('ITR Year 2', submission.professionalDocuments!.itrYear2?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('Balance Sheet', submission.professionalDocuments!.balanceSheet?.isComplete == true ? 'Uploaded' : '—'),
+                        _dataRow('P&L Statement', submission.professionalDocuments!.plStatement?.isComplete == true ? 'Uploaded' : '—'),
+                      ],
+                    ],
                     if (isBusinessProprietor) ...[
                       _sectionTitle('Business Documents'),
                       _dataRow(
@@ -225,12 +306,8 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                         businessDocs?.spousePan?.isComplete == true ? 'Uploaded' : '—',
                       ),
                       _dataRow(
-                        'GST / Labour',
-                        (businessDocs?.hasGstOrLabour ?? false) ? 'Uploaded' : '—',
-                      ),
-                      _dataRow(
-                        'MSME',
-                        businessDocs?.msmeCertificate?.isComplete == true ? 'Uploaded' : '—',
+                        'GST / Labour / UDYAM (any one)',
+                        (businessDocs?.hasGstLabourOrMsme ?? false) ? 'Uploaded' : '—',
                       ),
                       _dataRow(
                         'Own House Proof',
@@ -268,12 +345,8 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                           businessDocs?.partnershipDeed?.isComplete == true ? 'Uploaded' : '—',
                         ),
                       _dataRow(
-                        'GST / Labour',
-                        (businessDocs?.hasGstOrLabour ?? false) ? 'Uploaded' : '—',
-                      ),
-                      _dataRow(
-                        'MSME',
-                        businessDocs?.msmeCertificate?.isComplete == true ? 'Uploaded' : '—',
+                        'GST / Labour / UDYAM (any one)',
+                        (businessDocs?.hasGstLabourOrMsme ?? false) ? 'Uploaded' : '—',
                       ),
                       _dataRow(
                         'Own House Proof',

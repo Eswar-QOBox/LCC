@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
+import '../services/ocr_service.dart';
+import '../utils/ocr_pdf.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -24,9 +26,16 @@ import '../widgets/premium_toast.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../services/storage_service.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class Step5ProfessionalDocsScreen extends StatefulWidget {
-  const Step5ProfessionalDocsScreen({super.key});
+  const Step5ProfessionalDocsScreen({
+    super.key,
+    this.fromPreview = false,
+  });
+
+  /// When true, Back returns to Preview (e.g. when opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step5ProfessionalDocsScreen> createState() => _Step5ProfessionalDocsScreenState();
@@ -42,6 +51,9 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
   bool _isSaving = false;
   String? _authToken;
   final Map<String, Uint8List?> _pickedBytes = {};
+  /// OCR must succeed for each uploaded doc (on mobile) before proceeding.
+  final Map<String, bool> _ocrCompleteByKey = {};
+  final Map<String, String?> _ocrIssueByKey = {};
 
   @override
   void initState() {
@@ -49,7 +61,25 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAuthToken();
       _loadLeadId();
+      // When coming back from preview (or loading with existing docs), run OCR for any local paths so gating works.
+      _runOcrForExistingLocalDocs();
     });
+  }
+
+  /// Run OCR for documents that already have a local path (e.g. after coming back from preview or draft with local files).
+  Future<void> _runOcrForExistingLocalDocs() async {
+    if (kIsWeb) return;
+    if (!mounted) return;
+    final provider = context.read<SubmissionProvider>();
+    for (final c in _cards) {
+      final key = c['key']!;
+      final path = _getDocPath(provider.submission, key);
+      if (path == null || path.trim().isEmpty) continue;
+      if (_isRemotePath(path) || path.startsWith('blob:')) continue;
+      if (_ocrCompleteByKey[key] == true) continue; // already done
+      await _performDocumentOcr(key, path, _isPdfPath(path));
+      if (!mounted) return;
+    }
   }
 
   Future<void> _loadAuthToken() async {
@@ -106,20 +136,26 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
   bool get _isDoctor => _professionalType == 'doctor';
   bool get _isCa => _professionalType == 'ca';
 
-  /// Document cards in same format as business docs: Doctor = MBBS/degree, licence, prescription; CA = degree, COP, ICAI.
+  /// Document cards: Doctor = degree, licence, prescription, ITR (2 years); CA = degree, COP, ICAI, ITR (2 years), Balance sheet, P&L.
   List<Map<String, String>> get _cards {
     if (_isDoctor) {
       return [
-        {'key': 'medical_degree', 'title': 'MBBS / Medical Degree Certificate'},
-        {'key': 'medical_licence', 'title': 'Medical Council Registration / Licence'},
-        {'key': 'prescription', 'title': 'Prescription / Clinic Letterhead'},
+        {'key': 'medical_degree', 'title': 'MBBS / Medical\nDegree Certificate'},
+        {'key': 'medical_licence', 'title': 'Medical Council\nRegistration / Licence'},
+        {'key': 'prescription', 'title': 'Prescription /\nClinic Letterhead'},
+        {'key': 'itr_year1', 'title': 'ITR (Income Tax Return)\nYear 1'},
+        {'key': 'itr_year2', 'title': 'ITR (Income Tax Return)\nYear 2'},
       ];
     }
     if (_isCa) {
       return [
-        {'key': 'ca_degree', 'title': 'CA Degree Certificate'},
-        {'key': 'certificate_of_practice', 'title': 'Certificate of Practice (COP)'},
-        {'key': 'icai_certificate', 'title': 'ICAI Membership Certificate'},
+        {'key': 'ca_degree', 'title': 'CA Degree\nCertificate'},
+        {'key': 'certificate_of_practice', 'title': 'Certificate of Practice\n(COP)'},
+        {'key': 'icai_certificate', 'title': 'ICAI Membership\nCertificate'},
+        {'key': 'itr_year1', 'title': 'ITR (Income Tax Return)\nYear 1'},
+        {'key': 'itr_year2', 'title': 'ITR (Income Tax Return)\nYear 2'},
+        {'key': 'balance_sheet', 'title': 'Balance Sheet'},
+        {'key': 'pl_statement', 'title': 'P&L (Profit & Loss)\nStatement'},
       ];
     }
     return [];
@@ -141,6 +177,13 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
         return Icons.description;
       case 'icai_certificate':
         return Icons.card_membership;
+      case 'itr_year1':
+      case 'itr_year2':
+        return Icons.receipt_long;
+      case 'balance_sheet':
+        return Icons.account_balance;
+      case 'pl_statement':
+        return Icons.trending_up;
       default:
         return Icons.upload_file;
     }
@@ -161,6 +204,13 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
         return 'Upload Certificate of Practice (COP). Photo or PDF.';
       case 'icai_certificate':
         return 'Upload ICAI membership certificate or card. Photo or PDF.';
+      case 'itr_year1':
+      case 'itr_year2':
+        return 'Upload Income Tax Return (ITR) for the year. Photo or PDF.';
+      case 'balance_sheet':
+        return 'Snapshot of assets, liabilities and net worth (practice/firm). Photo or PDF.';
+      case 'pl_statement':
+        return 'Profit & Loss: revenue, expenses and profit/loss for the period. Photo or PDF.';
       default:
         return 'Upload the document. Photo or PDF.';
     }
@@ -238,6 +288,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
     }
     if (file.path == null) return;
     _setDocPathForKey(key, file.path!, isPdf: true);
+    await _performDocumentOcr(key, file.path!, true);
   }
 
   Future<void> _pickImage(String key, ImageSource source) async {
@@ -251,6 +302,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
       return;
     }
     _setDocPathForKey(key, picked.path, isPdf: false);
+    await _performDocumentOcr(key, picked.path, false);
   }
 
   Future<void> _showPickerSheet(String key) async {
@@ -308,6 +360,61 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
     );
   }
 
+  /// Run same OCR as Aadhaar/PAN/bank docs on this professional document (image or PDF first page).
+  /// Skips on web and for remote paths. Sets _ocrCompleteByKey so Save & Continue is gated.
+  Future<void> _performDocumentOcr(String key, String path, bool isPdf) async {
+    if (kIsWeb) return;
+    if (_isRemotePath(path)) return;
+    if (path.startsWith('blob:')) return;
+    try {
+      Uint8List? imageBytes;
+      if (isPdf && path.toLowerCase().endsWith('.pdf') && OcrPdf.isSupported) {
+        try {
+          final count = await OcrPdf.getPageCount(path);
+          if (count > 0) {
+            imageBytes = await OcrPdf.renderPageToJpegBytes(path, pageIndex: 0);
+          }
+        } catch (e) {
+          if (kDebugMode) debugPrint('[ProfessionalDocs] PDF render for OCR failed: $e');
+        }
+      }
+      final result = imageBytes != null
+          ? await OcrService.extractDocumentText(path, imageBytes: imageBytes)
+          : await OcrService.extractDocumentText(path);
+      if (!mounted) return;
+      if (result.success) {
+        setState(() {
+          _ocrCompleteByKey[key] = true;
+          _ocrIssueByKey[key] = null;
+        });
+        PremiumToast.showSuccess(context, 'Document scanned.');
+      } else {
+        setState(() {
+          _ocrCompleteByKey[key] = false;
+          _ocrIssueByKey[key] = result.errorMessage;
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not read document text. Re-capture with better lighting or replace the document to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[ProfessionalDocs] OCR failed: $e');
+      if (mounted) {
+        setState(() {
+          _ocrCompleteByKey[key] = false;
+          _ocrIssueByKey[key] = e.toString();
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not scan document. Re-capture or replace the document to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    }
+  }
+
   void _setDocPathForKey(String key, String path, {required bool isPdf}) {
     final provider = context.read<SubmissionProvider>();
     switch (key) {
@@ -329,6 +436,18 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
       case 'icai_certificate':
         provider.setProfessionalIcaiCertificate(path, isPdf: isPdf);
         break;
+      case 'itr_year1':
+        provider.setProfessionalItrYear1(path, isPdf: isPdf);
+        break;
+      case 'itr_year2':
+        provider.setProfessionalItrYear2(path, isPdf: isPdf);
+        break;
+      case 'balance_sheet':
+        provider.setProfessionalBalanceSheet(path, isPdf: isPdf);
+        break;
+      case 'pl_statement':
+        provider.setProfessionalPlStatement(path, isPdf: isPdf);
+        break;
     }
   }
 
@@ -347,6 +466,14 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
         return p?.certificateOfPractice?.path;
       case 'icai_certificate':
         return p?.icaiCertificate?.path;
+      case 'itr_year1':
+        return p?.itrYear1?.path;
+      case 'itr_year2':
+        return p?.itrYear2?.path;
+      case 'balance_sheet':
+        return p?.balanceSheet?.path;
+      case 'pl_statement':
+        return p?.plStatement?.path;
       default:
         return null;
     }
@@ -372,12 +499,16 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
   }
 
   static const Map<String, String> _documentTypes = {
-    'medical_degree': 'custom_applicant_professional_medical_degree',
-    'medical_licence': 'custom_applicant_professional_medical_licence',
-    'prescription': 'custom_applicant_professional_prescription',
-    'ca_degree': 'custom_applicant_professional_ca_degree',
-    'certificate_of_practice': 'custom_applicant_professional_certificate_of_practice',
-    'icai_certificate': 'custom_applicant_professional_icai_certificate',
+    'medical_degree': 'applicant_professional_medical_degree',
+    'medical_licence': 'applicant_professional_medical_licence',
+    'prescription': 'applicant_professional_prescription',
+    'ca_degree': 'applicant_professional_ca_degree',
+    'certificate_of_practice': 'applicant_professional_certificate_of_practice',
+    'icai_certificate': 'applicant_professional_icai_certificate',
+    'itr_year1': 'applicant_professional_itr_year1',
+    'itr_year2': 'applicant_professional_itr_year2',
+    'balance_sheet': 'applicant_professional_balance_sheet',
+    'pl_statement': 'applicant_professional_pl_statement',
   };
 
   Future<String?> _uploadIfNeeded({
@@ -387,7 +518,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
     if (path == null || path.trim().isEmpty) return null;
     if (_leadId == null) return path;
     if (_isRemotePath(path)) return path;
-    final documentType = _documentTypes[key] ?? 'custom_applicant_professional_doc';
+    final documentType = _documentTypes[key] ?? 'applicant_professional_doc';
     final fileName = _filenameFromPath(
       path,
       fallback: '${documentType}_${DateTime.now().millisecondsSinceEpoch}',
@@ -402,6 +533,64 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
     );
     final url = (result['url'] as String?) ?? (result['path'] as String?);
     return url ?? path;
+  }
+
+  void _showOcrValidationDialog(List<String> issues) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.document_scanner_outlined, color: AppTheme.errorColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Document OCR Incomplete',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Each document must be scanned successfully before you can continue.',
+              style: TextStyle(height: 1.3),
+            ),
+            const SizedBox(height: 12),
+            ...issues.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $e', style: const TextStyle(height: 1.25)),
+            )),
+            const SizedBox(height: 12),
+            Text(
+              'Re-capture or re-upload with better lighting and ensure the document is clearly visible.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.3),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveAndProceed() async {
@@ -419,6 +608,28 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
       );
       return;
     }
+    // On mobile: require OCR success for every uploaded document (remote paths are treated as already verified).
+    if (!kIsWeb) {
+      final provider = context.read<SubmissionProvider>();
+      final issues = <String>[];
+      for (final c in _cards) {
+        final key = c['key']!;
+        final title = c['title']!.replaceAll('\n', ' ');
+        final path = _getDocPath(provider.submission, key);
+        if (path == null || path.trim().isEmpty) continue;
+        if (_isRemotePath(path)) continue;
+        if (_ocrCompleteByKey[key] != true) {
+          final issue = _ocrIssueByKey[key] != null
+              ? '$title: ${_ocrIssueByKey[key]}'
+              : '$title: OCR not run or failed';
+          issues.add(issue);
+        }
+      }
+      if (issues.isNotEmpty) {
+        _showOcrValidationDialog(issues);
+        return;
+      }
+    }
     if (_isSaving) return;
     setState(() => _isSaving = true);
     try {
@@ -434,7 +645,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
       await context.read<ApplicationProvider>().updateApplication(currentStep: 5);
       if (mounted) {
         PremiumToast.showSuccess(context, 'Professional documents saved.');
-        context.go(AppRoutes.step5PersonalData);
+        context.go(widget.fromPreview ? AppRoutes.step6Preview : AppRoutes.step5PersonalData);
       }
     } catch (e) {
       if (mounted) {
@@ -480,7 +691,12 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
       );
     }
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (_isSaving) return;
+        context.go(widget.fromPreview ? AppRoutes.step6Preview : AppRoutes.step4BankStatement);
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -489,7 +705,9 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
               title: _isDoctor ? 'Doctor Documents' : 'CA Documents',
               icon: _isDoctor ? Icons.medical_services_outlined : Icons.account_balance_outlined,
               showBackButton: true,
-              onBackPressed: _isSaving ? null : () => context.go(AppRoutes.step4BankStatement),
+              onBackPressed: _isSaving ? null : () {
+                context.go(widget.fromPreview ? AppRoutes.step6Preview : AppRoutes.step4BankStatement);
+              },
               showHomeButton: true,
               actions: const [
                 PreviewHeaderAction(backRoute: AppRoutes.step5ProfessionalDocs),
@@ -503,8 +721,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
               ),
             PremiumProgressIndicator(
               currentStep: 5,
-              totalSteps: 8,
-              maxVisibleSteps: 7,
+              totalSteps: 7,
             ),
             Expanded(
               child: SingleChildScrollView(
@@ -576,7 +793,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
                                     width: 36,
@@ -599,8 +816,6 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
                                         fontWeight: FontWeight.w900,
                                         fontSize: (theme.textTheme.titleLarge?.fontSize ?? 20) + 2,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -767,6 +982,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

@@ -89,6 +89,7 @@ class LoanApplicationService {
   /// Map Professional Loan → Personal Loan so creation succeeds until backend adds Professional Loan.
   static String _loanTypeForBackend(String loanType) {
     if (loanType == 'Professional Loan') return 'Personal Loan';
+    if (loanType == 'Student Loan') return 'Education Loan';
     return loanType;
   }
 

@@ -30,15 +30,22 @@ class ApplicationProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Backend stores Professional Loan as Personal Loan; preserve in-memory Professional Loan.
-  Future<LoanApplication> _preserveProfessionalLoan(LoanApplication fromServer) async {
+  /// Backend may normalize loan labels to Personal Loan; preserve selected label in app.
+  Future<LoanApplication> _preserveNormalizedLoanLabels(LoanApplication fromServer) async {
     if (fromServer.loanType != 'Personal Loan') return fromServer;
     if (_currentApplication?.loanType == 'Professional Loan') {
       return fromServer.copyWith(loanType: 'Professional Loan');
     }
+    if (_currentApplication?.loanType == 'Student Loan') {
+      return fromServer.copyWith(loanType: 'Student Loan');
+    }
     final isStoredAsPro = await isProfessionalLoanApplicationId(fromServer.id);
     if (isStoredAsPro) {
       return fromServer.copyWith(loanType: 'Professional Loan');
+    }
+    final isStoredAsStudent = await isStudentLoanApplicationId(fromServer.id);
+    if (isStoredAsStudent) {
+      return fromServer.copyWith(loanType: 'Student Loan');
     }
     return fromServer;
   }
@@ -51,7 +58,7 @@ class ApplicationProvider with ChangeNotifier {
 
     try {
       final application = await _applicationService.getApplication(applicationId);
-      _currentApplication = await _preserveProfessionalLoan(application);
+      _currentApplication = await _preserveNormalizedLoanLabels(application);
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -95,7 +102,7 @@ class ApplicationProvider with ChangeNotifier {
         step6Preview: step6Preview,
         step7Submission: step7Submission,
       );
-      _currentApplication = await _preserveProfessionalLoan(updated);
+      _currentApplication = await _preserveNormalizedLoanLabels(updated);
       _isLoading = false;
       notifyListeners();
     } catch (e) {

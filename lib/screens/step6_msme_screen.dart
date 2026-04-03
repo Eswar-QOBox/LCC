@@ -25,9 +25,14 @@ import '../widgets/premium_toast.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../services/storage_service.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
+import '../utils/debug_log.dart';
 
 class Step6MsmeScreen extends StatefulWidget {
-  const Step6MsmeScreen({super.key});
+  const Step6MsmeScreen({super.key, this.fromPreview = false});
+
+  /// When true, Back and Continue return to Preview (opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step6MsmeScreen> createState() => _Step6MsmeScreenState();
@@ -324,30 +329,51 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
       PremiumToast.showError(context, 'This step is only for Business Loan.');
       return;
     }
-    if ((_path ?? '').isEmpty) {
-      PremiumToast.showWarning(context, 'Please upload MSME certificate.');
+    final hasMsme = (_path ?? '').trim().isNotEmpty;
+    final submission = context.read<SubmissionProvider>().submission;
+    final gst = submission.businessDocuments?.gstRegistration?.path?.trim();
+    final labour = submission.businessDocuments?.labourCertificate?.path?.trim();
+    final hasGstOrLabour = (gst != null && gst.isNotEmpty) || (labour != null && labour.isNotEmpty);
+    // #region agent log
+    debugAgentLog(
+      location: 'step6_msme_screen.dart:_saveAndProceed',
+      message: 'MSME step any-one check',
+      data: {'hasMsme': hasMsme, 'hasGstOrLabour': hasGstOrLabour, 'canProceed': hasMsme || hasGstOrLabour},
+      hypothesisId: 'H-E',
+    );
+    // #endregion
+    if (!hasMsme && !hasGstOrLabour) {
+      PremiumToast.showWarning(
+        context,
+        'Please upload any one: Labour licence, GST, or MSME / UDYAM certificate (you can upload here or in the previous step).',
+      );
       return;
     }
     if (_isSaving) return;
 
     setState(() => _isSaving = true);
     try {
-      final uploaded = await _uploadIfNeeded(
-        path: _path,
-        documentType: 'custom_applicant_msme_certificate',
-        bytes: kIsWeb ? _bytes : null,
-      );
-      if (uploaded != null) {
-        context.read<SubmissionProvider>().setMsmeCertificate(uploaded, isPdf: _isPdf);
+      if (hasMsme) {
+        final uploaded = await _uploadIfNeeded(
+          path: _path,
+          documentType: 'applicant_msme_certificate',
+          bytes: kIsWeb ? _bytes : null,
+        );
+        if (uploaded != null) {
+          context.read<SubmissionProvider>().setMsmeCertificate(uploaded, isPdf: _isPdf);
+        }
       }
-      // Track progress in application (backend only allows 1..7)
       await context.read<ApplicationProvider>().updateApplication(currentStep: 7);
       if (mounted) {
-        PremiumToast.showSuccess(context, 'MSME saved successfully!');
-        context.go(AppRoutes.step7Ohp);
+        if (hasMsme) PremiumToast.showSuccess(context, 'MSME saved successfully!');
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+        } else {
+          context.go(AppRoutes.step7Ohp);
+        }
       }
     } catch (e) {
-      if (mounted) PremiumToast.showError(context, 'Failed to save MSME: $e');
+      if (mounted) PremiumToast.showError(context, 'Failed to save: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -361,7 +387,16 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
     final hasFile = path != null && path.trim().isNotEmpty;
     final previewPath = hasFile ? (_buildFullUrl(path) ?? path) : null;
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (_isSaving) return;
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+          return;
+        }
+        context.go(AppRoutes.step5BusinessDocs);
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -370,7 +405,15 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
               title: 'MSME Certificate',
               icon: Icons.workspace_premium,
               showBackButton: true,
-              onBackPressed: _isSaving ? null : () => context.go(AppRoutes.step5BusinessDocs),
+              onBackPressed: _isSaving
+                  ? null
+                  : () {
+                      if (widget.fromPreview) {
+                        context.go(AppRoutes.step6Preview);
+                        return;
+                      }
+                      context.go(AppRoutes.step5BusinessDocs);
+                    },
               showHomeButton: true,
               actions: const [
                 PreviewHeaderAction(backRoute: AppRoutes.step6Msme),
@@ -453,6 +496,7 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
                         children: [
                           // Header (icon + title + status)
                           Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Container(
                                 width: 36,
@@ -470,14 +514,12 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'MSME Certificate',
+                                  'MSME\nCertificate',
                                   style: theme.textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.w900,
                                     fontSize:
                                         (theme.textTheme.titleLarge?.fontSize ?? 20) + 2,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -675,7 +717,8 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(

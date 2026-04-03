@@ -60,7 +60,7 @@ class PremiumToast {
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => Positioned(
-        top: topPadding + 8,
+        top: topPadding + 40,
         left: 16,
         right: 16,
         child: Material(

@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -7,10 +8,14 @@ import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/file_upload_service.dart';
+import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
+import '../utils/ocr_pdf.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
+import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
+import 'package:pdfrx/pdfrx.dart';
 import '../widgets/premium_toast.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
@@ -18,9 +23,22 @@ import '../services/storage_service.dart';
 import '../utils/api_config.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
+import '../utils/debug_log.dart';
+import '../utils/step4_merge.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
-  const Step4BankStatementScreen({super.key});
+  const Step4BankStatementScreen({
+    super.key,
+    this.fromPreview = false,
+    this.isCoApplicant = false,
+  });
+
+  /// When true, Back and Continue return to Preview (opened via Edit from Preview).
+  final bool fromPreview;
+
+  /// When true, uploads apply to the co-applicant (joint personal loan).
+  final bool isCoApplicant;
 
   @override
   State<Step4BankStatementScreen> createState() =>
@@ -37,6 +55,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   DateTime? _calculatedStartDate;
   List<bool> _pageFailures = [];
   List<Uint8List?> _pageBytes = [];
+  /// When true, do not overwrite _pages from backend (user has removed/replaced pages).
+  bool _userHasModifiedPages = false;
 
   bool _isValidImageBytes(Uint8List bytes) {
     if (bytes.length < 4) return false;
@@ -48,13 +68,302 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     return false;
   }
 
+  /// Checks whether a PDF is encrypted by scanning the full file for the
+  /// `/Encrypt` dictionary reference. The xref/trailer lives at the *end* of
+  /// the file, so we must search the whole thing — not just the first few KB.
+  ///
+  /// We search the raw bytes directly (ASCII pattern match) instead of
+  /// converting to a String, which would be slow and memory-heavy for large
+  /// PDFs.
+  Future<bool> _isPdfEncrypted(String? path, Uint8List? bytes) async {
+    final Uint8List allBytes;
+    if (kIsWeb && bytes != null) {
+      allBytes = bytes;
+    } else if (!kIsWeb && path != null && path.isNotEmpty) {
+      try {
+        allBytes = await io.File(path).readAsBytes();
+      } catch (_) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+    return _bytesContainAscii(allBytes, '/Encrypt');
+  }
+
+  /// Searches [data] for the ASCII-encoded [needle] without allocating a
+  /// full String copy of the PDF.
+  static bool _bytesContainAscii(Uint8List data, String needle) {
+    if (data.isEmpty || needle.isEmpty) return false;
+    final pattern = needle.codeUnits;
+    final pLen = pattern.length;
+    final dLen = data.length;
+    if (pLen > dLen) return false;
+    outer:
+    for (int i = 0; i <= dLen - pLen; i++) {
+      for (int j = 0; j < pLen; j++) {
+        if (data[i + j] != pattern[j]) continue outer;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  Future<bool> _tryOpenBankPdf(
+    String localOrBlobPath,
+    Uint8List? webBytes,
+    String password,
+  ) async {
+    PdfDocument? doc;
+    try {
+      if (kIsWeb && webBytes != null) {
+        doc = await PdfDocument.openData(
+          webBytes,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+          sourceName: 'bank_unlock_try',
+        );
+      } else if (!kIsWeb &&
+          localOrBlobPath.isNotEmpty &&
+          !localOrBlobPath.startsWith('blob:')) {
+        doc = await PdfDocument.openFile(
+          localOrBlobPath,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+        );
+      } else {
+        return false;
+      }
+      await doc.dispose();
+      return true;
+    } catch (_) {
+      try {
+        await doc?.dispose();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  Future<String?> _showBankPdfPasswordDialog(
+    String localOrBlobPath,
+    Uint8List? webBytes,
+  ) async {
+    final passwordController = TextEditingController();
+
+    final result = await showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> trySubmit() async {
+              final pwd = passwordController.text;
+              if (pwd.isEmpty) {
+                if (dialogContext.mounted) {
+                  setDialogState(() => errorText = 'Enter the PDF password.');
+                }
+                return;
+              }
+              bool ok;
+              try {
+                ok = await _tryOpenBankPdf(localOrBlobPath, webBytes, pwd);
+              } catch (_) {
+                ok = false;
+              }
+              if (!dialogContext.mounted) return;
+              if (!ok) {
+                setDialogState(() => errorText = 'Incorrect password. Try again.');
+                return;
+              }
+              Navigator.of(dialogContext).pop(pwd);
+            }
+
+            return AlertDialog(
+              title: const Text('PDF Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'This bank statement PDF is password-protected. Enter the password to unlock it for verification.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'PDF password',
+                      errorText: errorText,
+                      labelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      floatingLabelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    obscureText: true,
+                    onSubmitted: (_) => trySubmit(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => trySubmit(),
+                  child: const Text('Unlock'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    passwordController.dispose();
+    return result;
+  }
+
+  Future<String?> _resolveBankPdfPasswordIfNeeded({
+    required bool headerSuggestsEncrypt,
+    required String localOrBlobPath,
+    required Uint8List? webBytes,
+  }) async {
+    if (!headerSuggestsEncrypt) return '';
+    if (await _tryOpenBankPdf(localOrBlobPath, webBytes, '')) return '';
+    if (!mounted) return null;
+    return _showBankPdfPasswordDialog(localOrBlobPath, webBytes);
+  }
+
+  /// True if path is from backend (uploaded previously) — includes relative API paths.
+  bool _isFromBackend(String path) {
+    if (path.startsWith('http://') || path.startsWith('https://')) return true;
+    final p = path.trim();
+    if (p.startsWith('/api/') || p.startsWith('/uploads/')) return true;
+    return false;
+  }
+
+  void _syncPagesToProvider() {
+    final provider = context.read<SubmissionProvider>();
+    if (widget.isCoApplicant) {
+      provider.setCoApplicantBankStatementPages(_pages, isPdf: _isPdf);
+    } else {
+      provider.setBankStatementPages(_pages, isPdf: _isPdf);
+    }
+  }
+
+  String? _referenceNameForOcr(SubmissionProvider provider) {
+    if (widget.isCoApplicant) {
+      final fromPersonal =
+          provider.submission.coApplicantPersonalData?.nameAsPerAadhaar?.trim();
+      if (fromPersonal != null && fromPersonal.isNotEmpty) return fromPersonal;
+      return provider.submission.coApplicantExtractedNameFromAadhaar?.trim();
+    }
+    return provider.submission.personalData?.nameAsPerAadhaar?.trim();
+  }
+
+  /// Run OCR on bank statement to extract account holder name.
+  /// Skips if pages are from backend. Uses Aadhaar name as approx reference.
+  /// For password-protected PDFs, uses pdfrx-based renderer that supports decryption.
+  Future<void> _runBankStatementOcrIfNeeded() async {
+    final firstLocal = _pages.where((p) => !_isFromBackend(p)).firstOrNull;
+    if (firstLocal == null) return;
+    if (kIsWeb || firstLocal.startsWith('blob:')) return;
+    final provider = context.read<SubmissionProvider>();
+    final aadhaarName = _referenceNameForOcr(provider);
+    try {
+      Uint8List? imageBytes;
+      if (_isPdf && firstLocal.toLowerCase().endsWith('.pdf')) {
+        imageBytes = await _renderPdfPageForOcr(firstLocal, pageIndex: 0);
+      }
+      final periodStart = _calculatedStartDate;
+      final periodEnd = _statementEndDate;
+      final result = imageBytes != null
+          ? await OcrService.extractBankStatementName(
+              firstLocal,
+              imageBytes: imageBytes,
+              aadhaarNameReference: aadhaarName,
+              statementPeriodStart: periodStart,
+              statementPeriodEnd: periodEnd,
+            )
+          : await OcrService.extractBankStatementName(
+              firstLocal,
+              aadhaarNameReference: aadhaarName,
+              statementPeriodStart: periodStart,
+              statementPeriodEnd: periodEnd,
+            );
+      if (mounted && result.success) {
+        if (widget.isCoApplicant) {
+          provider.setCoApplicantBankStatementExtractedAccountHolderName(result.accountHolderName);
+          provider.setCoApplicantBankStatementNameMatchesAadhaar(result.nameMatchesAadhaar);
+        } else {
+          provider.setBankStatementExtractedAccountHolderName(result.accountHolderName);
+          provider.setBankStatementNameMatchesAadhaar(result.nameMatchesAadhaar);
+        }
+        if (kDebugMode) {
+          debugPrint('[BankStatement] OCR extracted: ${result.accountHolderName}, nameMatchesAadhaar: ${result.nameMatchesAadhaar}');
+        }
+        if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
+          if (result.nameMatchesAadhaar) {
+            PremiumToast.showSuccess(context, 'Name on statement verified with Aadhaar.');
+          } else {
+            PremiumToast.showWarning(
+              context,
+              'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
+              duration: const Duration(seconds: 4),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[BankStatement] OCR failed: $e');
+    }
+  }
+
+  /// Renders a single PDF page to JPEG for OCR.
+  /// If a password is known, goes straight to pdfrx (which supports decryption).
+  /// Otherwise tries the fast native renderer first, falling back to pdfrx on failure.
+  Future<Uint8List?> _renderPdfPageForOcr(String pdfPath, {required int pageIndex}) async {
+    final hasPassword = _pdfPassword != null && _pdfPassword!.isNotEmpty;
+
+    // Fast path: native renderer (no password support).
+    if (!hasPassword && OcrPdf.isSupported) {
+      try {
+        final count = await OcrPdf.getPageCount(pdfPath);
+        if (count > pageIndex) {
+          return await OcrPdf.renderPageToJpegBytes(pdfPath, pageIndex: pageIndex);
+        }
+      } catch (e) {
+        if (kDebugMode) debugPrint('[BankStatement] Native PDF render failed, trying pdfrx: $e');
+      }
+    }
+
+    // Fallback / password path: pdfrx-based renderer.
+    return OcrPdf.renderPageWithPassword(
+      pdfPath,
+      pageIndex: pageIndex,
+      password: _pdfPassword,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     final provider = context.read<SubmissionProvider>();
-    _pages = List.from(provider.submission.bankStatement?.pages ?? []);
-    _isPdf = provider.submission.bankStatement?.isPdf ?? false;
-    _pdfPassword = provider.submission.bankStatement?.pdfPassword;
+    final bs = widget.isCoApplicant
+        ? provider.submission.coApplicantBankStatement
+        : provider.submission.bankStatement;
+    _pages = List.from(bs?.pages ?? []);
+    _isPdf = bs?.isPdf ?? false;
+    _pdfPassword = bs?.pdfPassword;
     
     // Automatically use today's date
     _statementEndDate = DateTime.now();
@@ -73,8 +382,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final application = appProvider.currentApplication!;
     if (application.step4BankStatement != null) {
       final stepData = application.step4BankStatement as Map<String, dynamic>;
+      final coNested = stepData['coApplicantBankStatement'];
+      final Map<String, dynamic>? coData =
+          coNested is Map<String, dynamic> ? coNested : null;
 
-        
+      if (widget.isCoApplicant && coData == null) return;
+
         // Helper to build full URL
         String? buildFullUrl(String? relativeUrl) {
           if (relativeUrl == null || relativeUrl.isEmpty) return null;
@@ -99,21 +412,102 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         final accessToken = await storage.getAccessToken();
         
 
-        
+        if (!mounted) return;
+        if (_userHasModifiedPages) return;
+
+        // Prefer in-memory submission over the application snapshot:
+        // - If user cleared all pages, do not refill from server.
+        // - If user has any pages in provider (including after partial removal), do not
+        //   overwrite — otherwise returning to this screen restores stale server URLs.
+        final submissionProvider = context.read<SubmissionProvider>();
+        final existingBs = widget.isCoApplicant
+            ? submissionProvider.submission.coApplicantBankStatement
+            : submissionProvider.submission.bankStatement;
+        if (existingBs != null) {
+          if (existingBs.pages.isEmpty) {
+            return;
+          }
+          // Submission already has pages (e.g. from draft / resume). Do not replace the
+          // list, but normalize relative URLs and merge metadata from the application.
+          if (!_userHasModifiedPages) {
+            final src = widget.isCoApplicant ? coData! : stepData;
+            final normalized = <String>[];
+            var urlsChanged = false;
+            for (final p in _pages) {
+              if (p.startsWith('http://') ||
+                  p.startsWith('https://') ||
+                  p.startsWith('blob:')) {
+                normalized.add(p);
+                continue;
+              }
+              final u = buildFullUrl(p);
+              if (u != null && u != p) urlsChanged = true;
+              normalized.add(u ?? p);
+            }
+            if (mounted) {
+              setState(() {
+                if (urlsChanged) {
+                  _pages = normalized;
+                }
+                final remoteIsPdf = src['isPdf'] as bool?;
+                if (remoteIsPdf != null) _isPdf = remoteIsPdf;
+                if (src['pdfPassword'] != null) {
+                  _pdfPassword = src['pdfPassword'] as String?;
+                }
+                if (src['statementEndDate'] != null) {
+                  _statementEndDate =
+                      DateTime.parse(src['statementEndDate'] as String);
+                  _calculateStartDate();
+                } else if (src['calculatedStartDate'] != null) {
+                  _calculatedStartDate =
+                      DateTime.parse(src['calculatedStartDate'] as String);
+                }
+                while (_pageFailures.length < _pages.length) {
+                  _pageFailures.add(false);
+                }
+                while (_pageBytes.length < _pages.length) {
+                  _pageBytes.add(null);
+                }
+                while (_pageFailures.length > _pages.length) {
+                  _pageFailures.removeLast();
+                }
+                while (_pageBytes.length > _pages.length) {
+                  _pageBytes.removeLast();
+                }
+              });
+              _syncPagesToProvider();
+              if (accessToken != null &&
+                  !_isPdf &&
+                  normalized.any((page) =>
+                      page.startsWith('http://') ||
+                      page.startsWith('https://'))) {
+                for (int i = 0; i < _pages.length; i++) {
+                  final page = _pages[i];
+                  if (page.startsWith('http')) {
+                    _verifyPage(page, i, accessToken);
+                  }
+                }
+              }
+            }
+          }
+          return;
+        }
+
         setState(() {
-          final rawPages = List<String>.from(stepData['pages'] as List);
+          final src = widget.isCoApplicant ? coData! : stepData;
+          final rawPages = List<String>.from((src['pages'] as List?) ?? []);
           _pages = rawPages.map((p) => buildFullUrl(p) ?? p).toList();
-          _isPdf = stepData['isPdf'] as bool? ?? false;
+          _isPdf = src['isPdf'] as bool? ?? false;
           // Initialize failure/bytes lists
           _pageFailures = List.filled(_pages.length, false);
           _pageBytes = List.filled(_pages.length, null);
 
-          _pdfPassword = stepData['pdfPassword'] as String?;
-          if (stepData['statementEndDate'] != null) {
-            _statementEndDate = DateTime.parse(stepData['statementEndDate'] as String);
+          _pdfPassword = src['pdfPassword'] as String?;
+          if (src['statementEndDate'] != null) {
+            _statementEndDate = DateTime.parse(src['statementEndDate'] as String);
             _calculateStartDate();
-          } else if (stepData['calculatedStartDate'] != null) {
-            _calculatedStartDate = DateTime.parse(stepData['calculatedStartDate'] as String);
+          } else if (src['calculatedStartDate'] != null) {
+            _calculatedStartDate = DateTime.parse(src['calculatedStartDate'] as String);
           }
         });
 
@@ -234,16 +628,27 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     });
 
     try {
-      final localPaths = _pages.where((p) => !p.startsWith('http')).toList();
-      final remoteUrls = _pages.where((p) => p.startsWith('http')).toList();
+      final localPaths = _pages.where((p) => !_isFromBackend(p)).toList();
+      final remoteUrls = _pages.where((p) => _isFromBackend(p)).toList();
       List<Map<String, dynamic>> finalUploadedFiles = [];
 
       if (remoteUrls.isNotEmpty) {
         final currentApp = appProvider.currentApplication;
         if (currentApp?.step4BankStatement != null) {
           final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
-          final existingUploads = (stepData['uploadedFiles'] as List<dynamic>?)
-                  ?.cast<Map<String, dynamic>>() ?? [];
+          final List<Map<String, dynamic>> existingUploads;
+          if (widget.isCoApplicant) {
+            final co = stepData['coApplicantBankStatement'];
+            existingUploads = (co is Map<String, dynamic>
+                    ? (co['uploadedFiles'] as List<dynamic>?)
+                    : null)
+                ?.cast<Map<String, dynamic>>() ??
+                [];
+          } else {
+            existingUploads = (stepData['uploadedFiles'] as List<dynamic>?)
+                    ?.cast<Map<String, dynamic>>() ??
+                [];
+          }
           for (final upload in existingUploads) {
             final url = upload['url'] as String?;
             if (url != null &&
@@ -261,9 +666,25 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         finalUploadedFiles.addAll(newUploadResults);
       }
 
-      await appProvider.updateApplication(
-        currentStep: isBusinessProprietor ? 7 : 5,
-        step4BankStatement: {
+      final existingStep4 = appProvider.currentApplication?.step4BankStatement;
+      if (widget.isCoApplicant) {
+        final merged = mergeStep4BankStatement(existingStep4, {
+          'coApplicantBankStatement': {
+            'pages': _pages.toSet().toList(),
+            'isPdf': _isPdf,
+            'pdfPassword': _pdfPassword,
+            'uploadedFiles': finalUploadedFiles,
+            'statementEndDate': _statementEndDate?.toIso8601String(),
+            'calculatedStartDate': _calculatedStartDate?.toIso8601String(),
+            'savedAt': DateTime.now().toIso8601String(),
+          },
+        });
+        await appProvider.updateApplication(
+          currentStep: isBusinessProprietor ? 7 : 5,
+          step4BankStatement: merged,
+        );
+      } else {
+        final merged = mergeStep4BankStatement(existingStep4, {
           'pages': _pages.toSet().toList(),
           'isPdf': _isPdf,
           'pdfPassword': _pdfPassword,
@@ -271,8 +692,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           'statementEndDate': _statementEndDate?.toIso8601String(),
           'calculatedStartDate': _calculatedStartDate?.toIso8601String(),
           'savedAt': DateTime.now().toIso8601String(),
-        },
-      );
+        });
+        await appProvider.updateApplication(
+          currentStep: isBusinessProprietor ? 7 : 5,
+          step4BankStatement: merged,
+        );
+      }
 
       if (mounted) {
         PremiumToast.showSuccess(context, 'Bank statement saved successfully!');
@@ -297,57 +722,84 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
 
   Future<void> _uploadPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
-    );
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
 
-    if (result != null && result.files.isNotEmpty) {
-      String path;
-      
-      if (kIsWeb) {
-        // On web, use bytes to create a blob URL
-        final bytes = result.files.single.bytes;
-        if (bytes == null) {
-          if (mounted) {
-            PremiumToast.showError(
-              context,
-              'Unable to read PDF file. Please try again.',
-              actionLabel: 'Retry',
-              onAction: _uploadPdf,
-            );
+      if (result != null && result.files.isNotEmpty) {
+        String path;
+        Uint8List? bytesForCheck;
+        String? pathForCheck;
+
+        if (kIsWeb) {
+          final bytes = result.files.single.bytes;
+          if (bytes == null) {
+            if (mounted) {
+              PremiumToast.showError(
+                context,
+                'Unable to read PDF file. Please try again.',
+                actionLabel: 'Retry',
+                onAction: _uploadPdf,
+              );
+            }
+            return;
           }
-          return;
-        }
-        // Create blob URL from bytes
-        path = createBlobUrl(bytes, mimeType: 'application/pdf');
-      } else {
-        // On mobile/desktop, use file path
-        if (result.files.single.path == null) {
-          if (mounted) {
-            PremiumToast.showError(
-              context,
-              'Unable to access file. Please try again.',
-              actionLabel: 'Retry',
-              onAction: _uploadPdf,
-            );
+          bytesForCheck = bytes;
+          path = createBlobUrl(bytes, mimeType: 'application/pdf');
+        } else {
+          if (result.files.single.path == null) {
+            if (mounted) {
+              PremiumToast.showError(
+                context,
+                'Unable to access file. Please try again.',
+                actionLabel: 'Retry',
+                onAction: _uploadPdf,
+              );
+            }
+            return;
           }
-          return;
+          pathForCheck = result.files.single.path!;
+          path = result.files.single.path!;
         }
-        path = result.files.single.path!;
-      }
-      
-      if (mounted) {
+
+        final isEncrypted = await _isPdfEncrypted(pathForCheck, bytesForCheck);
+        if (!mounted) return;
+        final resolvedPassword = await _resolveBankPdfPasswordIfNeeded(
+          headerSuggestsEncrypt: isEncrypted,
+          localOrBlobPath: path,
+          webBytes: bytesForCheck,
+        );
+        if (resolvedPassword == null || !mounted) return;
+
         setState(() {
-          _pages = [path];
+          _pages = [..._pages, path];
           _isPdf = true;
-          _pageFailures = [false];
-          _pageBytes = [null];
+          _pdfPassword = resolvedPassword.isEmpty ? null : resolvedPassword;
+          _pageFailures = [..._pageFailures, false];
+          _pageBytes = [..._pageBytes, null];
         });
-        context
-            .read<SubmissionProvider>()
-            .setBankStatementPages([path], isPdf: true);
-        _showPasswordDialogIfNeeded();
+        _syncPagesToProvider();
+        final p = context.read<SubmissionProvider>();
+        if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
+          if (widget.isCoApplicant) {
+            p.setCoApplicantBankStatementPassword(_pdfPassword!);
+          } else {
+            p.setBankStatementPassword(_pdfPassword!);
+          }
+        }
+        unawaited(_runBankStatementOcrIfNeeded());
+      }
+    } catch (e) {
+      debugPrint('[BankStatement] _uploadPdf error: $e');
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Unable to process PDF. Please try again.',
+          actionLabel: 'Retry',
+          onAction: _uploadPdf,
+        );
       }
     }
   }
@@ -356,68 +808,30 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
 
   void _removePage(int index) {
+    if (index < 0 || index >= _pages.length) return;
     setState(() {
+      _userHasModifiedPages = true;
       _pages.removeAt(index);
       if (index < _pageFailures.length) {
         _pageFailures.removeAt(index);
+      }
+      if (index < _pageBytes.length) {
         _pageBytes.removeAt(index);
       }
+      while (_pageFailures.length > _pages.length) {
+        _pageFailures.removeLast();
+      }
+      while (_pageBytes.length > _pages.length) {
+        _pageBytes.removeLast();
+      }
+      while (_pageFailures.length < _pages.length) {
+        _pageFailures.add(false);
+      }
+      while (_pageBytes.length < _pages.length) {
+        _pageBytes.add(null);
+      }
     });
-    context
-        .read<SubmissionProvider>()
-        .setBankStatementPages(_pages, isPdf: _isPdf);
-  }
-
-  void _showPasswordDialogIfNeeded() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('PDF Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Is this PDF password protected?'),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: InputDecoration(
-                labelText: 'PDF Password (if required)',
-                labelStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-                floatingLabelStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-                border: const OutlineInputBorder(),
-              ),
-              obscureText: true,
-              onChanged: (value) => _pdfPassword = value,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              _pdfPassword = null;
-              Navigator.of(context).pop();
-            },
-            child: const Text('Not Required'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (_pdfPassword != null && _pdfPassword!.isNotEmpty) {
-                context
-                    .read<SubmissionProvider>()
-                    .setBankStatementPassword(_pdfPassword!);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+    _syncPagesToProvider();
   }
 
   Future<void> _proceedToNext() async {
@@ -425,6 +839,91 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       PremiumToast.showWarning(
         context,
         'Please upload bank statement (last 6 months)',
+      );
+      return;
+    }
+    // When multiple files: ensure user confirms they are from same period (not different months)
+    // #region agent log
+    debugAgentLog(
+      location: 'step4_bank_statement_screen.dart:_proceedToNext',
+      message: 'Bank statement proceed',
+      data: {'pagesLength': _pages.length, 'isPdf': _isPdf, 'willShowDialog': _pages.length > 1},
+      hypothesisId: 'H-C',
+    );
+    // #endregion
+    // Server-only statements (resume from backend) are allowed: OCR / hard validation
+    // apply only when the user has local uploads (see below).
+
+    if (_pages.length > 1 && mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirm statement period'),
+          content: const Text(
+            'All uploaded pages/PDFs must be from the same 6-month period (same account). '
+            'Statements from different months are not accepted.\n\n'
+            'Confirm that all statements are from the required period?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('No, I\'ll fix it'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Yes, confirm'),
+            ),
+          ],
+        ),
+      );
+      // #region agent log
+      if (mounted) {
+        debugAgentLog(
+          location: 'step4_bank_statement_screen.dart:dialogResult',
+          message: 'Bank statement dialog',
+          data: {'confirmed': confirmed},
+          hypothesisId: 'H-C',
+        );
+      }
+      // #endregion
+      if (confirmed != true || !mounted) return;
+    }
+
+    // Hard validation: uploaded statements must be from the same account and
+    // represent a consistent 6-month period. We validate only local uploads
+    // (newly added in this session/device), because remote files may not be
+    // readable for OCR here.
+    final localPages = _pages.where((p) => !_isFromBackend(p)).toList();
+    if (!kIsWeb && localPages.isNotEmpty) {
+      final validation = await _validateBankStatementConsistency(localPages);
+      if (!mounted) return;
+      if (!validation.isValid) {
+        PremiumToast.showError(
+          context,
+          validation.errorMessage ??
+              'Bank statements failed consistency validation. Please re-upload.',
+          duration: const Duration(seconds: 5),
+        );
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    final provider = context.read<SubmissionProvider>();
+    final refName = _referenceNameForOcr(provider);
+    final hasLocalPages = _pages.any((p) => !_isFromBackend(p));
+    final nameMatches = widget.isCoApplicant
+        ? provider.submission.coApplicantBankStatement?.nameMatchesAadhaar
+        : provider.submission.bankStatement?.nameMatchesAadhaar;
+    if (hasLocalPages &&
+        refName != null &&
+        refName.isNotEmpty &&
+        nameMatches == false) {
+      PremiumToast.showError(
+        context,
+        'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
+        duration: const Duration(seconds: 4),
       );
       return;
     }
@@ -447,6 +946,16 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       final isProfessional = loanType.contains('professional');
       final professionalType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
       final isProfessionalDoctorOrCa = isProfessional && (professionalType == 'doctor' || professionalType == 'ca');
+      final isStudent = loanType.contains('student');
+      if (widget.fromPreview) {
+        context.go(AppRoutes.step6Preview);
+        return;
+      }
+      if (widget.isCoApplicant) {
+        context.go(AppRoutes.coApplicantSalarySlips);
+        return;
+      }
+      final isPersonalLoan = !isBusiness && !isProfessionalDoctorOrCa && !isStudent;
       context.go(
         isBusinessProprietor
             ? AppRoutes.step5BusinessDocs
@@ -454,9 +963,212 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 ? AppRoutes.partnerCount
                 : isProfessionalDoctorOrCa
                     ? AppRoutes.step5ProfessionalDocs
-                    : AppRoutes.step5_1SalarySlips),
+                    : isStudent
+                        ? AppRoutes.step5StudentDocs
+                        : isPersonalLoan
+                            ? AppRoutes.step5_1SalarySlips
+                            : AppRoutes.step5_1SalarySlips),
       );
     }
+  }
+
+  Future<({bool isValid, String? errorMessage})> _validateBankStatementConsistency(
+    List<String> localPages,
+  ) async {
+    final accountTokens = <String>[];
+    final allMonths = <int>{};
+
+    for (final path in localPages) {
+      final text = await _extractStatementText(path);
+      if (text == null || text.trim().isEmpty) {
+        if (_isPdfPath(path)) {
+          final encrypted = await _isPdfEncrypted(path, null);
+          if (encrypted) {
+            return (
+              isValid: false,
+              errorMessage:
+                  'This PDF is password-protected. Please re-upload and enter the correct password when prompted.',
+            );
+          }
+        }
+        return (
+          isValid: false,
+          errorMessage:
+              'Could not read one of the bank statements. Please upload clearer files.',
+        );
+      }
+
+      final account = _extractAccountToken(text);
+      if (account == null || account.isEmpty) {
+        return (
+          isValid: false,
+          errorMessage:
+              'Could not detect account number on one statement. Please upload clearer files from the same account.',
+        );
+      }
+      accountTokens.add(account);
+
+      final months = _extractMonthKeysFromText(text);
+      if (months.isEmpty) {
+        return (
+          isValid: false,
+          errorMessage:
+              'Could not detect statement month(s) from one file. Please upload readable statements.',
+        );
+      }
+      allMonths.addAll(months);
+    }
+
+    // All statements must belong to the same account (masked forms normalize to same token).
+    final uniqueAccounts = accountTokens.toSet();
+    if (uniqueAccounts.length > 1) {
+      return (
+        isValid: false,
+        errorMessage:
+            'Statements appear to be from different accounts. Please upload statements for a single account only.',
+      );
+    }
+
+    if (allMonths.length < 6) {
+      return (
+        isValid: false,
+        errorMessage:
+            'At least 6 statement months are required. Current upload does not cover full 6 months.',
+      );
+    }
+
+    final sorted = allMonths.toList()..sort();
+    final minKey = sorted.first;
+    final maxKey = sorted.last;
+    final span = _monthDiff(minKey, maxKey) + 1;
+
+    // Accept a tight range only. If the spread is too large, user likely mixed periods.
+    if (span > 7) {
+      return (
+        isValid: false,
+        errorMessage:
+            'Statement months are inconsistent. Please upload documents from one continuous 6-month period.',
+      );
+    }
+
+    return (isValid: true, errorMessage: null);
+  }
+
+  Future<String?> _extractStatementText(String path) async {
+    try {
+      if (_isPdfPath(path)) {
+        final hasPassword = _pdfPassword != null && _pdfPassword!.isNotEmpty;
+
+        int count;
+        if (hasPassword || !OcrPdf.isSupported) {
+          count = await OcrPdf.getPageCountWithPassword(path, password: _pdfPassword);
+        } else {
+          count = await OcrPdf.getPageCount(path);
+          if (count <= 0) {
+            count = await OcrPdf.getPageCountWithPassword(path, password: _pdfPassword);
+          }
+        }
+        if (count <= 0) return null;
+
+        // Read up to first 6 pages to capture month range + account details.
+        final pagesToRead = count > 6 ? 6 : count;
+        final parts = <String>[];
+        for (int i = 0; i < pagesToRead; i++) {
+          final imgBytes = await _renderPdfPageForOcr(path, pageIndex: i);
+          if (imgBytes == null) continue;
+          final result = await OcrService.extractDocumentText(
+            path,
+            imageBytes: imgBytes,
+          );
+          if (result.success && (result.fullText ?? '').trim().isNotEmpty) {
+            parts.add(result.fullText!.trim());
+          }
+        }
+        return parts.join('\n');
+      }
+
+      final result = await OcrService.extractDocumentText(path);
+      if (!result.success) return null;
+      return result.fullText;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isPdfPath(String path) => path.toLowerCase().endsWith('.pdf');
+
+  String? _extractAccountToken(String text) {
+    final upper = text.toUpperCase();
+    final patterns = <RegExp>[
+      RegExp(
+        r'(?:A\/?C(?:COUNT)?(?:\s*(?:NO|NUMBER))?|ACCOUNT(?:\s*(?:NO|NUMBER))?)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:ACCT|ACCOUNT)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        caseSensitive: false,
+      ),
+    ];
+
+    for (final re in patterns) {
+      final m = re.firstMatch(upper);
+      final raw = m?.group(1);
+      if (raw == null) continue;
+      final normalized = raw.replaceAll(RegExp(r'[^0-9X\*]'), '');
+      if (normalized.length >= 6) return normalized;
+    }
+    return null;
+  }
+
+  Set<int> _extractMonthKeysFromText(String text) {
+    final out = <int>{};
+    final upper = text.toUpperCase();
+
+    const monthMap = <String, int>{
+      'JAN': 1,
+      'FEB': 2,
+      'MAR': 3,
+      'APR': 4,
+      'MAY': 5,
+      'JUN': 6,
+      'JUL': 7,
+      'AUG': 8,
+      'SEP': 9,
+      'OCT': 10,
+      'NOV': 11,
+      'DEC': 12,
+    };
+
+    final monthNameRe = RegExp(
+      r'\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[\s\-/.,]*(20\d{2})\b',
+      caseSensitive: false,
+    );
+    for (final m in monthNameRe.allMatches(upper)) {
+      final mon = m.group(1)?.substring(0, 3).toUpperCase();
+      final yr = int.tryParse(m.group(2) ?? '');
+      if (mon == null || yr == null) continue;
+      final mm = monthMap[mon];
+      if (mm == null) continue;
+      out.add(yr * 100 + mm);
+    }
+
+    final monthNumRe = RegExp(r'\b(0?[1-9]|1[0-2])[\/\-](20\d{2})\b');
+    for (final m in monthNumRe.allMatches(upper)) {
+      final mm = int.tryParse(m.group(1) ?? '');
+      final yy = int.tryParse(m.group(2) ?? '');
+      if (mm == null || yy == null) continue;
+      out.add(yy * 100 + mm);
+    }
+
+    return out;
+  }
+
+  int _monthDiff(int startKey, int endKey) {
+    final sy = startKey ~/ 100;
+    final sm = startKey % 100;
+    final ey = endKey ~/ 100;
+    final em = endKey % 100;
+    return (ey - sy) * 12 + (em - sm);
   }
 
   String _formatDateWithYear(DateTime date) {
@@ -469,17 +1181,52 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+          return;
+        }
+        if (widget.isCoApplicant) {
+          context.go(AppRoutes.coApplicantPan);
+          return;
+        }
+        final appProvider = context.read<ApplicationProvider>();
+        final submissionProvider = context.read<SubmissionProvider>();
+        final loanType = (appProvider.currentApplication?.loanType ??
+                submissionProvider.submission.loanType ??
+                '')
+            .toLowerCase();
+        final businessLoanType =
+            (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+        final isBusinessProprietor =
+            loanType.contains('business') && businessLoanType == 'proprietor';
+        final isProfessional = loanType.contains('professional');
+        context.go(isBusinessProprietor
+            ? AppRoutes.step5SpousePan
+            : (isProfessional ? AppRoutes.step3Pan : AppRoutes.step3Pan));
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
           children: [
             // Royal Blue Header
             AppHeader(
-              title: 'Bank Statement',
+              title: widget.isCoApplicant
+                  ? 'Co-applicant Bank Statement'
+                  : 'Bank Statement',
               icon: Icons.account_balance,
               showBackButton: true,
               onBackPressed: () {
+                if (widget.fromPreview) {
+                  context.go(AppRoutes.step6Preview);
+                  return;
+                }
+                if (widget.isCoApplicant) {
+                  context.go(AppRoutes.coApplicantPan);
+                  return;
+                }
                 final appProvider = context.read<ApplicationProvider>();
                 final submissionProvider = context.read<SubmissionProvider>();
                 final loanType = (appProvider.currentApplication?.loanType ??
@@ -496,8 +1243,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     : (isProfessional ? AppRoutes.step3Pan : AppRoutes.step3Pan));
               },
               showHomeButton: true,
-              actions: const [
-                PreviewHeaderAction(backRoute: AppRoutes.step4BankStatement),
+              actions: [
+                PreviewHeaderAction(
+                  backRoute: widget.isCoApplicant
+                      ? AppRoutes.coApplicantBankStatement
+                      : AppRoutes.step4BankStatement,
+                ),
               ],
             ),
             
@@ -518,11 +1269,24 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     loanType.contains('business') && businessLoanType == 'pvt_limited';
                 final partnerCount = submissionProvider.submission.businessDocuments?.partnerCount ?? 0;
                 final totalStepsPartnerFlow = partnerCount > 0 ? (10 + 2 * partnerCount) : 10;
+                final hasCoApplicant = submissionProvider.submission.hasCoApplicant;
+
+                if (widget.isCoApplicant) {
+                  return _buildProgressIndicator(
+                    context,
+                    currentStep: 8,
+                    totalSteps: 12,
+                  );
+                }
 
                 return _buildProgressIndicator(
                   context,
                   currentStep: isBusinessProprietor ? 6 : (isBusinessPartnership || isBusinessPvtLimited ? 4 : 4),
-                  totalSteps: isBusinessProprietor ? 10 : (isBusinessPartnership || isBusinessPvtLimited ? totalStepsPartnerFlow : 7),
+                  totalSteps: isBusinessProprietor
+                      ? 10
+                      : (isBusinessPartnership || isBusinessPvtLimited
+                          ? totalStepsPartnerFlow
+                          : (hasCoApplicant ? 12 : 7)),
                 );
               },
             ),
@@ -557,7 +1321,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         ),
       ),
       bottomNavigationBar: _buildFooter(context),
-    );
+    )
+  );
   }
 
   Widget _buildProgressIndicator(
@@ -652,6 +1417,8 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           ),
           const SizedBox(height: 24),
           _buildRequirementItem(Icons.calendar_today, 'Must be last 6 months'),
+          const SizedBox(height: 8),
+          _buildRequirementItem(Icons.warning_amber_rounded, 'All pages/PDFs must be from the same 6-month period (do not mix different months)'),
           const SizedBox(height: 16),
           _buildRequirementItem(Icons.lock, 'PDF password supported'),
         ],
@@ -876,7 +1643,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Uploaded Pages',
+                    _isPdf ? 'Uploaded loan PDFs' : 'Uploaded Pages',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -885,7 +1652,9 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${_pages.length} ${_pages.length == 1 ? 'page' : 'pages'}',
+                    _isPdf
+                        ? '${_pages.length} ${_pages.length == 1 ? 'PDF' : 'PDFs'}'
+                        : '${_pages.length} ${_pages.length == 1 ? 'page' : 'pages'}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontSize: 12,
                       color: Colors.grey.shade400,
@@ -977,44 +1746,49 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               ],
             ),
           ),
-          // Delete button
+          // Delete button - fully inside card with larger tap target for reliability
           Positioned(
-            top: -4,
-            right: -4,
-            child: Material(
-              color: const Color(0xFFEF4444), // red-500
-              shape: const CircleBorder(),
-              child: InkWell(
-                onTap: () => _removePage(index),
-                customBorder: const CircleBorder(),
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
+            top: 6,
+            right: 6,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => _removePage(index),
+                  customBorder: const CircleBorder(),
+                  child: Center(
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444), // red-500
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.2),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.close,
-                    color: Colors.white,
-                    size: 14,
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-          // Page number badge
+          // PDF/page number badge
           Positioned(
             bottom: 12,
             left: 12,
@@ -1025,7 +1799,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                'Page ${index + 1}',
+                _isPdf ? 'PDF ${index + 1}' : 'Page ${index + 1}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                   fontWeight: FontWeight.w500,
@@ -1053,7 +1827,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Change PDF Button
+          // Add another PDF / Change PDF Button
           if (_pages.isNotEmpty)
             Material(
               color: Colors.white,
@@ -1074,10 +1848,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.file_upload, color: AppTheme.primaryColor, size: 20),
+                      const Icon(Icons.add_circle_outline, color: AppTheme.primaryColor, size: 20),
                       const SizedBox(width: 8),
                       Text(
-                        'Change PDF',
+                        _isPdf ? 'Add another PDF' : 'Add page',
                         style: theme.textTheme.bodyLarge?.copyWith(
                           color: AppTheme.primaryColor,
                           fontWeight: FontWeight.bold,
@@ -1179,7 +1953,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Upload PDF file (last 6 months)',
+            'Upload one or more PDF files (last 6 months)',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: Colors.grey.shade600,
             ),

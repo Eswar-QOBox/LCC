@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:file_picker/file_picker.dart';
+import '../services/ocr_service.dart';
+import '../utils/ocr_pdf.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:provider/provider.dart';
@@ -23,12 +25,26 @@ import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../utils/api_config.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
+import '../widgets/premium_progress_indicator.dart';
+import '../utils/debug_log.dart';
+import '../utils/step4_merge.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
 
 class Step5_1SalarySlipsScreen extends StatefulWidget {
-  const Step5_1SalarySlipsScreen({super.key});
+  const Step5_1SalarySlipsScreen({
+    super.key,
+    this.fromPreview = false,
+    this.isCoApplicant = false,
+  });
+
+  /// When true, Back and Continue return to Preview (opened via Edit from Preview).
+  final bool fromPreview;
+
+  /// When true, uploads apply to the co-applicant (joint personal loan).
+  final bool isCoApplicant;
 
   @override
   State<Step5_1SalarySlipsScreen> createState() =>
@@ -48,6 +64,319 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   List<bool> _slipFailures = [];
   List<Uint8List?> _slipBytes = [];
   late final List<DateTime> _requiredMonths;
+  /// OCR must succeed for each slip (on mobile) before proceeding.
+  final Map<int, bool> _ocrCompleteBySlot = {};
+  final Map<int, String?> _ocrIssueBySlot = {};
+
+  static const Map<String, int> _monthNameToNumber = {
+    'jan': 1,
+    'january': 1,
+    'feb': 2,
+    'february': 2,
+    'mar': 3,
+    'march': 3,
+    'apr': 4,
+    'april': 4,
+    'may': 5,
+    'jun': 6,
+    'june': 6,
+    'jul': 7,
+    'july': 7,
+    'aug': 8,
+    'august': 8,
+    'sep': 9,
+    'sept': 9,
+    'september': 9,
+    'oct': 10,
+    'october': 10,
+    'nov': 11,
+    'november': 11,
+    'dec': 12,
+    'december': 12,
+  };
+
+  String _monthKey(DateTime dt) => '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}';
+
+  int? _parseYearFlexible(String rawYear) {
+    final value = int.tryParse(rawYear);
+    if (value == null) return null;
+    if (value >= 1000) return value;
+    if (value >= 0 && value <= 99) return 2000 + value;
+    return null;
+  }
+
+  Set<String> _extractMonthKeysFromText(String fullText) {
+    final keys = <String>{};
+
+    void addKey(int? month, int? year) {
+      if (month == null || year == null) return;
+      if (month < 1 || month > 12) return;
+      if (year < 2000 || year > 2100) return;
+      keys.add('${year.toString().padLeft(4, '0')}-${month.toString().padLeft(2, '0')}');
+    }
+
+    final monthNamePattern =
+        r'(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+
+    final normalizedLines = fullText
+        .split(RegExp(r'[\r\n]+'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    // Prioritize lines that are likely to contain salary period details.
+    final payPeriodLines = normalizedLines.where((line) {
+      final u = line.toUpperCase();
+      return u.contains('PAY PERIOD') ||
+          u.contains('SALARY MONTH') ||
+          u.contains('WAGE MONTH') ||
+          u.contains('MONTH OF') ||
+          u.contains('PAYSLIP') ||
+          u.contains('PAY SLIP');
+    }).toList();
+
+    final scanBuckets = <String>[
+      ...payPeriodLines,
+      fullText,
+    ];
+
+    for (final bucket in scanBuckets) {
+      for (final m in RegExp('\\b$monthNamePattern\\s*[-/,\\s]\\s*(\\d{2,4})\\b', caseSensitive: false)
+          .allMatches(bucket)) {
+        final monthName = (m.group(1) ?? '').toLowerCase();
+        addKey(_monthNameToNumber[monthName], _parseYearFlexible(m.group(2) ?? ''));
+      }
+
+      for (final m in RegExp('\\b(\\d{2,4})\\s*[-/,\\s]\\s*$monthNamePattern\\b', caseSensitive: false)
+          .allMatches(bucket)) {
+        final monthName = (m.group(2) ?? '').toLowerCase();
+        addKey(_monthNameToNumber[monthName], _parseYearFlexible(m.group(1) ?? ''));
+      }
+
+      for (final m in RegExp(r'\b(0?[1-9]|1[0-2])\s*[-/]\s*(\d{4})\b').allMatches(bucket)) {
+        addKey(int.tryParse(m.group(1) ?? ''), int.tryParse(m.group(2) ?? ''));
+      }
+
+      for (final m in RegExp(r'\b(\d{4})\s*[-/]\s*(0?[1-9]|1[0-2])\b').allMatches(bucket)) {
+        addKey(int.tryParse(m.group(2) ?? ''), int.tryParse(m.group(1) ?? ''));
+      }
+    }
+
+    return keys;
+  }
+
+  static bool _isNameLike(String s) {
+    final t = s.trim();
+    if (t.length < 3 || t.length > 50) return false;
+    if (RegExp(r'\d').hasMatch(t)) return false;
+    // Avoid common non-name tokens that may appear near names.
+    final upper = t.toUpperCase();
+    const banned = <String>[
+      'GOVERNMENT',
+      'INDIA',
+      'UIDAI',
+      'AADHAAR',
+      'UNIQUE',
+      'IDENTIFICATION',
+      'PAN',
+      'GST',
+      'IFSC',
+      'BANK',
+      'ACCOUNT',
+      'STATEMENT',
+      'DATE',
+      'BIRTH',
+      'DOB',
+      'EMPLOYEE',
+      'EMP',
+      'DESIGNATION',
+      'COMPANY',
+      'SALARY',
+      'PAYSLIP',
+      'PAY',
+      'NET',
+      'GROSS',
+    ];
+    for (final b in banned) {
+      if (upper.contains(b)) return false;
+    }
+    // Allow letters, spaces and dots (initials).
+    return RegExp(r'^[A-Za-z.\s]+$').hasMatch(t);
+  }
+
+  String _normalizePersonName(String name) {
+    return name
+        .toUpperCase()
+        .replaceAll(RegExp(r'[^A-Z.\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  List<String> _nameTokens(String name) {
+    final normalized = _normalizePersonName(name);
+    return normalized
+        .split(RegExp(r'\s+'))
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .where((t) => RegExp(r'^[A-Z]+\.?$').hasMatch(t))
+        .map((t) => t.replaceAll('.', ''))
+        .where((t) => t.length >= 2 || t.length == 1)
+        .toList();
+  }
+
+  Set<String> _extractEmployeeNameCandidatesFromText(String fullText) {
+    final lines = fullText
+        .split(RegExp(r'[\r\n]+'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    final candidates = <String>{};
+
+    final labelValueRegexes = <RegExp>[
+      RegExp(r'(?:EMPLOYEE\s*NAME|EMP\s*NAME|NAME)\s*[:\-]\s*(.+)',
+          caseSensitive: false),
+      RegExp(r'(?:EMPLOYEE)\s*[:\-]\s*(.+)', caseSensitive: false),
+      RegExp(r'(?:SALARIED|SALARIED\s+EMPLOYEE)\s*[:\-]\s*(.+)',
+          caseSensitive: false),
+    ];
+
+    for (final line in lines) {
+      // Extract "label: value" parts if present.
+      for (final r in labelValueRegexes) {
+        final m = r.firstMatch(line);
+        if (m != null) {
+          final extracted = (m.group(1) ?? '').trim();
+          if (_isNameLike(extracted)) candidates.add(extracted);
+        }
+      }
+
+      // If line is like "S/O John Doe" or "FATHER: John Doe"
+      final slashRegex = RegExp(r'(?:S\s*/\s*O|S\/O|W\s*/\s*O|W\/O|D\s*/\s*O|D\/O)\s*(.+)',
+          caseSensitive: false);
+      final m2 = slashRegex.firstMatch(line);
+      if (m2 != null) {
+        final extracted = (m2.group(1) ?? '').trim();
+        if (_isNameLike(extracted)) candidates.add(extracted);
+      }
+
+      // Otherwise, try using the whole line if it looks name-like.
+      if (_isNameLike(line)) {
+        candidates.add(line);
+      }
+    }
+
+    // If nothing found, do a softer heuristic:
+    if (candidates.isEmpty) {
+      for (final line in lines) {
+        if (!_isNameLike(line)) continue;
+        final words = line.split(RegExp(r'\s+')).where((w) => w.trim().isNotEmpty).length;
+        if (words >= 2 && words <= 5) {
+          candidates.add(line);
+        }
+      }
+    }
+
+    // Limit to a small set to keep matching stable.
+    return candidates.take(6).toSet();
+  }
+
+  int _levenshteinDistance(String a, String b, {int maxDist = 2}) {
+    // Early-exit Levenshtein distance for short name tokens.
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+    if ((a.length - b.length).abs() > maxDist) return maxDist + 1;
+
+    final m = a.length;
+    final n = b.length;
+    final dp = List<int>.generate(n + 1, (j) => j);
+
+    for (int i = 1; i <= m; i++) {
+      int prev = dp[0];
+      dp[0] = i;
+      int rowMin = dp[0];
+      for (int j = 1; j <= n; j++) {
+        final temp = dp[j];
+        final cost = a.codeUnitAt(i - 1) == b.codeUnitAt(j - 1) ? 0 : 1;
+        dp[j] = [
+          dp[j] + 1, // deletion
+          dp[j - 1] + 1, // insertion
+          prev + cost, // substitution
+        ].reduce((x, y) => x < y ? x : y);
+        rowMin = dp[j] < rowMin ? dp[j] : rowMin;
+        prev = temp;
+      }
+      if (rowMin > maxDist) return maxDist + 1;
+    }
+    return dp[n];
+  }
+
+  bool _fuzzyTokenMatch(String aadhaarToken, String candidateToken) {
+    if (aadhaarToken == candidateToken) return true;
+    if (aadhaarToken.length == 1 || candidateToken.length == 1) {
+      // Initials: allow prefix match.
+      return aadhaarToken.startsWith(candidateToken) || candidateToken.startsWith(aadhaarToken);
+    }
+    final a = aadhaarToken;
+    final b = candidateToken;
+    // Prefix match catches common OCR token splits.
+    final minLen = a.length < b.length ? a.length : b.length;
+    if (minLen >= 3) {
+      if (a.startsWith(b) || b.startsWith(a)) return true;
+      // Minor typo tolerance.
+      final dist = _levenshteinDistance(a, b, maxDist: 2);
+      if (dist <= 1) return true;
+    }
+    return false;
+  }
+
+  bool _fuzzyNameMatchesAadhaar({
+    required String aadhaarName,
+    required String slipText,
+    String? debugBestCandidate,
+  }) {
+    final aadhaarTokens = _nameTokens(aadhaarName);
+    if (aadhaarTokens.isEmpty) return false;
+
+    final candidates = _extractEmployeeNameCandidatesFromText(slipText);
+    if (candidates.isEmpty) return false;
+
+    int bestScore = -1;
+    String? bestCandidate;
+
+    for (final cand in candidates) {
+      final candTokens = _nameTokens(cand);
+      if (candTokens.isEmpty) continue;
+      final matched = <String>{};
+      for (final aTok in aadhaarTokens) {
+        for (final cTok in candTokens) {
+          if (_fuzzyTokenMatch(aTok, cTok)) {
+            matched.add(aTok);
+            break;
+          }
+        }
+      }
+      final score = matched.length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCandidate = cand;
+      }
+    }
+
+    // Thresholds: allow some mismatch, but require at least 2 tokens to align.
+    final tokenCount = aadhaarTokens.length;
+    final requiredMatches = tokenCount <= 3 ? 2 : 3;
+    if (bestScore >= requiredMatches) return true;
+
+    // Fallback: allow 2-token match when OCR is noisy.
+    if (bestScore >= 2 && (tokenCount >= 4)) return true;
+
+    if (debugBestCandidate != null && bestCandidate != null) {
+      debugPrint('Salary slip name fuzzy mismatch. Aadhaar="$aadhaarName" best="$bestCandidate" matches=$bestScore');
+    }
+    return false;
+  }
 
   Future<String> _cropSalarySlipImageIfPossible(String path) async {
     if (kIsWeb) return path;
@@ -106,6 +435,194 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
   bool _isServerStoredPath(String path) {
     return path.startsWith('http') || path.startsWith('/uploads/') || path.startsWith('/api/');
+  }
+
+  /// Run OCR on salary slip (image or PDF first page). Skips on web and for remote/blob paths.
+  Future<void> _performDocumentOcrForSlot(int slotIndex, String path, bool isPdf) async {
+    if (kIsWeb) return;
+    if (_isServerStoredPath(path)) return;
+    if (path.startsWith('blob:')) return;
+    try {
+      Uint8List? imageBytes;
+      if (isPdf && path.toLowerCase().endsWith('.pdf') && OcrPdf.isSupported) {
+        try {
+          final count = await OcrPdf.getPageCount(path);
+          if (count > 0) {
+            imageBytes = await OcrPdf.renderPageToJpegBytes(path, pageIndex: 0);
+          }
+        } catch (e) {
+          if (kDebugMode) debugPrint('[SalarySlips] PDF render for OCR failed: $e');
+        }
+      }
+      final result = imageBytes != null
+          ? await OcrService.extractDocumentText(path, imageBytes: imageBytes)
+          : await OcrService.extractDocumentText(path);
+      if (!mounted) return;
+      if (result.success) {
+        final text = result.fullText?.trim() ?? '';
+        if (text.isEmpty) {
+          setState(() {
+            _ocrCompleteBySlot[slotIndex] = false;
+            _ocrIssueBySlot[slotIndex] = 'No readable text detected';
+          });
+          PremiumToast.showWarning(
+            context,
+            'Slip text not readable. Re-capture clearly and try again.',
+            duration: const Duration(seconds: 4),
+          );
+          return;
+        }
+
+        final expectedMonth = _requiredMonths[slotIndex];
+        final expectedKey = _monthKey(expectedMonth);
+        final detectedKeys = _extractMonthKeysFromText(text);
+        if (!detectedKeys.contains(expectedKey)) {
+          final expectedLabel = DateFormat('MMM yyyy').format(expectedMonth);
+          final detectedLabels = detectedKeys
+              .map((key) {
+                final parts = key.split('-');
+                if (parts.length != 2) return key;
+                final y = int.tryParse(parts[0]);
+                final m = int.tryParse(parts[1]);
+                if (y == null || m == null) return key;
+                return DateFormat('MMM yyyy').format(DateTime(y, m));
+              })
+              .toSet()
+              .toList()
+            ..sort();
+          final detectedText = detectedLabels.isEmpty
+              ? 'No salary month detected'
+              : 'Detected: ${detectedLabels.join(', ')}';
+          setState(() {
+            _ocrCompleteBySlot[slotIndex] = false;
+            _ocrIssueBySlot[slotIndex] = 'Expected $expectedLabel. $detectedText';
+          });
+          PremiumToast.showWarning(
+            context,
+            'Month mismatch. Expected $expectedLabel payslip for this slot.',
+            duration: const Duration(seconds: 4),
+          );
+          return;
+        }
+
+        // Optional: verify employee name is fuzzy-matching with Aadhaar name.
+        final sub = context.read<SubmissionProvider>().submission;
+        final aadhaarName = widget.isCoApplicant
+            ? ((sub.coApplicantPersonalData?.nameAsPerAadhaar?.trim().isNotEmpty ?? false)
+                ? sub.coApplicantPersonalData!.nameAsPerAadhaar
+                : sub.coApplicantExtractedNameFromAadhaar)
+            : sub.personalData?.nameAsPerAadhaar;
+        if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
+          final matches = _fuzzyNameMatchesAadhaar(
+            aadhaarName: aadhaarName.trim(),
+            slipText: text,
+          );
+          if (!matches) {
+            setState(() {
+              _ocrCompleteBySlot[slotIndex] = false;
+              _ocrIssueBySlot[slotIndex] =
+                  'Employee name does not match Aadhaar name (fuzzy).';
+            });
+            PremiumToast.showWarning(
+              context,
+              'Employee name mismatch. Please upload a clearer slip for this month.',
+              duration: const Duration(seconds: 4),
+            );
+            return;
+          }
+        }
+
+        setState(() {
+          _ocrCompleteBySlot[slotIndex] = true;
+          _ocrIssueBySlot[slotIndex] = null;
+        });
+        PremiumToast.showSuccess(
+          context,
+          'Salary slip scanned and month verified.',
+        );
+      } else {
+        setState(() {
+          _ocrCompleteBySlot[slotIndex] = false;
+          _ocrIssueBySlot[slotIndex] = result.errorMessage;
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not read slip. Re-capture with better lighting or replace to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[SalarySlips] OCR failed: $e');
+      if (mounted) {
+        setState(() {
+          _ocrCompleteBySlot[slotIndex] = false;
+          _ocrIssueBySlot[slotIndex] = e.toString();
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not scan slip. Re-capture or replace to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    }
+  }
+
+  void _showSalarySlipOcrDialog(List<String> issues) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.document_scanner_outlined, color: AppTheme.errorColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Salary Slip OCR Incomplete',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Each salary slip must be scanned successfully before you can continue.',
+              style: TextStyle(height: 1.3),
+            ),
+            const SizedBox(height: 12),
+            ...issues.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $e', style: const TextStyle(height: 1.25)),
+            )),
+            const SizedBox(height: 12),
+            Text(
+              'Re-capture or re-upload with better lighting and ensure the slip is clearly visible.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.3),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   List<DateTime> _computeRequiredMonths() {
@@ -277,6 +794,41 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
   Future<void> _setSlipForSlot(int slotIndex, String path, {required bool isPdf}) async {
     if (slotIndex < 0 || slotIndex >= _requiredSlipCount) return;
+    // Reject same document used for multiple months (user requirement: same payslip in 3 months should not be accepted)
+    final normalizedPath = path.trim();
+    for (int i = 0; i < _requiredSlipCount; i++) {
+      if (i != slotIndex && _slipItems[i].path.trim() == normalizedPath) {
+        if (mounted) {
+          PremiumToast.showWarning(
+            context,
+            'This document is already used for another month. Please upload a different payslip for ${DateFormat('MMM yyyy').format(_requiredMonths[slotIndex])}.',
+            duration: const Duration(seconds: 4),
+          );
+        }
+        // #region agent log
+        debugAgentLog(
+          location: 'step5_1_salary_slips_screen.dart:_setSlipForSlot',
+          message: 'Payslip duplicate rejected',
+          data: {'slotIndex': slotIndex, 'pathLen': path.length, 'duplicateDetected': true},
+          hypothesisId: 'H-D',
+        );
+        // #endregion
+        return;
+      }
+    }
+    // #region agent log
+    debugAgentLog(
+      location: 'step5_1_salary_slips_screen.dart:_setSlipForSlot',
+      message: 'Payslip set',
+      data: {
+        'slotIndex': slotIndex,
+        'pathLen': path.length,
+        'otherPaths': _slipItems.map((s) => s.path.length).toList(),
+        'duplicateDetected': false,
+      },
+      hypothesisId: 'H-D',
+    );
+    // #endregion
     final slotMonth = _requiredMonths[slotIndex];
 
     final provider = context.read<SubmissionProvider>();
@@ -290,8 +842,14 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       if (slotIndex < _slipBytes.length) _slipBytes[slotIndex] = null;
     });
 
-    provider.setSalarySlipAt(slotIndex, path, slipDate: slotMonth, isPdf: isPdf);
-    provider.updateSalarySlipDate(slotIndex, slotMonth);
+    if (widget.isCoApplicant) {
+      provider.setCoApplicantSalarySlipAt(slotIndex, path, slipDate: slotMonth, isPdf: isPdf);
+      provider.updateCoApplicantSalarySlipDate(slotIndex, slotMonth);
+    } else {
+      provider.setSalarySlipAt(slotIndex, path, slipDate: slotMonth, isPdf: isPdf);
+      provider.updateSalarySlipDate(slotIndex, slotMonth);
+    }
+    await _performDocumentOcrForSlot(slotIndex, path, isPdf);
   }
 
   bool _isValidImageBytes(Uint8List bytes) {
@@ -309,21 +867,40 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     super.initState();
     _requiredMonths = _computeRequiredMonths();
     _loadDraftData();
-    
+
     // Load existing data from backend and sync with provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadExistingData();
       // Sync with provider after draft loads (in case it loads after initState)
       _syncWithProvider();
+      // When coming back from preview (or loading with existing slips), run OCR for any local paths so gating works.
+      _runOcrForExistingLocalSlips();
     });
+  }
+
+  /// Run OCR for salary slips that already have a local path (e.g. after coming back from preview or draft with local files).
+  Future<void> _runOcrForExistingLocalSlips() async {
+    if (kIsWeb) return;
+    if (!mounted) return;
+    for (int i = 0; i < _requiredSlipCount && i < _slipItems.length; i++) {
+      final item = _slipItems[i];
+      if (!item.hasFile) continue;
+      if (_isServerStoredPath(item.path) || item.path.startsWith('blob:')) continue;
+      if (_ocrCompleteBySlot[i] == true) continue; // already done
+      await _performDocumentOcrForSlot(i, item.path, item.isPdf);
+      if (!mounted) return;
+    }
   }
 
   void _loadDraftData() {
     final provider = context.read<SubmissionProvider>();
+    final slips = widget.isCoApplicant
+        ? provider.submission.coApplicantSalarySlips
+        : provider.submission.salarySlips;
     final existing = List<SalarySlipItem>.from(
-      provider.submission.salarySlips?.slipItems ?? const [],
+      slips?.slipItems ?? const [],
     );
-    _pdfPassword = provider.submission.salarySlips?.pdfPassword;
+    _pdfPassword = slips?.pdfPassword;
 
     _slipItems = List.generate(_requiredSlipCount, (i) {
       final item = i < existing.length ? existing[i] : null;
@@ -341,7 +918,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     if (_hasSyncedWithProvider) return; // Only sync once
     
     final provider = context.read<SubmissionProvider>();
-    final salarySlips = provider.submission.salarySlips;
+    final salarySlips = widget.isCoApplicant
+        ? provider.submission.coApplicantSalarySlips
+        : provider.submission.salarySlips;
     if (salarySlips != null) {
       final currentSlipItems = List<SalarySlipItem>.from(salarySlips.slipItems);
       final currentPassword = salarySlips.pdfPassword;
@@ -380,8 +959,14 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     final application = appProvider.currentApplication!;
     if (application.step4BankStatement != null) {
       final stepData = application.step4BankStatement as Map<String, dynamic>;
-      
-      if (stepData['salarySlipItems'] != null) {
+      final slipItemsKey =
+          widget.isCoApplicant ? 'coApplicantSalarySlipItems' : 'salarySlipItems';
+      final slipIsPdfKey =
+          widget.isCoApplicant ? 'coApplicantSalarySlipsIsPdf' : 'salarySlipsIsPdf';
+      final slipPwdKey =
+          widget.isCoApplicant ? 'coApplicantSalarySlipsPassword' : 'salarySlipsPassword';
+
+      if (stepData[slipItemsKey] != null) {
         
         // Helper to build full URL
         String? buildFullUrl(String? relativeUrl) {
@@ -411,7 +996,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           });
         }
 
-        final itemsList = stepData['salarySlipItems'] as List;
+        final itemsList = stepData[slipItemsKey] as List;
         final loadedItemsRaw = itemsList.map((item) {
           final map = item as Map<String, dynamic>;
           final rawPath = map['path'] as String?;
@@ -419,7 +1004,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           return SalarySlipItem(
             path: fullPath,
             slipDate: map['slipDate'] != null ? DateTime.parse(map['slipDate']) : null,
-            isPdf: fullPath.toLowerCase().endsWith('.pdf') || (stepData['salarySlipsIsPdf'] == true),
+            isPdf: fullPath.toLowerCase().endsWith('.pdf') || (stepData[slipIsPdfKey] == true),
           );
         }).toList();
 
@@ -436,7 +1021,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         if (loadedSlots.any((e) => e.hasFile)) {
           setState(() {
             _slipItems = loadedSlots;
-            _pdfPassword = stepData['salarySlipsPassword'];
+            _pdfPassword = stepData[slipPwdKey] as String?;
              _hasSyncedWithProvider = true;
              
             // Initialize failure/bytes lists
@@ -455,15 +1040,25 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
           // Update provider
           final provider = context.read<SubmissionProvider>();
-          provider.setSalarySlipItems(_slipItems);
-          if (_pdfPassword != null) {
-            provider.setSalarySlipsPassword(_pdfPassword!);
-          }
-          
-          // Update dates
-          for (int i = 0; i < _slipItems.length; i++) {
-            if (_slipItems[i].slipDate != null) {
-              provider.updateSalarySlipDate(i, _slipItems[i].slipDate!);
+          if (widget.isCoApplicant) {
+            provider.setCoApplicantSalarySlipItems(_slipItems);
+            if (_pdfPassword != null) {
+              provider.setCoApplicantSalarySlipsPassword(_pdfPassword!);
+            }
+            for (int i = 0; i < _slipItems.length; i++) {
+              if (_slipItems[i].slipDate != null) {
+                provider.updateCoApplicantSalarySlipDate(i, _slipItems[i].slipDate!);
+              }
+            }
+          } else {
+            provider.setSalarySlipItems(_slipItems);
+            if (_pdfPassword != null) {
+              provider.setSalarySlipsPassword(_pdfPassword!);
+            }
+            for (int i = 0; i < _slipItems.length; i++) {
+              if (_slipItems[i].slipDate != null) {
+                provider.updateSalarySlipDate(i, _slipItems[i].slipDate!);
+              }
             }
           }
         }
@@ -537,7 +1132,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         final currentApp = appProvider.currentApplication;
         if (currentApp?.step4BankStatement != null) {
           final stepData = currentApp!.step4BankStatement as Map<String, dynamic>;
-          final existingUploads = (stepData['salarySlipsUploaded'] as List<dynamic>?)
+          final uploadKey = widget.isCoApplicant
+              ? 'coApplicantSalarySlipsUploaded'
+              : 'salarySlipsUploaded';
+          final existingUploads = (stepData[uploadKey] as List<dynamic>?)
                   ?.cast<Map<String, dynamic>>() ?? [];
           for (final upload in existingUploads) {
             final url = upload['url'] as String?;
@@ -594,16 +1192,35 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
       // Keep provider in sync with server URLs
       final provider = context.read<SubmissionProvider>();
-      provider.setSalarySlipItems(updatedSlipItems);
-      for (int i = 0; i < updatedSlipItems.length; i++) {
-        provider.updateSalarySlipDate(i, updatedSlipItems[i].slipDate);
+      if (widget.isCoApplicant) {
+        provider.setCoApplicantSalarySlipItems(updatedSlipItems);
+        for (int i = 0; i < updatedSlipItems.length; i++) {
+          provider.updateCoApplicantSalarySlipDate(i, updatedSlipItems[i].slipDate);
+        }
+      } else {
+        provider.setSalarySlipItems(updatedSlipItems);
+        for (int i = 0; i < updatedSlipItems.length; i++) {
+          provider.updateSalarySlipDate(i, updatedSlipItems[i].slipDate);
+        }
       }
 
       final finalIsPdf = updatedSlipItems.any((i) => i.isPdf);
 
-      await appProvider.updateApplication(
-        step4BankStatement: {
-          // Store all 3 slips (do not deduplicate).
+      final existingStep4 = appProvider.currentApplication?.step4BankStatement;
+      if (widget.isCoApplicant) {
+        final merged = mergeStep4BankStatement(existingStep4, {
+          'coApplicantSalarySlips': updatedSlipItems.map((item) => item.path).toList(),
+          'coApplicantSalarySlipItems': updatedSlipItems.map((item) => {
+            'path': item.path,
+            'slipDate': item.slipDate?.toIso8601String(),
+          }).toList(),
+          'coApplicantSalarySlipsIsPdf': finalIsPdf,
+          'coApplicantSalarySlipsPassword': _pdfPassword,
+          'coApplicantSalarySlipsUploaded': finalUploadedFiles,
+        });
+        await appProvider.updateApplication(step4BankStatement: merged);
+      } else {
+        final merged = mergeStep4BankStatement(existingStep4, {
           'salarySlips': updatedSlipItems.map((item) => item.path).toList(),
           'salarySlipItems': updatedSlipItems.map((item) => {
             'path': item.path,
@@ -612,8 +1229,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           'salarySlipsIsPdf': finalIsPdf,
           'salarySlipsPassword': _pdfPassword,
           'salarySlipsUploaded': finalUploadedFiles,
-        },
-      );
+        });
+        await appProvider.updateApplication(step4BankStatement: merged);
+      }
 
       if (mounted) {
         PremiumToast.showSuccess(context, 'Salary slips saved successfully!');
@@ -637,7 +1255,12 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   }
 
   void _removeSlip(int index) {
-    context.read<SubmissionProvider>().removeSalarySlip(index);
+    final p = context.read<SubmissionProvider>();
+    if (widget.isCoApplicant) {
+      p.removeCoApplicantSalarySlip(index);
+    } else {
+      p.removeSalarySlip(index);
+    }
     setState(() {
       final slotMonth = _requiredMonths[index];
       _slipItems[index] = SalarySlipItem(
@@ -647,6 +1270,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       );
       if (index < _slipFailures.length) _slipFailures[index] = false;
       if (index < _slipBytes.length) _slipBytes[index] = null;
+      _ocrCompleteBySlot.remove(index);
+      _ocrIssueBySlot.remove(index);
     });
   }
 
@@ -691,7 +1316,12 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                 setState(() {
                   _pdfPassword = password;
                 });
-                context.read<SubmissionProvider>().setSalarySlipsPassword(password);
+                final p = context.read<SubmissionProvider>();
+                if (widget.isCoApplicant) {
+                  p.setCoApplicantSalarySlipsPassword(password);
+                } else {
+                  p.setSalarySlipsPassword(password);
+                }
               }
               Navigator.of(context).pop();
             },
@@ -704,6 +1334,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
   Future<void> _proceedToNext() async {
     if (_isSaving) return;
+    final appProvider = context.read<ApplicationProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final isStudentLoan = loanType.contains('student');
+    if (isStudentLoan && !widget.isCoApplicant) {
+      context.go(AppRoutes.step5StudentDocs);
+      return;
+    }
     if (!_hasAllRequiredSlips) {
       PremiumToast.showError(
         context,
@@ -711,19 +1348,143 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       );
       return;
     }
+    // On mobile: require OCR success for each slip (remote paths treated as already verified).
+    if (!kIsWeb) {
+      final issues = <String>[];
+      for (int i = 0; i < _requiredSlipCount; i++) {
+        final item = _slipItems[i];
+        if (!item.hasFile) continue;
+        if (_isServerStoredPath(item.path) || item.path.startsWith('blob:')) continue;
+        if (_ocrCompleteBySlot[i] != true) {
+          final monthLabel = DateFormat('MMM yyyy').format(_requiredMonths[i]);
+          final issue = _ocrIssueBySlot[i] != null
+              ? 'Slip $monthLabel: ${_ocrIssueBySlot[i]}'
+              : 'Slip $monthLabel: OCR not run or failed';
+          issues.add(issue);
+        }
+      }
+      if (issues.isNotEmpty) {
+        _showSalarySlipOcrDialog(issues);
+        return;
+      }
+    }
     final saved = await _saveToBackend();
     if (mounted && saved) {
+      if (widget.fromPreview) {
+        context.go(AppRoutes.step6Preview);
+        return;
+      }
       final submissionProvider = context.read<SubmissionProvider>();
+
+      if (widget.isCoApplicant) {
+        // After co-applicant salary slips: go to firm docs if firm co-applicant, else personal data
+        final firmType = submissionProvider.submission.coApplicantFirmType;
+        if (firmType != null) {
+          context.go('${AppRoutes.coApplicantFirmDocs}?firmType=$firmType');
+        } else {
+          context.go(AppRoutes.step5PersonalData);
+        }
+        return;
+      }
+
+      // New order for co-applicant flow:
+      // Main salary slips -> co Aadhaar -> co PAN -> co bank -> co salary -> (firm docs) -> personal details.
+      if (submissionProvider.submission.hasCoApplicant) {
+        final coAadhaarComplete =
+            submissionProvider.submission.coApplicantAadhaar?.isComplete ?? false;
+        final coPanComplete =
+            submissionProvider.submission.coApplicantPan?.isComplete ?? false;
+        final coBankComplete =
+            submissionProvider.submission.coApplicantBankStatement?.isComplete ?? false;
+        final coSalaryComplete =
+            submissionProvider.submission.coApplicantSalarySlips?.isComplete ?? false;
+
+        if (!coAadhaarComplete) {
+          context.go(AppRoutes.coApplicantAadhaar);
+          return;
+        }
+        if (!coPanComplete) {
+          context.go(AppRoutes.coApplicantPan);
+          return;
+        }
+        if (!coBankComplete) {
+          context.go(AppRoutes.coApplicantBankStatement);
+          return;
+        }
+        if (!coSalaryComplete) {
+          context.go(AppRoutes.coApplicantSalarySlips);
+          return;
+        }
+        // After all co-applicant KYC steps, go to firm docs if firm co-applicant
+        final firmType = submissionProvider.submission.coApplicantFirmType;
+        if (firmType != null) {
+          context.go('${AppRoutes.coApplicantFirmDocs}?firmType=$firmType');
+          return;
+        }
+      }
+
       final appProvider = context.read<ApplicationProvider>();
       final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
       final professionalType =
           (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
       final isProfessionalLoan = loanType.contains('professional') &&
           (professionalType == 'doctor' || professionalType == 'ca');
-      context.go(
-        isProfessionalLoan ? AppRoutes.step6Preview : AppRoutes.step5PersonalData,
-      );
+      final fromSubmission =
+          submissionProvider.submission.personalData?.isComplete ?? false;
+      final step5 = appProvider.currentApplication?.step5PersonalData;
+      final fromBackend = step5 != null &&
+          (step5['nameAsPerAadhaar'] as String?)?.trim().isNotEmpty == true &&
+          (step5['panNo'] as String?)?.trim().isNotEmpty == true &&
+          (step5['mobileNumber'] as String?)?.trim().isNotEmpty == true &&
+          (step5['personalEmailId'] as String?)?.trim().isNotEmpty == true &&
+          (step5['residenceAddress'] as String?)?.trim().isNotEmpty == true;
+      final personalDataComplete = fromSubmission || fromBackend;
+      if (isProfessionalLoan) {
+        context.go(AppRoutes.step6Preview);
+      } else {
+        context.go(personalDataComplete ? AppRoutes.step6Preview : AppRoutes.step5PersonalData);
+      }
     }
+  }
+
+  /// Label for the continue button: "Continue to Preview" when next step is preview, else "Continue to Personal Data".
+  String _getContinueButtonLabel(BuildContext context) {
+    final submissionProvider = context.read<SubmissionProvider>();
+    final appProvider = context.read<ApplicationProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final isStudentLoan = loanType.contains('student');
+    final professionalType =
+        (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+    final isProfessionalLoan = loanType.contains('professional') &&
+        (professionalType == 'doctor' || professionalType == 'ca');
+    if (isProfessionalLoan) return 'Continue to Preview';
+    if (isStudentLoan && !widget.isCoApplicant) return 'Continue to Student Documents';
+    if (widget.isCoApplicant) return 'Continue to Personal Data';
+    if (submissionProvider.submission.hasCoApplicant) {
+      final coAadhaarComplete =
+          submissionProvider.submission.coApplicantAadhaar?.isComplete ?? false;
+      final coPanComplete =
+          submissionProvider.submission.coApplicantPan?.isComplete ?? false;
+      final coBankComplete =
+          submissionProvider.submission.coApplicantBankStatement?.isComplete ?? false;
+      final coSalaryComplete =
+          submissionProvider.submission.coApplicantSalarySlips?.isComplete ?? false;
+      if (!coAadhaarComplete) return 'Continue to Co-applicant Aadhaar';
+      if (!coPanComplete) return 'Continue to Co-applicant PAN';
+      if (!coBankComplete) return 'Continue to Co-applicant Bank Statement';
+      if (!coSalaryComplete) return 'Continue to Co-applicant Salary Slips';
+    }
+    final fromSubmission =
+        submissionProvider.submission.personalData?.isComplete ?? false;
+    final step5 = appProvider.currentApplication?.step5PersonalData;
+    final fromBackend = step5 != null &&
+        (step5['nameAsPerAadhaar'] as String?)?.trim().isNotEmpty == true &&
+        (step5['panNo'] as String?)?.trim().isNotEmpty == true &&
+        (step5['mobileNumber'] as String?)?.trim().isNotEmpty == true &&
+        (step5['personalEmailId'] as String?)?.trim().isNotEmpty == true &&
+        (step5['residenceAddress'] as String?)?.trim().isNotEmpty == true;
+    final personalDataComplete = fromSubmission || fromBackend;
+    return personalDataComplete ? 'Continue to Preview' : 'Continue to Personal Data';
   }
 
   @override
@@ -733,8 +1494,32 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final appProvider = context.read<ApplicationProvider>();
+    final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+    final isStudentLoan = loanType.contains('student');
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+          return;
+        }
+        final appProvider = context.read<ApplicationProvider>();
+        final submissionProvider = context.read<SubmissionProvider>();
+        final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+        final professionalType =
+            (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
+        final isProfessionalLoan = loanType.contains('professional') &&
+            (professionalType == 'doctor' || professionalType == 'ca');
+        if (widget.isCoApplicant) {
+          context.go(AppRoutes.coApplicantBankStatement);
+          return;
+        }
+        context.go(
+          isProfessionalLoan ? AppRoutes.step5PersonalData : AppRoutes.step4BankStatement,
+        );
+      },
+      child: Scaffold(
       backgroundColor: Colors.white,
       bottomNavigationBar: SafeArea(
         child: Container(
@@ -749,9 +1534,9 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               ),
             ],
           ),
-          child: _hasAllRequiredSlips
+          child: ((isStudentLoan && !widget.isCoApplicant) || _hasAllRequiredSlips)
               ? PremiumButton(
-                  label: 'Continue to Personal Data',
+                  label: _getContinueButtonLabel(context),
                   icon: Icons.arrow_forward_rounded,
                   isPrimary: true,
                   onPressed: _proceedToNext,
@@ -811,6 +1596,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               icon: Icons.receipt_long,
               showBackButton: true,
               onBackPressed: () {
+                if (widget.fromPreview) {
+                  context.go(AppRoutes.step6Preview);
+                  return;
+                }
                 final appProvider = context.read<ApplicationProvider>();
                 final submissionProvider = context.read<SubmissionProvider>();
                 final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
@@ -823,11 +1612,26 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                 );
               },
               showHomeButton: true,
-              actions: const [
-                PreviewHeaderAction(backRoute: AppRoutes.step5_1SalarySlips),
+              actions: [
+                PreviewHeaderAction(
+                  backRoute: widget.isCoApplicant
+                      ? AppRoutes.coApplicantSalarySlips
+                      : AppRoutes.step5_1SalarySlips,
+                ),
               ],
             ),
-            _buildProgressIndicator(context),
+            Builder(
+              builder: (context) {
+                final hasCoApplicant = context.watch<SubmissionProvider>().submission.hasCoApplicant;
+                return PremiumProgressIndicator(
+                  currentStep: widget.isCoApplicant
+                      ? 9
+                      : (hasCoApplicant ? 5 : 5),
+                  totalSteps: (widget.isCoApplicant || hasCoApplicant) ? 12 : 7,
+                  maxVisibleSteps: 7,
+                );
+              },
+            ),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -874,14 +1678,18 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Upload Salary Slips',
+                                      widget.isCoApplicant
+                                          ? 'Upload Co-applicant Salary Slips'
+                                          : 'Upload Salary Slips',
                                       style: theme.textTheme.titleLarge?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Upload your salary slips for income verification',
+                                      widget.isCoApplicant
+                                          ? 'Upload the co-applicant\'s salary slips for income verification'
+                                          : 'Upload your salary slips for income verification',
                                       style: theme.textTheme.bodyMedium?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
@@ -1094,7 +1902,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
             ),
           ],
         ),
-    );
+    ),
+  );
   }
 
   Widget _buildPremiumRequirement(BuildContext context, IconData icon, String text) {
@@ -1270,22 +2079,6 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppTheme.successColor.withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'Tap to Replace',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1363,128 +2156,4 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     );
   }
 
-  Widget _buildProgressIndicator(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      color: Colors.white,
-      child: Row(
-        children: [
-          // Steps 1-4: Completed
-          for (int i = 1; i <= 4; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      height: 2,
-                      color: AppTheme.primaryColor.withValues(alpha: 0.3),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          // Step 5: Current
-          Expanded(
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppTheme.primaryColor,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                        blurRadius: 12,
-                        spreadRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      '5',
-                      style: TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    height: 2,
-                    color: Colors.grey.shade200,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Steps 6-7: Pending
-          for (int i = 6; i <= 7; i++) ...[
-            Expanded(
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '$i',
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (i < 7)
-                    Expanded(
-                      child: Container(
-                        height: 2,
-                        color: Colors.grey.shade200,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
 }

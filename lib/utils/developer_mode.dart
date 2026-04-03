@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const String _developerModeKey = 'developer_mode';
 const String _professionalLoanAppIdKey = 'professional_loan_application_id';
+const String _studentLoanAppIdKey = 'student_loan_application_id';
 
 /// Returns true when developer mode is on (allows multiple applications).
 Future<bool> isDeveloperModeEnabled() async {
@@ -29,4 +30,20 @@ Future<void> setProfessionalLoanApplicationId(String? applicationId) async {
 Future<bool> isProfessionalLoanApplicationId(String applicationId) async {
   final prefs = await SharedPreferences.getInstance();
   return prefs.getString(_professionalLoanAppIdKey) == applicationId;
+}
+
+/// Store application ID when we create a Student Loan (backend may normalize labels).
+Future<void> setStudentLoanApplicationId(String? applicationId) async {
+  final prefs = await SharedPreferences.getInstance();
+  if (applicationId == null || applicationId.isEmpty) {
+    await prefs.remove(_studentLoanAppIdKey);
+  } else {
+    await prefs.setString(_studentLoanAppIdKey, applicationId);
+  }
+}
+
+/// Check if this application was created as Student Loan.
+Future<bool> isStudentLoanApplicationId(String applicationId) async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_studentLoanAppIdKey) == applicationId;
 }

@@ -83,6 +83,7 @@ dependencies:
   
   # Charts
   fl_chart: ^0.69.0
+  pdfrx: ^2.2.24
 
 dev_dependencies:
   flutter_test:

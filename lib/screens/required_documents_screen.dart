@@ -703,20 +703,11 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             ],
           ),
           const SizedBox(height: 10),
-          // Single column, top to bottom (compact)
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 1,
-              mainAxisSpacing: 6,
-              childAspectRatio: 3.2,
-            ),
-            itemCount: documents.length,
-            itemBuilder: (context, index) {
-              return _buildDocumentCard(context, documents[index]);
-            },
-          ),
+          // Single column with natural height per card to avoid overflow
+          ...documents.map((doc) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _buildDocumentCard(context, doc),
+          )),
         ],
       ),
     );
@@ -787,9 +778,9 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
-        mainAxisSize: MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
@@ -845,7 +836,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               ),
             ],
           ),
-          const Spacer(),
+          const SizedBox(height: 8),
           if (!canUpload)
             const Center(
               child: SizedBox(

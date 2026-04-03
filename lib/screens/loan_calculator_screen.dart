@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
-import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
 
 class LoanCalculatorScreen extends StatefulWidget {
@@ -467,20 +465,6 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
       ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
-              onPressed: () => context.go(AppRoutes.home),
-              padding: EdgeInsets.zero,
-            ),
-          ),
-          const SizedBox(width: 16),
           const Expanded(
             child: Text(
               'Loan Calculator',

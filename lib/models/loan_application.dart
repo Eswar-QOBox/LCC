@@ -61,11 +61,16 @@ class LoanApplication {
     );
   }
 
+  static String _normalizeBackendLoanType(String raw) {
+    if (raw == 'Education Loan') return 'Student Loan';
+    return raw;
+  }
+
   factory LoanApplication.fromJson(Map<String, dynamic> json) {
     return LoanApplication(
       id: json['id'] as String,
       userId: json['userId'] as String,
-      loanType: json['loanType'] as String,
+      loanType: _normalizeBackendLoanType(json['loanType'] as String),
       currentStep: json['currentStep'] is int
           ? json['currentStep'] as int
           : int.tryParse(json['currentStep'].toString()) ?? 1,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/document_submission.dart';
+import '../utils/aadhaar_utils.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
@@ -89,6 +90,131 @@ class SubmissionProvider with ChangeNotifier {
     _submission.professionalDocuments!.icaiCertificate ??= UploadedDoc();
     _submission.professionalDocuments!.icaiCertificate!.path = path;
     _submission.professionalDocuments!.icaiCertificate!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalItrYear1(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.itrYear1 ??= UploadedDoc();
+    _submission.professionalDocuments!.itrYear1!.path = path;
+    _submission.professionalDocuments!.itrYear1!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalItrYear2(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.itrYear2 ??= UploadedDoc();
+    _submission.professionalDocuments!.itrYear2!.path = path;
+    _submission.professionalDocuments!.itrYear2!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalBalanceSheet(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.balanceSheet ??= UploadedDoc();
+    _submission.professionalDocuments!.balanceSheet!.path = path;
+    _submission.professionalDocuments!.balanceSheet!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setProfessionalPlStatement(String path, {bool isPdf = false}) {
+    _submission.professionalDocuments ??= ProfessionalDocuments();
+    _submission.professionalDocuments!.plStatement ??= UploadedDoc();
+    _submission.professionalDocuments!.plStatement!.path = path;
+    _submission.professionalDocuments!.plStatement!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  // Student loan documents
+  void setStudentPassport(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.passport ??= UploadedDoc();
+    _submission.studentDocuments!.passport!.path = path;
+    _submission.studentDocuments!.passport!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentAdmissionLetter(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.admissionLetter ??= UploadedDoc();
+    _submission.studentDocuments!.admissionLetter!.path = path;
+    _submission.studentDocuments!.admissionLetter!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentMarkSheetSsc(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.markSheetSsc ??= UploadedDoc();
+    _submission.studentDocuments!.markSheetSsc!.path = path;
+    _submission.studentDocuments!.markSheetSsc!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentMarkSheetInter(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.markSheetInter ??= UploadedDoc();
+    _submission.studentDocuments!.markSheetInter!.path = path;
+    _submission.studentDocuments!.markSheetInter!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentMarkSheetGraduation(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.markSheetGraduation ??= UploadedDoc();
+    _submission.studentDocuments!.markSheetGraduation!.path = path;
+    _submission.studentDocuments!.markSheetGraduation!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentIsWorking(bool value) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.isWorking = value;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentPayslip1(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.payslip1 ??= UploadedDoc();
+    _submission.studentDocuments!.payslip1!.path = path;
+    _submission.studentDocuments!.payslip1!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentPayslip2(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.payslip2 ??= UploadedDoc();
+    _submission.studentDocuments!.payslip2!.path = path;
+    _submission.studentDocuments!.payslip2!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentPayslip3(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.payslip3 ??= UploadedDoc();
+    _submission.studentDocuments!.payslip3!.path = path;
+    _submission.studentDocuments!.payslip3!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setStudentIdCard(String path, {bool isPdf = false}) {
+    _submission.studentDocuments ??= StudentDocuments();
+    _submission.studentDocuments!.idCard ??= UploadedDoc();
+    _submission.studentDocuments!.idCard!.path = path;
+    _submission.studentDocuments!.idCard!.isPdf = isPdf;
     notifyListeners();
     unawaited(saveDraft());
   }
@@ -402,6 +528,104 @@ class SubmissionProvider with ChangeNotifier {
     unawaited(saveDraft());
   }
 
+  // Co-applicant (personal / joint loan)
+  void setHasCoApplicant(bool value) {
+    _submission.hasCoApplicant = value;
+    if (!value) {
+      _submission.coApplicantAadhaar = null;
+      _submission.coApplicantPan = null;
+      _submission.coApplicantPersonalData = null;
+      _submission.coApplicantExtractedAadhaarNumber = null;
+    }
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantAadhaarFront(String path, {bool isPdf = false}) {
+    _submission.coApplicantAadhaar ??= AadhaarDocument();
+    _submission.coApplicantAadhaar!.frontPath = path;
+    _submission.coApplicantAadhaar!.frontIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantAadhaarBack(String path, {bool isPdf = false}) {
+    _submission.coApplicantAadhaar ??= AadhaarDocument();
+    _submission.coApplicantAadhaar!.backPath = path;
+    _submission.coApplicantAadhaar!.backIsPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantExtractedAadhaarNumber(String? number) {
+    _submission.coApplicantExtractedAadhaarNumber =
+        number?.trim().replaceAll(RegExp(r'[\s-]'), '');
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearCoApplicantAadhaar() {
+    _submission.coApplicantAadhaar = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantPan(String path, {bool isPdf = false}) {
+    _submission.coApplicantPan ??= PanDocument();
+    _submission.coApplicantPan!.frontPath = path;
+    _submission.coApplicantPan!.isPdf = isPdf;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void clearCoApplicantPan() {
+    _submission.coApplicantPan = null;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantPersonalData(CoApplicantPersonalData data) {
+    _submission.coApplicantPersonalData = data;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void updateCoApplicantPersonalDataField({
+    String? nameAsPerAadhaar,
+    DateTime? dateOfBirth,
+    String? panNo,
+    String? aadhaarNumber,
+    String? mobileNumber,
+    String? personalEmailId,
+    String? residenceAddress,
+  }) {
+    _submission.coApplicantPersonalData ??= CoApplicantPersonalData();
+    final d = _submission.coApplicantPersonalData!;
+    if (nameAsPerAadhaar != null) d.nameAsPerAadhaar = nameAsPerAadhaar;
+    if (dateOfBirth != null) d.dateOfBirth = dateOfBirth;
+    if (panNo != null) d.panNo = panNo;
+    if (aadhaarNumber != null) d.aadhaarNumber = aadhaarNumber;
+    if (mobileNumber != null) d.mobileNumber = mobileNumber;
+    if (personalEmailId != null) d.personalEmailId = personalEmailId;
+    if (residenceAddress != null) d.residenceAddress = residenceAddress;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  // Co-applicant firm docs (car loan)
+  void setCoApplicantFirmType(String? type) {
+    _submission.coApplicantFirmType = type;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setCoApplicantFirmDocument(String key, String? path) {
+    _submission.coApplicantFirmDocuments ??= CoApplicantFirmDocuments();
+    _submission.coApplicantFirmDocuments!.setField(key, path);
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
   // Bank Statement
   void setBankStatementPages(List<String> pages, {bool isPdf = false}) {
     _submission.bankStatement ??= BankStatement(isPdf: isPdf);
@@ -422,6 +646,50 @@ class SubmissionProvider with ChangeNotifier {
   void setBankStatementPassword(String password) {
     _submission.bankStatement ??= BankStatement();
     _submission.bankStatement!.pdfPassword = password;
+    notifyListeners();
+  }
+
+  void setBankStatementExtractedAccountHolderName(String? name) {
+    _submission.bankStatement ??= BankStatement();
+    _submission.bankStatement!.extractedAccountHolderName = name;
+    notifyListeners();
+  }
+
+  void setBankStatementNameMatchesAadhaar(bool? value) {
+    _submission.bankStatement ??= BankStatement();
+    _submission.bankStatement!.nameMatchesAadhaar = value;
+    notifyListeners();
+  }
+
+  void setCoApplicantExtractedNameFromAadhaar(String? name) {
+    _submission.coApplicantExtractedNameFromAadhaar = name;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  // Co-applicant Bank Statement
+  void setCoApplicantBankStatementPages(List<String> pages, {bool isPdf = false}) {
+    _submission.coApplicantBankStatement ??= BankStatement(isPdf: isPdf);
+    _submission.coApplicantBankStatement!.pages = pages;
+    _submission.coApplicantBankStatement!.isPdf = isPdf;
+    notifyListeners();
+  }
+
+  void setCoApplicantBankStatementPassword(String password) {
+    _submission.coApplicantBankStatement ??= BankStatement();
+    _submission.coApplicantBankStatement!.pdfPassword = password;
+    notifyListeners();
+  }
+
+  void setCoApplicantBankStatementExtractedAccountHolderName(String? name) {
+    _submission.coApplicantBankStatement ??= BankStatement();
+    _submission.coApplicantBankStatement!.extractedAccountHolderName = name;
+    notifyListeners();
+  }
+
+  void setCoApplicantBankStatementNameMatchesAadhaar(bool? value) {
+    _submission.coApplicantBankStatement ??= BankStatement();
+    _submission.coApplicantBankStatement!.nameMatchesAadhaar = value;
     notifyListeners();
   }
 
@@ -513,6 +781,81 @@ class SubmissionProvider with ChangeNotifier {
   void setSalarySlipsPassword(String password) {
     _submission.salarySlips ??= SalarySlips();
     _submission.salarySlips!.pdfPassword = password;
+    notifyListeners();
+  }
+
+  // Co-applicant Salary Slips
+  void setCoApplicantSalarySlips(List<String> slips, {bool isPdf = false}) {
+    _submission.coApplicantSalarySlips ??= SalarySlips(isPdf: isPdf);
+    _submission.coApplicantSalarySlips!.slipItems = slips
+        .map(
+          (path) => SalarySlipItem(
+            path: path,
+            isPdf: isPdf || path.toLowerCase().endsWith('.pdf'),
+          ),
+        )
+        .toList();
+    _submission.coApplicantSalarySlips!.isPdf =
+        _submission.coApplicantSalarySlips!.slipItems.any((i) => i.isPdf);
+    notifyListeners();
+  }
+
+  void setCoApplicantSalarySlipItems(List<SalarySlipItem> items) {
+    _submission.coApplicantSalarySlips ??= SalarySlips();
+    _submission.coApplicantSalarySlips!.slipItems = List<SalarySlipItem>.from(items);
+    _submission.coApplicantSalarySlips!.isPdf =
+        _submission.coApplicantSalarySlips!.slipItems.any((i) => i.isPdf);
+    notifyListeners();
+  }
+
+  void setCoApplicantSalarySlipAt(int index, String path, {DateTime? slipDate, bool isPdf = false}) {
+    _submission.coApplicantSalarySlips ??= SalarySlips();
+    if (index < 0) return;
+    while (_submission.coApplicantSalarySlips!.slipItems.length <= index) {
+      _submission.coApplicantSalarySlips!.slipItems.add(
+        SalarySlipItem(path: '', slipDate: null, isPdf: false),
+      );
+    }
+    if (index < _submission.coApplicantSalarySlips!.slipItems.length) {
+      _submission.coApplicantSalarySlips!.slipItems[index] = SalarySlipItem(
+        path: path,
+        slipDate: slipDate,
+        isPdf: isPdf,
+      );
+      _submission.coApplicantSalarySlips!.isPdf =
+          _submission.coApplicantSalarySlips!.slipItems.any((i) => i.isPdf);
+      notifyListeners();
+    }
+  }
+
+  void updateCoApplicantSalarySlipDate(int index, DateTime? slipDate) {
+    if (_submission.coApplicantSalarySlips != null &&
+        index >= 0 &&
+        index < _submission.coApplicantSalarySlips!.slipItems.length) {
+      _submission.coApplicantSalarySlips!.slipItems[index].slipDate = slipDate;
+      notifyListeners();
+    }
+  }
+
+  void removeCoApplicantSalarySlip(int index) {
+    if (_submission.coApplicantSalarySlips != null &&
+        index >= 0 &&
+        index < _submission.coApplicantSalarySlips!.slipItems.length) {
+      final existingDate = _submission.coApplicantSalarySlips!.slipItems[index].slipDate;
+      _submission.coApplicantSalarySlips!.slipItems[index] = SalarySlipItem(
+        path: '',
+        slipDate: existingDate,
+        isPdf: false,
+      );
+      _submission.coApplicantSalarySlips!.isPdf =
+          _submission.coApplicantSalarySlips!.slipItems.any((i) => i.isPdf);
+      notifyListeners();
+    }
+  }
+
+  void setCoApplicantSalarySlipsPassword(String password) {
+    _submission.coApplicantSalarySlips ??= SalarySlips();
+    _submission.coApplicantSalarySlips!.pdfPassword = password;
     notifyListeners();
   }
 
@@ -751,6 +1094,29 @@ class SubmissionProvider with ChangeNotifier {
       }
     }
 
+    // Validate Co-applicant Bank Statement
+    if (_submission.coApplicantBankStatement != null &&
+        _submission.coApplicantBankStatement!.pages.isNotEmpty) {
+      final validPages = <String>[];
+      for (final pagePath in _submission.coApplicantBankStatement!.pages) {
+        if (!shouldCheckExistence(pagePath)) {
+          validPages.add(pagePath);
+          continue;
+        }
+        final file = io.File(pagePath);
+        if (await file.exists()) {
+          validPages.add(pagePath);
+        } else {
+          debugPrint('⚠️ Co-applicant bank statement page not found: $pagePath');
+          hasInvalidFiles = true;
+        }
+      }
+      _submission.coApplicantBankStatement!.pages = validPages;
+      if (_submission.coApplicantBankStatement!.pages.isEmpty) {
+        _submission.coApplicantBankStatement = null;
+      }
+    }
+
     // Validate Business Documents (Business Loan - Proprietor)
     if (_submission.businessDocuments != null) {
       final b = _submission.businessDocuments!;
@@ -891,6 +1257,39 @@ class SubmissionProvider with ChangeNotifier {
       }
     }
 
+    // Validate Co-applicant Salary Slips
+    if (_submission.coApplicantSalarySlips != null &&
+        _submission.coApplicantSalarySlips!.slipItems.isNotEmpty) {
+      for (int i = 0; i < _submission.coApplicantSalarySlips!.slipItems.length; i++) {
+        final slipItem = _submission.coApplicantSalarySlips!.slipItems[i];
+        if (!slipItem.hasFile) continue;
+        if (!shouldCheckExistence(slipItem.path)) continue;
+        final file = io.File(slipItem.path);
+        if (!await file.exists()) {
+          debugPrint('⚠️ Co-applicant salary slip file not found: ${slipItem.path}');
+          _submission.coApplicantSalarySlips!.slipItems[i] = SalarySlipItem(
+            path: '',
+            slipDate: slipItem.slipDate,
+            isPdf: false,
+          );
+          hasInvalidFiles = true;
+        }
+      }
+
+      while (_submission.coApplicantSalarySlips!.slipItems.length < _requiredSalarySlipCount) {
+        _submission.coApplicantSalarySlips!.slipItems.add(
+          SalarySlipItem(path: '', slipDate: null, isPdf: false),
+        );
+      }
+
+      if (_submission.coApplicantSalarySlips!.slipItems.every((i) => !i.hasFile)) {
+        _submission.coApplicantSalarySlips = null;
+      } else {
+        _submission.coApplicantSalarySlips!.isPdf =
+            _submission.coApplicantSalarySlips!.slipItems.any((i) => i.isPdf);
+      }
+    }
+
     if (hasInvalidFiles) {
       debugPrint('⚠️ Some files from draft were deleted. Draft loaded with missing files.');
       // Optionally save the cleaned draft back
@@ -947,12 +1346,46 @@ class SubmissionProvider with ChangeNotifier {
               'frontPath': submission.pan!.frontPath,
             }
           : null,
+      'hasCoApplicant': submission.hasCoApplicant,
+      'coApplicantAadhaar': submission.coApplicantAadhaar != null
+          ? {
+              'frontPath': submission.coApplicantAadhaar!.frontPath,
+              'backPath': submission.coApplicantAadhaar!.backPath,
+              'frontIsPdf': submission.coApplicantAadhaar!.frontIsPdf,
+              'backIsPdf': submission.coApplicantAadhaar!.backIsPdf,
+            }
+          : null,
+      'coApplicantPan': submission.coApplicantPan != null
+          ? {
+              'frontPath': submission.coApplicantPan!.frontPath,
+              'isPdf': submission.coApplicantPan!.isPdf,
+            }
+          : null,
+      'coApplicantExtractedAadhaarNumber': submission.coApplicantExtractedAadhaarNumber != null && submission.coApplicantExtractedAadhaarNumber!.trim().isNotEmpty
+          ? AadhaarUtils.maskAadhaar(submission.coApplicantExtractedAadhaarNumber)
+          : null,
+      'coApplicantExtractedNameFromAadhaar': submission.coApplicantExtractedNameFromAadhaar,
+      'coApplicantPersonalData': submission.coApplicantPersonalData?.toJson(),
+      'coApplicantFirmType': submission.coApplicantFirmType,
+      'coApplicantFirmDocuments': submission.coApplicantFirmDocuments?.toJson(),
+      'coApplicantBankStatement': submission.coApplicantBankStatement != null
+          ? {
+              'pages': submission.coApplicantBankStatement!.pages,
+              'pdfPassword': submission.coApplicantBankStatement!.pdfPassword,
+              'isPdf': submission.coApplicantBankStatement!.isPdf,
+              'statementDate': submission.coApplicantBankStatement!.statementDate?.toIso8601String(),
+              'extractedAccountHolderName': submission.coApplicantBankStatement!.extractedAccountHolderName,
+              'nameMatchesAadhaar': submission.coApplicantBankStatement!.nameMatchesAadhaar,
+            }
+          : null,
       'bankStatement': submission.bankStatement != null
           ? {
               'pages': submission.bankStatement!.pages,
               'pdfPassword': submission.bankStatement!.pdfPassword,
               'isPdf': submission.bankStatement!.isPdf,
               'statementDate': submission.bankStatement!.statementDate?.toIso8601String(),
+              'extractedAccountHolderName': submission.bankStatement!.extractedAccountHolderName,
+              'nameMatchesAadhaar': submission.bankStatement!.nameMatchesAadhaar,
             }
           : null,
       'businessDocuments': submission.businessDocuments != null
@@ -989,7 +1422,9 @@ class SubmissionProvider with ChangeNotifier {
                               'isPdf': p.pan!.isPdf,
                             }
                           : null,
-                      'extractedAadhaarNumber': p.extractedAadhaarNumber,
+                      'extractedAadhaarNumber': p.extractedAadhaarNumber != null && p.extractedAadhaarNumber!.trim().isNotEmpty
+                          ? AadhaarUtils.maskAadhaar(p.extractedAadhaarNumber)
+                          : null,
                     },
                   )
                   .toList(),
@@ -1081,6 +1516,89 @@ class SubmissionProvider with ChangeNotifier {
                       'isPdf': submission.professionalDocuments!.icaiCertificate!.isPdf,
                     }
                   : null,
+              'itrYear1': submission.professionalDocuments!.itrYear1 != null
+                  ? {
+                      'path': submission.professionalDocuments!.itrYear1!.path,
+                      'isPdf': submission.professionalDocuments!.itrYear1!.isPdf,
+                    }
+                  : null,
+              'itrYear2': submission.professionalDocuments!.itrYear2 != null
+                  ? {
+                      'path': submission.professionalDocuments!.itrYear2!.path,
+                      'isPdf': submission.professionalDocuments!.itrYear2!.isPdf,
+                    }
+                  : null,
+              'balanceSheet': submission.professionalDocuments!.balanceSheet != null
+                  ? {
+                      'path': submission.professionalDocuments!.balanceSheet!.path,
+                      'isPdf': submission.professionalDocuments!.balanceSheet!.isPdf,
+                    }
+                  : null,
+              'plStatement': submission.professionalDocuments!.plStatement != null
+                  ? {
+                      'path': submission.professionalDocuments!.plStatement!.path,
+                      'isPdf': submission.professionalDocuments!.plStatement!.isPdf,
+                    }
+                  : null,
+            }
+          : null,
+      'studentDocuments': submission.studentDocuments != null
+          ? {
+              'passport': submission.studentDocuments!.passport != null
+                  ? {
+                      'path': submission.studentDocuments!.passport!.path,
+                      'isPdf': submission.studentDocuments!.passport!.isPdf,
+                    }
+                  : null,
+              'admissionLetter': submission.studentDocuments!.admissionLetter != null
+                  ? {
+                      'path': submission.studentDocuments!.admissionLetter!.path,
+                      'isPdf': submission.studentDocuments!.admissionLetter!.isPdf,
+                    }
+                  : null,
+              'markSheetSsc': submission.studentDocuments!.markSheetSsc != null
+                  ? {
+                      'path': submission.studentDocuments!.markSheetSsc!.path,
+                      'isPdf': submission.studentDocuments!.markSheetSsc!.isPdf,
+                    }
+                  : null,
+              'markSheetInter': submission.studentDocuments!.markSheetInter != null
+                  ? {
+                      'path': submission.studentDocuments!.markSheetInter!.path,
+                      'isPdf': submission.studentDocuments!.markSheetInter!.isPdf,
+                    }
+                  : null,
+              'markSheetGraduation': submission.studentDocuments!.markSheetGraduation != null
+                  ? {
+                      'path': submission.studentDocuments!.markSheetGraduation!.path,
+                      'isPdf': submission.studentDocuments!.markSheetGraduation!.isPdf,
+                    }
+                  : null,
+              'isWorking': submission.studentDocuments!.isWorking,
+              'payslip1': submission.studentDocuments!.payslip1 != null
+                  ? {
+                      'path': submission.studentDocuments!.payslip1!.path,
+                      'isPdf': submission.studentDocuments!.payslip1!.isPdf,
+                    }
+                  : null,
+              'payslip2': submission.studentDocuments!.payslip2 != null
+                  ? {
+                      'path': submission.studentDocuments!.payslip2!.path,
+                      'isPdf': submission.studentDocuments!.payslip2!.isPdf,
+                    }
+                  : null,
+              'payslip3': submission.studentDocuments!.payslip3 != null
+                  ? {
+                      'path': submission.studentDocuments!.payslip3!.path,
+                      'isPdf': submission.studentDocuments!.payslip3!.isPdf,
+                    }
+                  : null,
+              'idCard': submission.studentDocuments!.idCard != null
+                  ? {
+                      'path': submission.studentDocuments!.idCard!.path,
+                      'isPdf': submission.studentDocuments!.idCard!.isPdf,
+                    }
+                  : null,
             }
           : null,
       'personalData': submission.personalData != null
@@ -1135,6 +1653,18 @@ class SubmissionProvider with ChangeNotifier {
               'isPdf': submission.salarySlips!.isPdf,
             }
           : null,
+      'coApplicantSalarySlips': submission.coApplicantSalarySlips != null
+          ? {
+              'slipItems': submission.coApplicantSalarySlips!.slipItems.map((item) => {
+                'path': item.path,
+                'slipDate': item.slipDate?.toIso8601String(),
+                'isPdf': item.isPdf,
+              }).toList(),
+              'slips': submission.coApplicantSalarySlips!.slips,
+              'pdfPassword': submission.coApplicantSalarySlips!.pdfPassword,
+              'isPdf': submission.coApplicantSalarySlips!.isPdf,
+            }
+          : null,
       'submittedAt': submission.submittedAt?.toIso8601String(),
       'status': submission.status.toString().split('.').last,
     };
@@ -1169,6 +1699,39 @@ class SubmissionProvider with ChangeNotifier {
       );
     }
 
+    submission.hasCoApplicant = json['hasCoApplicant'] as bool? ?? false;
+    if (json['coApplicantAadhaar'] != null) {
+      final a = json['coApplicantAadhaar'] as Map<String, dynamic>;
+      submission.coApplicantAadhaar = AadhaarDocument(
+        frontPath: a['frontPath'] as String?,
+        backPath: a['backPath'] as String?,
+        frontIsPdf: a['frontIsPdf'] as bool? ?? false,
+        backIsPdf: a['backIsPdf'] as bool? ?? false,
+      );
+    }
+    if (json['coApplicantPan'] != null) {
+      final p = json['coApplicantPan'] as Map<String, dynamic>;
+      submission.coApplicantPan = PanDocument(
+        frontPath: p['frontPath'] as String?,
+        isPdf: p['isPdf'] as bool? ?? false,
+      );
+    }
+    submission.coApplicantExtractedAadhaarNumber =
+        json['coApplicantExtractedAadhaarNumber'] as String?;
+    submission.coApplicantExtractedNameFromAadhaar =
+        json['coApplicantExtractedNameFromAadhaar'] as String?;
+    if (json['coApplicantPersonalData'] != null) {
+      submission.coApplicantPersonalData = CoApplicantPersonalData.fromJson(
+        json['coApplicantPersonalData'] as Map<String, dynamic>?,
+      );
+    }
+    submission.coApplicantFirmType = json['coApplicantFirmType'] as String?;
+    if (json['coApplicantFirmDocuments'] != null) {
+      submission.coApplicantFirmDocuments = CoApplicantFirmDocuments.fromJson(
+        json['coApplicantFirmDocuments'] as Map<String, dynamic>?,
+      );
+    }
+
     if (json['bankStatement'] != null) {
       final bankData = json['bankStatement'] as Map<String, dynamic>;
       submission.bankStatement = BankStatement(
@@ -1178,6 +1741,22 @@ class SubmissionProvider with ChangeNotifier {
         statementDate: bankData['statementDate'] != null
             ? DateTime.parse(bankData['statementDate'] as String)
             : null,
+        extractedAccountHolderName: bankData['extractedAccountHolderName'] as String?,
+        nameMatchesAadhaar: bankData['nameMatchesAadhaar'] as bool?,
+      );
+    }
+
+    if (json['coApplicantBankStatement'] != null) {
+      final bankData = json['coApplicantBankStatement'] as Map<String, dynamic>;
+      submission.coApplicantBankStatement = BankStatement(
+        pages: (bankData['pages'] as List<dynamic>?)?.cast<String>() ?? [],
+        pdfPassword: bankData['pdfPassword'] as String?,
+        isPdf: bankData['isPdf'] as bool? ?? false,
+        statementDate: bankData['statementDate'] != null
+            ? DateTime.tryParse(bankData['statementDate'] as String)
+            : null,
+        extractedAccountHolderName: bankData['extractedAccountHolderName'] as String?,
+        nameMatchesAadhaar: bankData['nameMatchesAadhaar'] as bool?,
       );
     }
 
@@ -1283,6 +1862,33 @@ class SubmissionProvider with ChangeNotifier {
         caDegree: parseUploadedDoc(p['caDegree']),
         certificateOfPractice: parseUploadedDoc(p['certificateOfPractice']),
         icaiCertificate: parseUploadedDoc(p['icaiCertificate']),
+        itrYear1: parseUploadedDoc(p['itrYear1']),
+        itrYear2: parseUploadedDoc(p['itrYear2']),
+        balanceSheet: parseUploadedDoc(p['balanceSheet']),
+        plStatement: parseUploadedDoc(p['plStatement']),
+      );
+    }
+
+    if (json['studentDocuments'] != null) {
+      final s = json['studentDocuments'] as Map<String, dynamic>;
+      UploadedDoc? parseUploadedDoc(dynamic raw) {
+        if (raw is! Map<String, dynamic>) return null;
+        return UploadedDoc(
+          path: raw['path'] as String?,
+          isPdf: raw['isPdf'] as bool? ?? false,
+        );
+      }
+      submission.studentDocuments = StudentDocuments(
+        passport: parseUploadedDoc(s['passport']),
+        admissionLetter: parseUploadedDoc(s['admissionLetter']),
+        markSheetSsc: parseUploadedDoc(s['markSheetSsc']),
+        markSheetInter: parseUploadedDoc(s['markSheetInter']),
+        markSheetGraduation: parseUploadedDoc(s['markSheetGraduation']),
+        isWorking: s['isWorking'] as bool? ?? false,
+        payslip1: parseUploadedDoc(s['payslip1']),
+        payslip2: parseUploadedDoc(s['payslip2']),
+        payslip3: parseUploadedDoc(s['payslip3']),
+        idCard: parseUploadedDoc(s['idCard']),
       );
     }
 
@@ -1355,6 +1961,33 @@ class SubmissionProvider with ChangeNotifier {
       }
       
       submission.salarySlips = SalarySlips(
+        slipItems: slipItems,
+        pdfPassword: salaryData['pdfPassword'] as String?,
+        isPdf: salaryData['isPdf'] as bool? ?? false,
+      );
+    }
+
+    if (json['coApplicantSalarySlips'] != null) {
+      final salaryData = json['coApplicantSalarySlips'] as Map<String, dynamic>;
+      List<SalarySlipItem> slipItems = [];
+      final isPdf = salaryData['isPdf'] as bool? ?? false;
+      if (salaryData['slipItems'] != null) {
+        final items = salaryData['slipItems'] as List<dynamic>;
+        slipItems = items.map((item) {
+          final itemMap = item as Map<String, dynamic>;
+          return SalarySlipItem(
+            path: itemMap['path'] as String,
+            slipDate: itemMap['slipDate'] != null
+                ? DateTime.tryParse(itemMap['slipDate'] as String)
+                : null,
+            isPdf: itemMap['isPdf'] as bool? ?? isPdf,
+          );
+        }).toList();
+      } else if (salaryData['slips'] != null) {
+        final slips = (salaryData['slips'] as List<dynamic>?)?.cast<String>() ?? [];
+        slipItems = slips.map((path) => SalarySlipItem(path: path, isPdf: isPdf)).toList();
+      }
+      submission.coApplicantSalarySlips = SalarySlips(
         slipItems: slipItems,
         pdfPassword: salaryData['pdfPassword'] as String?,
         isPdf: salaryData['isPdf'] as bool? ?? false,

@@ -13,6 +13,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class PartnerCountScreen extends StatefulWidget {
   const PartnerCountScreen({super.key});
@@ -50,7 +51,9 @@ class _PartnerCountScreenState extends State<PartnerCountScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () => context.go(AppRoutes.step4BankStatement),
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -171,7 +174,8 @@ class _PartnerCountScreenState extends State<PartnerCountScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

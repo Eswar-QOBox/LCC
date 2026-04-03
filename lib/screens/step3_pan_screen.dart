@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
@@ -22,16 +23,20 @@ import '../utils/api_config.dart';
 import 'pan_horizontal_card_capture_screen.dart';
 import '../utils/local_file_persist.dart';
 import '../utils/ocr_pdf.dart';
+import 'package:pdfrx/pdfrx.dart';
+import 'package:image/image.dart' as img;
 import '../services/additional_documents_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
+import '../widgets/prevent_close_on_back.dart';
 
 class Step3PanScreen extends StatefulWidget {
   const Step3PanScreen({
     super.key,
     this.isSpouse = false,
     this.isPartner = false,
+    this.isCoApplicant = false,
     this.partnerIndex,
     this.titleOverride,
     this.backRouteOverride,
@@ -45,6 +50,9 @@ class Step3PanScreen extends StatefulWidget {
 
   /// Partnership flow: when true, saves into partner KYC bucket (no personal-data updates).
   final bool isPartner;
+
+  /// Co-applicant (joint loan): when true, saves into submission co-applicant PAN.
+  final bool isCoApplicant;
 
   /// 1-based partner index for partnership flow.
   final int? partnerIndex;
@@ -379,6 +387,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               : null;
       _frontPath = partnerPan?.frontPath;
       _isPdf = partnerPan?.isPdf ?? false;
+    } else if (widget.isCoApplicant) {
+      _frontPath = provider.submission.coApplicantPan?.frontPath;
+      _isPdf = provider.submission.coApplicantPan?.isPdf ?? false;
     } else {
       _frontPath = provider.submission.pan?.frontPath;
       // Check if it's a PDF based on provider extended info if available or file extension
@@ -412,8 +423,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     final appProvider = context.read<ApplicationProvider>();
     if (!appProvider.hasApplication) return;
 
-    if (widget.isSpouse || widget.isPartner) {
-      // Spouse/Partner PAN is stored in local draft / additional-doc uploads.
+    if (widget.isSpouse || widget.isPartner || widget.isCoApplicant) {
+      // Spouse/Partner/Co-applicant PAN is stored in local draft / additional-doc uploads.
       // Don't load applicant PAN step from backend.
       return;
     }
@@ -605,7 +616,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             fileName: fileName,
             documentType: widget.isSpouse
                 ? 'spouse_pan'
-                : 'custom_partner_${widget.partnerIndex ?? 1}_pan',
+                : 'partner_${widget.partnerIndex ?? 1}_pan',
             leadId: leadId,
             fileBytes: kIsWeb ? _frontBytes?.toList() : null,
           );
@@ -620,6 +631,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               .read<SubmissionProvider>()
               .setPartnerPan(widget.partnerIndex ?? 1, uploadPath, isPdf: _isPdf);
         }
+        await appProvider.updateApplication(currentStep: 6);
+        return true;
+      }
+
+      if (widget.isCoApplicant) {
+        context.read<SubmissionProvider>().setCoApplicantPan(_frontPath!, isPdf: _isPdf);
         await appProvider.updateApplication(currentStep: 6);
         return true;
       }
@@ -799,9 +816,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         final missing = <String>[];
         if (!result.hasPanNumber) missing.add('PAN Number');
         if (!result.hasName) missing.add('Name');
-        if (!result.hasFatherName) missing.add('Father Name');
+        // Father name is optional (some PAN cards do not have it) — do not block on it
         setState(() {
-          _panOcrComplete = missing.isEmpty;
+          _panOcrComplete = result.hasPanNumber && result.hasName;
           _panOcrIssue = missing.isEmpty ? null : 'Missing: ${missing.join(', ')}';
         });
         if (missing.isNotEmpty && mounted) {
@@ -876,53 +893,248 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
   }
 
-  Future<void> _uploadPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
+  /// Checks whether a PDF is encrypted by scanning the full file for the
+  /// `/Encrypt` dictionary reference. The xref/trailer lives at the *end* of
+  /// the file, so we must search the whole thing — not just the first few KB.
+  Future<bool> _isPdfEncrypted(String? path, Uint8List? bytes) async {
+    final Uint8List allBytes;
+    if (kIsWeb && bytes != null) {
+      allBytes = bytes;
+    } else if (!kIsWeb && path != null && path.isNotEmpty) {
+      try {
+        allBytes = await io.File(path).readAsBytes();
+      } catch (_) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+    return _bytesContainAscii(allBytes, '/Encrypt');
+  }
+
+  static bool _bytesContainAscii(Uint8List data, String needle) {
+    if (data.isEmpty || needle.isEmpty) return false;
+    final pattern = needle.codeUnits;
+    final pLen = pattern.length;
+    final dLen = data.length;
+    if (pLen > dLen) return false;
+    outer:
+    for (int i = 0; i <= dLen - pLen; i++) {
+      for (int j = 0; j < pLen; j++) {
+        if (data[i + j] != pattern[j]) continue outer;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /// Returns the password needed to open the PDF with PDFium, or empty string if it opens without a user password.
+  /// Returns null if the user cancelled or the file could not be unlocked.
+  Future<String?> _resolvePanPdfPasswordIfNeeded({
+    required bool headerSuggestsEncrypt,
+    required String localOrBlobPath,
+    required Uint8List? webBytes,
+  }) async {
+    if (!headerSuggestsEncrypt) {
+      return '';
+    }
+    // Many encrypted PDFs still open with an empty user password — no dialog.
+    if (await _tryOpenPanPdf(localOrBlobPath, webBytes, '')) {
+      return '';
+    }
+    if (!mounted) return null;
+    return _showPanPdfPasswordDialog(localOrBlobPath, webBytes);
+  }
+
+  Future<bool> _tryOpenPanPdf(String localOrBlobPath, Uint8List? webBytes, String password) async {
+    PdfDocument? doc;
+    try {
+      if (kIsWeb && webBytes != null) {
+        doc = await PdfDocument.openData(
+          webBytes,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+          sourceName: 'pan_unlock_try',
+        );
+      } else if (!kIsWeb &&
+          localOrBlobPath.isNotEmpty &&
+          !localOrBlobPath.startsWith('blob:')) {
+        doc = await PdfDocument.openFile(
+          localOrBlobPath,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+        );
+      } else {
+        return false;
+      }
+      await doc.dispose();
+      return true;
+    } catch (_) {
+      try {
+        await doc?.dispose();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  /// Returns null if cancelled. Otherwise the validated password (non-empty).
+  Future<String?> _showPanPdfPasswordDialog(String localOrBlobPath, Uint8List? webBytes) async {
+    final passwordController = TextEditingController();
+
+    final result = await showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        String? errorText;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> trySubmit() async {
+              final pwd = passwordController.text;
+              if (pwd.isEmpty) {
+                if (dialogContext.mounted) {
+                  setDialogState(() => errorText = 'Enter the PDF password.');
+                }
+                return;
+              }
+              bool ok;
+              try {
+                ok = await _tryOpenPanPdf(localOrBlobPath, webBytes, pwd);
+              } catch (_) {
+                ok = false;
+              }
+              if (!dialogContext.mounted) return;
+              if (!ok) {
+                setDialogState(() => errorText = 'Incorrect password. Try again.');
+                return;
+              }
+              Navigator.of(dialogContext).pop(pwd);
+            }
+
+            return AlertDialog(
+              title: const Text('PDF Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'This PDF is password-protected. Enter the password to unlock it for verification and OCR.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    decoration: InputDecoration(
+                      labelText: 'PDF password',
+                      errorText: errorText,
+                      labelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      floatingLabelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    obscureText: true,
+                    onSubmitted: (_) => trySubmit(),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => trySubmit(),
+                  child: const Text('Unlock'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
 
-    if (result != null && result.files.isNotEmpty) {
-      String path;
-      
-      if (kIsWeb) {
-        final bytes = result.files.single.bytes;
-        if (bytes == null) {
-          if (mounted) {
-            PremiumToast.showError(context, 'Unable to read PDF file');
+    passwordController.dispose();
+    return result;
+  }
+
+  Future<void> _uploadPdf() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+      );
+
+      if (result != null && result.files.isNotEmpty) {
+        String path;
+        Uint8List? bytesForCheck;
+        String? pathForCheck;
+
+        if (kIsWeb) {
+          final bytes = result.files.single.bytes;
+          if (bytes == null) {
+            if (mounted) {
+              PremiumToast.showError(context, 'Unable to read PDF file');
+            }
+            return;
           }
-          return;
-        }
-        path = createBlobUrl(bytes, mimeType: 'application/pdf');
-      } else {
-        if (result.files.single.path == null) {
-          if (mounted) {
-            PremiumToast.showError(context, 'Unable to access file');
+          bytesForCheck = bytes;
+          path = createBlobUrl(bytes, mimeType: 'application/pdf');
+        } else {
+          if (result.files.single.path == null) {
+            if (mounted) {
+              PremiumToast.showError(context, 'Unable to access file');
+            }
+            return;
           }
-          return;
+          pathForCheck = result.files.single.path;
+          path = await persistLocalPathIfNeeded(
+            result.files.single.path!,
+            preferredExtension: 'pdf',
+            subdir: 'lcc_pan',
+            prefix: 'pan_pdf',
+          );
         }
-        path = await persistLocalPathIfNeeded(
-          result.files.single.path!,
-          preferredExtension: 'pdf',
-          subdir: 'lcc_pan',
-          prefix: 'pan_pdf',
+
+        final isEncrypted = await _isPdfEncrypted(pathForCheck, bytesForCheck);
+        if (!mounted) return;
+        final resolvedPassword = await _resolvePanPdfPasswordIfNeeded(
+          headerSuggestsEncrypt: isEncrypted,
+          localOrBlobPath: path,
+          webBytes: bytesForCheck,
         );
-      }
-      
-      if (mounted) {
+        if (resolvedPassword == null || !mounted) return;
+
         setState(() {
           _frontPath = path;
           _isPdf = true;
           _rotation = 0.0;
           _panOcrComplete = false;
+          _pdfPassword = resolvedPassword.isEmpty ? null : resolvedPassword;
         });
         if (widget.isSpouse) {
           context.read<SubmissionProvider>().setSpousePan(path, isPdf: true);
         } else {
           context.read<SubmissionProvider>().setPanFront(path, isPdf: true);
         }
-        await _performPanOcrFromPdf(path);
-        _showPasswordDialogIfNeeded();
+        if (isEncrypted) {
+          await _performPanOcrFromPdfWithPdfrx(path, bytesForCheck, resolvedPassword);
+        } else {
+          await _performPanOcrFromPdf(path);
+        }
+      }
+    } catch (e) {
+      debugPrint('[PAN] _uploadPdf error: $e');
+      if (mounted) {
+        PremiumToast.showError(
+          context,
+          'Unable to process PDF. Please try again.',
+        );
       }
     }
   }
@@ -980,55 +1192,124 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     }
   }
 
-  void _showPasswordDialogIfNeeded() {
-    final passwordController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('PDF Password'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Is this PDF password protected?'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              decoration: InputDecoration(
-                labelText: 'PDF Password (if required)',
-                labelStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-                floatingLabelStyle: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-                hintText: 'Enter password or leave blank',
-              ),
-              obscureText: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final password = passwordController.text;
-              if (mounted) {
-                setState(() {
-                  _pdfPassword = password.isNotEmpty ? password : null;
-                });
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
+  /// Encrypted PDFs: render first page via PDFium (pdfrx), then run the same PAN OCR as for images.
+  Future<void> _performPanOcrFromPdfWithPdfrx(
+    String pdfPath,
+    Uint8List? webBytes,
+    String password,
+  ) async {
+    if (!mounted) return;
+    PdfDocument? doc;
+    PdfImage? pdfImage;
+    try {
+      PremiumToast.showInfo(
+        context,
+        'Extracting PAN details from PDF...',
+        duration: const Duration(seconds: 2),
+      );
+      if (kIsWeb && webBytes != null) {
+        doc = await PdfDocument.openData(
+          webBytes,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+          sourceName: 'pan_ocr_enc',
+        );
+      } else if (!kIsWeb &&
+          pdfPath.isNotEmpty &&
+          !pdfPath.startsWith('blob:')) {
+        doc = await PdfDocument.openFile(
+          pdfPath,
+          passwordProvider: password.isEmpty
+              ? () async => null
+              : createSimplePasswordProvider(password),
+          firstAttemptByEmptyPassword: true,
+        );
+      } else {
+        if (!mounted) return;
+        PremiumToast.showWarning(
+          context,
+          'Unable to read this PDF for OCR. Please upload a PAN photo (JPG/PNG).',
+          duration: const Duration(seconds: 4),
+        );
+        setState(() {
+          _panOcrComplete = false;
+          _panOcrIssue = 'PDF OCR failed';
+        });
+        return;
+      }
+
+      if (doc.pages.isEmpty) {
+        await doc.dispose();
+        if (!mounted) return;
+        PremiumToast.showWarning(
+          context,
+          'This PDF has no pages. Please upload a valid PAN document.',
+          duration: const Duration(seconds: 3),
+        );
+        setState(() {
+          _panOcrComplete = false;
+          _panOcrIssue = 'PDF OCR failed';
+        });
+        return;
+      }
+
+      final page = await doc.pages.first.ensureLoaded();
+      final fullW = (page.width * 2).round().clamp(1, 8192);
+      final fullH = (page.height * 2).round().clamp(1, 8192);
+      pdfImage = await page.render(
+        fullWidth: fullW.toDouble(),
+        fullHeight: fullH.toDouble(),
+      );
+      if (pdfImage == null) {
+        await doc.dispose();
+        if (!mounted) return;
+        setState(() {
+          _panOcrComplete = false;
+          _panOcrIssue = 'PDF OCR failed';
+        });
+        return;
+      }
+
+      final px = pdfImage.pixels;
+      final rgbaImage = img.Image.fromBytes(
+        width: pdfImage.width,
+        height: pdfImage.height,
+        bytes: px.buffer,
+        bytesOffset: px.offsetInBytes,
+        rowStride: pdfImage.width * 4,
+        numChannels: 4,
+        order: img.ChannelOrder.bgra,
+      );
+      final jpegBytes = Uint8List.fromList(img.encodeJpg(rgbaImage, quality: 92));
+      pdfImage.dispose();
+      pdfImage = null;
+      await doc.dispose();
+      doc = null;
+
+      await _performPanOCR('pdf://pan', imageBytes: jpegBytes);
+    } catch (e, st) {
+      debugPrint('PAN encrypted PDF OCR failed: $e');
+      debugPrint('$st');
+      if (!mounted) return;
+      PremiumToast.showWarning(
+        context,
+        'Unable to OCR this PDF. Please upload a clear PAN photo (JPG/PNG).',
+        duration: const Duration(seconds: 4),
+      );
+      setState(() {
+        _panOcrComplete = false;
+        _panOcrIssue = 'PDF OCR failed';
+      });
+    } finally {
+      pdfImage?.dispose();
+      if (doc != null) {
+        try {
+          await doc.dispose();
+        } catch (_) {}
+      }
+    }
   }
 
   /// Normalize name for comparison (remove extra spaces, convert to uppercase)
@@ -1057,9 +1338,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
   }
 
   void _refreshAadhaarValidationContextFromProvider() {
-    // If Aadhaar OCR already ran, it updates personalData.nameAsPerAadhaar.
+    // Applicant PAN uses applicant Aadhaar name; co-applicant PAN must use
+    // co-applicant Aadhaar OCR name to avoid cross-person validation.
     final provider = context.read<SubmissionProvider>();
-    final providerName = provider.submission.personalData?.nameAsPerAadhaar;
+    final providerName = widget.isCoApplicant
+        ? provider.submission.coApplicantExtractedNameFromAadhaar
+        : provider.submission.personalData?.nameAsPerAadhaar;
     if ((_aadhaarName == null || _aadhaarName!.trim().isEmpty) &&
         providerName != null &&
         providerName.trim().isNotEmpty) {
@@ -1229,8 +1513,9 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       return;
     }
     
-    // STRICT: Never continue if Aadhaar name doesn't match PAN user name (applicant only).
-    // Spouse/Partner PAN should not be validated against applicant Aadhaar.
+    // STRICT: Never continue if Aadhaar name doesn't match PAN user name.
+    // For co-applicant flow this must compare against co-applicant Aadhaar context.
+    // Spouse/Partner flows are excluded from this check.
     if (!widget.isSpouse && !widget.isPartner) {
       // Also handle short forms like "M ESWAR KUMAR" vs "MARKAPURAM ESWAR KUMAR".
       _refreshAadhaarValidationContextFromProvider();
@@ -1243,7 +1528,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           panName != null &&
           panName.trim().isNotEmpty) {
         final ok = _isAadhaarPanNameMatch(aadhaarName, panName);
-        debugPrint('PAN name validation (Aadhaar vs PAN): match=$ok');
+        final mode = widget.isCoApplicant ? 'co-applicant' : 'applicant';
+        debugPrint('PAN name validation ($mode Aadhaar vs PAN): match=$ok');
         if (!ok) {
           _showValidationErrorDialog(
             title: 'Name Mismatch Detected',
@@ -1257,6 +1543,12 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           );
           return;
         }
+      } else if (widget.isCoApplicant) {
+        // Defensive: if co-applicant Aadhaar name context is unavailable,
+        // do not fall back to applicant context; skip mismatch block.
+        debugPrint(
+          'PAN name validation skipped: missing co-applicant Aadhaar name context.',
+        );
       }
     }
     
@@ -1272,6 +1564,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
 
       if (widget.isSpouse || widget.isPartner) {
         context.go(widget.nextRouteOverride ?? AppRoutes.step4BankStatement);
+      } else if (widget.isCoApplicant) {
+        context.go(widget.nextRouteOverride ?? AppRoutes.step5_1SalarySlips);
       } else {
         context.go(isBusinessProprietor ? AppRoutes.step4SpouseAadhaar : AppRoutes.step4BankStatement);
       }
@@ -1294,6 +1588,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       provider.clearSpousePan();
     } else if (widget.isPartner) {
       provider.clearPartnerPan(widget.partnerIndex ?? 1);
+    } else if (widget.isCoApplicant) {
+      provider.clearCoApplicantPan();
     } else {
       provider.clearPan();
     }
@@ -1314,6 +1610,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       provider.clearSpousePan();
     } else if (widget.isPartner) {
       provider.clearPartnerPan(widget.partnerIndex ?? 1);
+    } else if (widget.isCoApplicant) {
+      provider.clearCoApplicantPan();
     } else {
       provider.clearPan();
     }
@@ -1321,7 +1619,13 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        final back = widget.backRouteOverride ??
+            (widget.isCoApplicant ? AppRoutes.coApplicantAadhaar : AppRoutes.step2Aadhaar);
+        context.go(back);
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
@@ -1331,22 +1635,27 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               title: widget.titleOverride ??
                   (widget.isSpouse
                       ? 'Spouse PAN'
-                      : (widget.isPartner ? 'Partner PAN' : 'PAN Card')),
+                      : widget.isCoApplicant
+                          ? 'Co-applicant PAN'
+                          : (widget.isPartner ? 'Partner PAN' : 'PAN Card')),
               icon: Icons.credit_card,
               showBackButton: true,
               onBackPressed: () {
-                final back = widget.backRouteOverride ?? AppRoutes.step2Aadhaar;
+                final back = widget.backRouteOverride ??
+                    (widget.isCoApplicant ? AppRoutes.coApplicantAadhaar : AppRoutes.step2Aadhaar);
                 context.go(back);
               },
               showHomeButton: true,
               actions: [
                 PreviewHeaderAction(
                   backRoute:
-                      widget.isSpouse
-                          ? AppRoutes.step5SpousePan
-                          : (widget.isPartner
-                              ? '${AppRoutes.partnerPan}?i=${widget.partnerIndex ?? 1}'
-                              : AppRoutes.step3Pan),
+                      widget.isCoApplicant
+                          ? AppRoutes.coApplicantPan
+                          : (widget.isSpouse
+                              ? AppRoutes.step5SpousePan
+                              : (widget.isPartner
+                                  ? '${AppRoutes.partnerPan}?i=${widget.partnerIndex ?? 1}'
+                                  : AppRoutes.step3Pan)),
                 ),
               ],
             ),
@@ -1411,7 +1720,8 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'providers/submission_provider.dart';
@@ -28,6 +29,7 @@ import 'screens/business_loan_type_screen.dart';
 import 'screens/professional_loan_type_screen.dart';
 import 'screens/step5_business_docs_screen.dart';
 import 'screens/step5_professional_docs_screen.dart';
+import 'screens/step5_student_docs_screen.dart';
 import 'screens/step4_spouse_aadhaar_screen.dart';
 import 'screens/step5_spouse_pan_screen.dart';
 import 'screens/step6_msme_screen.dart';
@@ -35,8 +37,14 @@ import 'screens/step7_ohp_screen.dart';
 import 'screens/partner_count_screen.dart';
 import 'screens/partner_aadhaar_screen.dart';
 import 'screens/partner_pan_screen.dart';
+import 'screens/co_applicant_choice_screen.dart';
+import 'screens/co_applicant_firm_docs_screen.dart';
+import 'screens/co_applicant_firm_kyc_screen.dart';
+import 'screens/support_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  pdfrxFlutterInitialize();
   runApp(const MyApp());
 }
 
@@ -70,12 +78,13 @@ class MyApp extends StatelessWidget {
             canPop: false,
             onPopInvokedWithResult: (didPop, result) async {
               if (didPop) return;
-              final navigator = Navigator.maybeOf(context);
-              if (navigator != null && navigator.canPop()) {
-                navigator.pop();
+              final router = GoRouter.of(context);
+              // Use GoRouter's stack so back from e.g. Personal Loan → Instructions returns to home
+              if (router.canPop()) {
+                router.pop();
               } else {
-                // Swipe/back would close the app — go to home instead
-                GoRouter.of(context).go(AppRoutes.home);
+                // No route to pop — go to home instead of exiting the app
+                router.go(AppRoutes.home);
               }
             },
             child: child ?? const SizedBox.shrink(),
@@ -115,10 +124,14 @@ final GoRouter _router = GoRouter(
         final loanType = state.uri.queryParameters['loanType'];
         final businessLoanType = state.uri.queryParameters['businessLoanType'];
         final professionalLoanType = state.uri.queryParameters['professionalLoanType'];
+        final withCoApplicant = state.uri.queryParameters['withCoApplicant'] == 'true';
+        final coApplicantFirmType = state.uri.queryParameters['coApplicantFirmType'];
         return InstructionsScreen(
           loanType: loanType,
           businessLoanType: businessLoanType,
           professionalLoanType: professionalLoanType,
+          withCoApplicant: withCoApplicant,
+          coApplicantFirmType: coApplicantFirmType,
         );
       },
     ),
@@ -147,7 +160,13 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.step3Pan,
-      builder: (context, state) => const Step3PanScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step3PanScreen(
+          backRouteOverride: fromPreview ? AppRoutes.step6Preview : null,
+          nextRouteOverride: fromPreview ? AppRoutes.step6Preview : null,
+        );
+      },
     ),
     GoRoute(
       path: AppRoutes.step4SpouseAadhaar,
@@ -159,7 +178,89 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.step4BankStatement,
-      builder: (context, state) => const Step4BankStatementScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step4BankStatementScreen(fromPreview: fromPreview);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantChoice,
+      builder: (context, state) => const CoApplicantChoiceScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantAadhaar,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step2AadhaarScreen(
+          isCoApplicant: true,
+          fromPreview: fromPreview,
+          backRouteOverride:
+              fromPreview ? AppRoutes.step6Preview : AppRoutes.step5_1SalarySlips,
+          nextRouteOverride: AppRoutes.coApplicantPan,
+          progressStepOverride: 6,
+          totalStepsOverride: 12,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantPan,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step3PanScreen(
+          isCoApplicant: true,
+          backRouteOverride:
+              fromPreview ? AppRoutes.step6Preview : AppRoutes.coApplicantAadhaar,
+          nextRouteOverride: fromPreview
+              ? AppRoutes.step6Preview
+              : AppRoutes.coApplicantBankStatement,
+          progressStepOverride: 7,
+          totalStepsOverride: 12,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantBankStatement,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step4BankStatementScreen(
+          fromPreview: fromPreview,
+          isCoApplicant: true,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantSalarySlips,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5_1SalarySlipsScreen(
+          fromPreview: fromPreview,
+          isCoApplicant: true,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantFirmDocs,
+      builder: (context, state) {
+        final firmType =
+            state.uri.queryParameters['firmType'] ?? 'partnership';
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return CoApplicantFirmDocsScreen(
+          firmType: firmType,
+          fromPreview: fromPreview,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.coApplicantFirmKyc,
+      builder: (context, state) {
+        final firmType =
+            state.uri.queryParameters['firmType'] ?? 'partnership';
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return CoApplicantFirmKycScreen(
+          firmType: firmType,
+          fromPreview: fromPreview,
+        );
+      },
     ),
     GoRoute(
       path: AppRoutes.partnerCount,
@@ -182,27 +283,52 @@ final GoRouter _router = GoRouter(
     ),
     GoRoute(
       path: AppRoutes.step5PersonalData,
-      builder: (context, state) => const Step5PersonalDataScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5PersonalDataScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step5_1SalarySlips,
-      builder: (context, state) => const Step5_1SalarySlipsScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5_1SalarySlipsScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step5BusinessDocs,
-      builder: (context, state) => const Step5BusinessDocsScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5BusinessDocsScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step5ProfessionalDocs,
-      builder: (context, state) => const Step5ProfessionalDocsScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5ProfessionalDocsScreen(fromPreview: fromPreview);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.step5StudentDocs,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5StudentDocsScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step6Msme,
-      builder: (context, state) => const Step6MsmeScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step6MsmeScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step7Ohp,
-      builder: (context, state) => const Step7OhpScreen(),
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step7OhpScreen(fromPreview: fromPreview);
+      },
     ),
     GoRoute(
       path: AppRoutes.step6Preview,
@@ -226,6 +352,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: AppRoutes.loanCalculator,
       builder: (context, state) => const LoanCalculatorScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.support,
+      builder: (context, state) => const SupportScreen(),
     ),
   ],
 );

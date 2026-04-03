@@ -399,19 +399,11 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                             ),
                             _buildIncludedItem(
                               context,
-                              'GST / Labour (Any one)',
+                              'GST / Labour / UDYAM (any one)',
                               _useSampleData || isSubmitted ||
-                                  (submission.businessDocuments?.hasGstOrLabour ?? false),
+                                  (submission.businessDocuments?.hasGstLabourOrMsme ?? false),
                               isSample: _useSampleData && !isSubmitted &&
-                                  !(submission.businessDocuments?.hasGstOrLabour ?? false),
-                            ),
-                            _buildIncludedItem(
-                              context,
-                              'MSME Certificate',
-                              _useSampleData || isSubmitted ||
-                                  submission.businessDocuments?.msmeCertificate?.isComplete == true,
-                              isSample: _useSampleData && !isSubmitted &&
-                                  submission.businessDocuments?.msmeCertificate?.isComplete != true,
+                                  !(submission.businessDocuments?.hasGstLabourOrMsme ?? false),
                             ),
                             _buildIncludedItem(
                               context,
@@ -470,19 +462,11 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                               ),
                             _buildIncludedItem(
                               context,
-                              'GST / Labour (Any one)',
+                              'GST / Labour / UDYAM (any one)',
                               _useSampleData || isSubmitted ||
-                                  (submission.businessDocuments?.hasGstOrLabour ?? false),
+                                  (submission.businessDocuments?.hasGstLabourOrMsme ?? false),
                               isSample: _useSampleData && !isSubmitted &&
-                                  !(submission.businessDocuments?.hasGstOrLabour ?? false),
-                            ),
-                            _buildIncludedItem(
-                              context,
-                              'MSME Certificate',
-                              _useSampleData || isSubmitted ||
-                                  submission.businessDocuments?.msmeCertificate?.isComplete == true,
-                              isSample: _useSampleData && !isSubmitted &&
-                                  submission.businessDocuments?.msmeCertificate?.isComplete != true,
+                                  !(submission.businessDocuments?.hasGstLabourOrMsme ?? false),
                             ),
                             _buildIncludedItem(
                               context,

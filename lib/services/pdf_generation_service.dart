@@ -127,7 +127,13 @@ class PdfGenerationService {
     }
 
     String? latestUrlForType(String type) {
-      final matches = uploaded.where((d) => d.documentType == type && (d.url ?? '').trim().isNotEmpty).toList();
+      final withoutCustom = type.startsWith('custom_') ? type.replaceFirst('custom_', '') : type;
+      final withCustom = type.startsWith('custom_') ? type : 'custom_$type';
+      final matches = uploaded.where((d) {
+        final url = (d.url ?? '').trim();
+        if (url.isEmpty) return false;
+        return d.documentType == type || d.documentType == withoutCustom || d.documentType == withCustom;
+      }).toList();
       if (matches.isEmpty) return null;
       matches.sort((a, b) => b.uploadedAt.compareTo(a.uploadedAt));
       return matches.first.url;
@@ -139,23 +145,23 @@ class PdfGenerationService {
       return u.contains('.pdf') || n.endsWith('.pdf');
     }
 
-    // Map business additional docs (types used in upload calls).
-    final spouseAadhaarFront = latestUrlForType('custom_spouse_aadhaar_front');
-    final spouseAadhaarBack = latestUrlForType('custom_spouse_aadhaar_back');
+    // Map business additional docs (types used in upload calls; support both with and without custom_ prefix).
+    final spouseAadhaarFront = latestUrlForType('spouse_aadhaar_front');
+    final spouseAadhaarBack = latestUrlForType('spouse_aadhaar_back');
     final spousePan = latestUrlForType('spouse_pan');
 
-    final companyPan = latestUrlForType('custom_applicant_company_pan_card');
-    final partnershipDeed = latestUrlForType('custom_applicant_partnership_deed');
-    final moa = latestUrlForType('custom_applicant_moa');
-    final aoa = latestUrlForType('custom_applicant_aoa');
-    final gst = latestUrlForType('custom_applicant_gst_registration');
-    final labour = latestUrlForType('custom_applicant_labour_certificate');
-    final msme = latestUrlForType('custom_applicant_msme_certificate');
-    final ohp = latestUrlForType('custom_applicant_ohp_own_house_proof');
+    final companyPan = latestUrlForType('applicant_company_pan_card');
+    final partnershipDeed = latestUrlForType('applicant_partnership_deed');
+    final moa = latestUrlForType('applicant_moa');
+    final aoa = latestUrlForType('applicant_aoa');
+    final gst = latestUrlForType('applicant_gst_registration');
+    final labour = latestUrlForType('applicant_labour_certificate');
+    final msme = latestUrlForType('applicant_msme_certificate');
+    final ohp = latestUrlForType('applicant_ohp_own_house_proof');
 
-    // Partnership partner docs (custom_partner_{i}_*).
+    // Partnership partner docs (partner_{i}_* or legacy custom_partner_{i}_*).
     final partnerRe =
-        RegExp(r'^custom_partner_(\d+)_(aadhaar_front|aadhaar_back|pan)$');
+        RegExp(r'^(?:custom_)?partner_(\d+)_(aadhaar_front|aadhaar_back|pan)$');
     final Map<int, UploadedDocument> partnerLatest = {};
     for (final d in uploaded) {
       final m = partnerRe.firstMatch(d.documentType);
@@ -738,6 +744,9 @@ class PdfGenerationService {
   /// Add Documents section (list of uploaded documents with images and detailed summary)
   Future<void> _addDocumentsSection(pw.Document pdf, DocumentSubmission submission, {String? authToken}) async {
     final isBusinessLoan = (submission.loanType ?? '').toLowerCase().contains('business');
+    final professionalType = (submission.professionalLoanType ?? '').toLowerCase();
+    final isProfessionalLoan = professionalType == 'doctor' || professionalType == 'ca';
+    final proDocs = submission.professionalDocuments;
     final business = submission.businessDocuments;
     final businessType = (submission.businessLoanType ?? '').toLowerCase();
     final hasPartners = business?.hasPartners ?? false;
@@ -769,7 +778,7 @@ class PdfGenerationService {
     }
 
     final slipImages = <pw.MemoryImage?>[];
-    if (!isBusinessLoan &&
+    if (!isBusinessLoan && !isProfessionalLoan &&
         submission.salarySlips?.slipItems.isNotEmpty == true) {
       final items = submission.salarySlips!.slipItems.where((i) => i.hasFile).toList();
       final maxSlips = items.length > 3 ? 3 : items.length;
@@ -829,6 +838,20 @@ class PdfGenerationService {
       authToken: authToken,
     );
 
+    // Co-applicant (personal / joint loan)
+    final coApplicantAadhaarFrontImage = await _loadImageForPdf(
+      submission.coApplicantAadhaar?.frontPath,
+      authToken: authToken,
+    );
+    final coApplicantAadhaarBackImage = await _loadImageForPdf(
+      submission.coApplicantAadhaar?.backPath,
+      authToken: authToken,
+    );
+    final coApplicantPanImage = await _loadImageForPdf(
+      submission.coApplicantPan?.frontPath,
+      authToken: authToken,
+    );
+
     final partnerImageEntries = <MapEntry<String, pw.MemoryImage?>>[];
     if (isBusinessLoan && isBusinessPartnership && partnershipPartnerCount > 0 && business != null) {
       final max = partnershipPartnerCount;
@@ -862,6 +885,33 @@ class PdfGenerationService {
             ),
           );
         }
+      }
+    }
+
+    // Professional loan docs (Doctor / CA) – load images only for non-PDF
+    final professionalImageEntries = <MapEntry<String, pw.MemoryImage?>>[];
+    if (isProfessionalLoan && proDocs != null) {
+      Future<void> addProDoc(String label, UploadedDoc? doc) async {
+        if (doc?.path != null && doc!.path!.trim().isNotEmpty && doc.isPdf == false) {
+          professionalImageEntries.add(
+            MapEntry(label, await _loadImageForPdf(doc.path, authToken: authToken)),
+          );
+        }
+      }
+      if (professionalType == 'doctor') {
+        await addProDoc('Medical Degree', proDocs.medicalDegree);
+        await addProDoc('Medical Licence', proDocs.medicalLicence);
+        await addProDoc('Prescription / Letterhead', proDocs.prescription);
+        await addProDoc('ITR Year 1', proDocs.itrYear1);
+        await addProDoc('ITR Year 2', proDocs.itrYear2);
+      } else if (professionalType == 'ca') {
+        await addProDoc('CA Degree', proDocs.caDegree);
+        await addProDoc('Certificate of Practice', proDocs.certificateOfPractice);
+        await addProDoc('ICAI Certificate', proDocs.icaiCertificate);
+        await addProDoc('ITR Year 1', proDocs.itrYear1);
+        await addProDoc('ITR Year 2', proDocs.itrYear2);
+        await addProDoc('Balance Sheet', proDocs.balanceSheet);
+        await addProDoc('P&L Statement', proDocs.plStatement);
       }
     }
 
@@ -904,10 +954,46 @@ class PdfGenerationService {
             _buildSimpleDocRow('PAN Card', submission.pan?.frontPath != null ? 'Uploaded' : 'Not uploaded'),
             _buildSimpleDocRow('PAN Format', submission.pan?.isPdf == true ? 'PDF' : 'Image'),
             _buildSimpleDocRow('Bank Statement', submission.bankStatement?.pages.isNotEmpty == true 
-              ? '${submission.bankStatement!.pages.length} page${submission.bankStatement!.pages.length == 1 ? '' : 's'} uploaded' 
+              ? '${submission.bankStatement!.pages.length} ${submission.bankStatement!.isPdf ? (submission.bankStatement!.pages.length == 1 ? 'PDF' : 'PDFs') : (submission.bankStatement!.pages.length == 1 ? 'page' : 'pages')} uploaded' 
               : 'Not uploaded'),
             _buildSimpleDocRow('Bank Statement Format', submission.bankStatement?.isPdf == true ? 'PDF' : 'Image'),
-            if (!(isBusinessLoan && (isBusinessProprietor || isBusinessPartnership))) ...[
+            if (isProfessionalLoan) ...[
+              _buildSimpleDocRow('Salary Slips', 'Not required (Professional Loan)'),
+            ] else if (!(isBusinessLoan && (isBusinessProprietor || isBusinessPartnership))) ...[
+              if (submission.hasCoApplicant) ...[
+                _buildSimpleDocRow(
+                  'Co-applicant Aadhaar',
+                  (submission.coApplicantAadhaar?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant PAN',
+                  (submission.coApplicantPan?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant Details',
+                  (submission.coApplicantPersonalData?.isComplete ?? false) ? 'Filled' : 'Not filled',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant Bank Statement',
+                  submission.coApplicantBankStatement?.pages.isNotEmpty == true
+                      ? '${submission.coApplicantBankStatement!.pages.length} ${submission.coApplicantBankStatement!.isPdf ? (submission.coApplicantBankStatement!.pages.length == 1 ? 'PDF' : 'PDFs') : (submission.coApplicantBankStatement!.pages.length == 1 ? 'page' : 'pages')} uploaded'
+                      : 'Not uploaded',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant Bank Format',
+                  submission.coApplicantBankStatement?.isPdf == true ? 'PDF' : 'Image',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant Salary Slips',
+                  (submission.coApplicantSalarySlips?.uploadedCount ?? 0) > 0
+                      ? '${submission.coApplicantSalarySlips!.uploadedCount} slip${submission.coApplicantSalarySlips!.uploadedCount == 1 ? '' : 's'} uploaded'
+                      : 'Not uploaded',
+                ),
+                _buildSimpleDocRow(
+                  'Co-applicant Salary Format',
+                  submission.coApplicantSalarySlips?.isPdf == true ? 'PDF' : 'Image',
+                ),
+              ],
               _buildSimpleDocRow(
                 'Salary Slips',
                 (submission.salarySlips?.uploadedCount ?? 0) > 0
@@ -1013,6 +1099,35 @@ class PdfGenerationService {
                 (business?.ownHouseProof?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
               ),
             ],
+            if (isProfessionalLoan && proDocs != null) ...[
+              pw.SizedBox(height: 10),
+              pw.Divider(),
+              pw.SizedBox(height: 10),
+              pw.Text(
+                professionalType == 'doctor' ? 'Professional Loan (Doctor) Documents' : 'Professional Loan (CA) Documents',
+                style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.blue800,
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              if (professionalType == 'doctor') ...[
+                _buildSimpleDocRow('MBBS / Medical Degree', (proDocs.medicalDegree?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('Medical Licence', (proDocs.medicalLicence?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('Prescription / Letterhead', (proDocs.prescription?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('ITR Year 1', (proDocs.itrYear1?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('ITR Year 2', (proDocs.itrYear2?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+              ] else if (professionalType == 'ca') ...[
+                _buildSimpleDocRow('CA Degree', (proDocs.caDegree?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('Certificate of Practice', (proDocs.certificateOfPractice?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('ICAI Certificate', (proDocs.icaiCertificate?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('ITR Year 1', (proDocs.itrYear1?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('ITR Year 2', (proDocs.itrYear2?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('Balance Sheet', (proDocs.balanceSheet?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+                _buildSimpleDocRow('P&L Statement', (proDocs.plStatement?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded'),
+              ],
+            ],
             
             pw.SizedBox(height: 30),
             pw.Divider(),
@@ -1024,7 +1139,12 @@ class PdfGenerationService {
                 (submission.aadhaar?.backPath != null && submission.aadhaar?.backIsPdf == false) ||
                 (submission.pan?.frontPath != null && submission.pan?.isPdf == false) ||
                 (submission.bankStatement?.isPdf == false && submission.bankStatement?.pages.isNotEmpty == true) ||
-                (!isBusinessLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ||
+                (!isBusinessLoan && !isProfessionalLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ||
+                (submission.hasCoApplicant && (
+                  (submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false) ||
+                  (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false) ||
+                  (submission.coApplicantPan?.frontPath != null && submission.coApplicantPan?.isPdf == false)
+                )) ||
                 (isBusinessLoan && (isBusinessProprietor || isBusinessPartnership) && (
                   (business?.spouseAadhaar?.frontPath != null && business?.spouseAadhaar?.frontIsPdf == false) ||
                   (business?.spouseAadhaar?.backPath != null && business?.spouseAadhaar?.backIsPdf == false) ||
@@ -1038,7 +1158,8 @@ class PdfGenerationService {
                   (business?.msmeCertificate?.path != null && business?.msmeCertificate?.isPdf == false) ||
                   (business?.ownHouseProof?.path != null && business?.ownHouseProof?.isPdf == false) ||
                   (isBusinessPartnership && partnerImageEntries.isNotEmpty)
-                ))) ...[
+                )) ||
+                (isProfessionalLoan && professionalImageEntries.isNotEmpty)) ...[
               
               _buildSectionHeader('Document Images'),
               pw.SizedBox(height: 15),
@@ -1071,6 +1192,52 @@ class PdfGenerationService {
               if (submission.pan?.frontPath != null && submission.pan?.isPdf == false)
                 _buildPdfImageWidget('PAN Card', panImage),
 
+              // Co-applicant (personal / joint loan)
+              if (submission.hasCoApplicant &&
+                  ((submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false) ||
+                   (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false) ||
+                   (submission.coApplicantPan?.frontPath != null && submission.coApplicantPan?.isPdf == false))) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Co-applicant KYC'),
+                pw.SizedBox(height: 12),
+                if ((submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false) ||
+                    (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false))
+                  pw.Row(
+                    children: [
+                      if (submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false)
+                        pw.Expanded(
+                          child: _buildPdfImageWidget('Co-applicant Aadhaar Front', coApplicantAadhaarFrontImage),
+                        ),
+                      if (submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false &&
+                          submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false)
+                        pw.SizedBox(width: 10),
+                      if (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false)
+                        pw.Expanded(
+                          child: _buildPdfImageWidget('Co-applicant Aadhaar Back', coApplicantAadhaarBackImage),
+                        ),
+                    ],
+                  ),
+                if (submission.coApplicantPan?.frontPath != null && submission.coApplicantPan?.isPdf == false) ...[
+                  if ((submission.coApplicantAadhaar?.frontPath != null && submission.coApplicantAadhaar?.frontIsPdf == false) ||
+                      (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false))
+                    pw.SizedBox(height: 10),
+                  _buildPdfImageWidget('Co-applicant PAN', coApplicantPanImage),
+                ],
+                if (submission.coApplicantPersonalData != null && submission.coApplicantPersonalData!.isComplete) ...[
+                  pw.SizedBox(height: 10),
+                  _buildSectionHeader('Co-applicant Details'),
+                  pw.SizedBox(height: 6),
+                  _buildSimpleDocRow('Name', submission.coApplicantPersonalData!.nameAsPerAadhaar ?? ''),
+                  _buildSimpleDocRow('DOB', submission.coApplicantPersonalData!.dateOfBirth != null
+                      ? submission.coApplicantPersonalData!.dateOfBirth!.toIso8601String().split('T').first
+                      : ''),
+                  _buildSimpleDocRow('PAN', submission.coApplicantPersonalData!.panNo ?? ''),
+                  _buildSimpleDocRow('Mobile', submission.coApplicantPersonalData!.mobileNumber ?? ''),
+                  _buildSimpleDocRow('Email', submission.coApplicantPersonalData!.personalEmailId ?? ''),
+                  _buildSimpleDocRow('Address', submission.coApplicantPersonalData!.residenceAddress ?? ''),
+                ],
+              ],
+
               // Bank statement pages (first up to 3)
               if (submission.bankStatement?.isPdf != true &&
                   submission.bankStatement?.pages.isNotEmpty == true) ...[
@@ -1088,7 +1255,7 @@ class PdfGenerationService {
               ],
 
               // Salary slips (first up to 3, images only)
-              if (!isBusinessLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ...[
+              if (!isBusinessLoan && !isProfessionalLoan && (submission.salarySlips?.uploadedCount ?? 0) > 0) ...[
                 pw.SizedBox(height: 10),
                 _buildSectionHeader('Salary Slips'),
                 pw.SizedBox(height: 12),
@@ -1207,6 +1374,18 @@ class PdfGenerationService {
                 pw.SizedBox(height: 12),
                 _buildPdfImageGrid(
                   partnerImageEntries,
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
+              if (isProfessionalLoan && professionalImageEntries.isNotEmpty) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader(
+                  professionalType == 'doctor' ? 'Professional Loan (Doctor) Documents' : 'Professional Loan (CA) Documents',
+                ),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  professionalImageEntries,
                   columns: 2,
                   imageHeight: 110,
                 ),

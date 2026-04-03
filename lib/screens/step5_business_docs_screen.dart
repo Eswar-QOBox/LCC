@@ -2,8 +2,10 @@ import 'dart:ui';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
+import '../services/ocr_service.dart';
+import '../utils/ocr_pdf.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -24,9 +26,12 @@ import '../widgets/premium_toast.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../services/storage_service.dart';
 import '../widgets/preview_header_action.dart';
-
+import '../widgets/prevent_close_on_back.dart';
 class Step5BusinessDocsScreen extends StatefulWidget {
-  const Step5BusinessDocsScreen({super.key});
+  const Step5BusinessDocsScreen({super.key, this.fromPreview = false});
+
+  /// When true, Back and Continue return to Preview (opened via Edit from Preview).
+  final bool fromPreview;
 
   @override
   State<Step5BusinessDocsScreen> createState() => _Step5BusinessDocsScreenState();
@@ -45,6 +50,9 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
 
   // Web: store picked bytes so we can upload.
   final Map<String, Uint8List?> _pickedBytes = {};
+  /// OCR must succeed for each uploaded doc (on mobile) before proceeding.
+  final Map<String, bool> _ocrCompleteByKey = {};
+  final Map<String, String?> _ocrIssueByKey = {};
 
   @override
   void initState() {
@@ -52,7 +60,25 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAuthToken();
       _loadLeadId();
+      // When coming back from preview (or loading with existing docs), run OCR for any local paths so gating works.
+      _runOcrForExistingLocalDocs();
     });
+  }
+
+  /// Run OCR for documents that already have a local path (e.g. after coming back from preview or draft with local files).
+  Future<void> _runOcrForExistingLocalDocs() async {
+    if (kIsWeb) return;
+    if (!mounted) return;
+    final provider = context.read<SubmissionProvider>();
+    const docKeys = ['company_pan', 'partnership_deed', 'moa', 'aoa', 'gst', 'labour'];
+    for (final key in docKeys) {
+      final path = _getDocPath(provider.submission, key);
+      if (path == null || path.trim().isEmpty) continue;
+      if (_isRemotePath(path) || path.startsWith('blob:')) continue;
+      if (_ocrCompleteByKey[key] == true) continue; // already done
+      await _performDocumentOcr(key, path, _isPdfPath(path));
+      if (!mounted) return;
+    }
   }
 
   Future<void> _loadAuthToken() async {
@@ -230,6 +256,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
 
     if (file.path == null) return;
     _setDocPathForKey(key, file.path!, isPdf: true);
+    await _performDocumentOcr(key, file.path!, true);
   }
 
   Future<void> _pickImage(String key, ImageSource source) async {
@@ -247,6 +274,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
     }
 
     _setDocPathForKey(key, picked.path, isPdf: false);
+    await _performDocumentOcr(key, picked.path, false);
   }
 
   Future<void> _showPickerSheet(String key) async {
@@ -353,6 +381,130 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
     return p.startsWith('http') || p.startsWith('/uploads/') || p.startsWith('/api/');
   }
 
+  /// Run same OCR as Aadhaar/PAN/professional docs. Skips on web and for remote paths.
+  Future<void> _performDocumentOcr(String key, String path, bool isPdf) async {
+    if (kIsWeb) return;
+    if (_isRemotePath(path)) return;
+    if (path.startsWith('blob:')) return;
+    try {
+      Uint8List? imageBytes;
+      if (isPdf && path.toLowerCase().endsWith('.pdf') && OcrPdf.isSupported) {
+        try {
+          final count = await OcrPdf.getPageCount(path);
+          if (count > 0) {
+            imageBytes = await OcrPdf.renderPageToJpegBytes(path, pageIndex: 0);
+          }
+        } catch (e) {
+          if (kDebugMode) debugPrint('[BusinessDocs] PDF render for OCR failed: $e');
+        }
+      }
+      final result = imageBytes != null
+          ? await OcrService.extractDocumentText(path, imageBytes: imageBytes)
+          : await OcrService.extractDocumentText(path);
+      if (!mounted) return;
+      if (result.success) {
+        setState(() {
+          _ocrCompleteByKey[key] = true;
+          _ocrIssueByKey[key] = null;
+        });
+        PremiumToast.showSuccess(context, 'Document scanned.');
+      } else {
+        setState(() {
+          _ocrCompleteByKey[key] = false;
+          _ocrIssueByKey[key] = result.errorMessage;
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not read document text. Re-capture with better lighting or replace the document to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[BusinessDocs] OCR failed: $e');
+      if (mounted) {
+        setState(() {
+          _ocrCompleteByKey[key] = false;
+          _ocrIssueByKey[key] = e.toString();
+        });
+        PremiumToast.showWarning(
+          context,
+          'Could not scan document. Re-capture or replace the document to continue.',
+          duration: const Duration(seconds: 4),
+        );
+      }
+    }
+  }
+
+  static String _titleForDocKey(String key) {
+    switch (key) {
+      case 'company_pan': return 'Company PAN Card';
+      case 'partnership_deed': return 'Partnership Deed';
+      case 'moa': return 'MOA';
+      case 'aoa': return 'AOA';
+      case 'gst': return 'GST Registration';
+      case 'labour': return 'Labour Certificate';
+      default: return key;
+    }
+  }
+
+  void _showOcrValidationDialog(List<String> issues) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.document_scanner_outlined, color: AppTheme.errorColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Document OCR Incomplete',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Each document must be scanned successfully before you can continue.',
+              style: TextStyle(height: 1.3),
+            ),
+            const SizedBox(height: 12),
+            ...issues.map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text('• $e', style: const TextStyle(height: 1.25)),
+            )),
+            const SizedBox(height: 12),
+            Text(
+              'Re-capture or re-upload with better lighting and ensure the document is clearly visible.',
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.3),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _filenameFromPath(String path, {required String fallback}) {
     try {
       final uri = Uri.tryParse(path);
@@ -403,8 +555,6 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
     final partnershipDeed = _getDocPath(submission, 'partnership_deed');
     final moa = _getDocPath(submission, 'moa');
     final aoa = _getDocPath(submission, 'aoa');
-    final gst = _getDocPath(submission, 'gst');
-    final labour = _getDocPath(submission, 'labour');
     if (isPartnership &&
         ((companyPan == null || companyPan.trim().isEmpty) ||
             (partnershipDeed == null || partnershipDeed.trim().isEmpty))) {
@@ -424,9 +574,29 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
       );
       return;
     }
-    if ((gst == null || gst.trim().isEmpty) && (labour == null || labour.trim().isEmpty)) {
-      PremiumToast.showWarning(context, 'Please upload GST or Labour certificate (any one required).');
-      return;
+    // GST / Labour / UDYAM: any one is enough; UDYAM can be uploaded on the next step
+    // if you skip both here (step6 enforces at least one of the three overall).
+
+    // On mobile: require OCR success for every uploaded document (remote paths treated as already verified).
+    if (!kIsWeb) {
+      final provider = context.read<SubmissionProvider>();
+      const docKeys = ['company_pan', 'partnership_deed', 'moa', 'aoa', 'gst', 'labour'];
+      final issues = <String>[];
+      for (final key in docKeys) {
+        final path = _getDocPath(provider.submission, key);
+        if (path == null || path.trim().isEmpty) continue;
+        if (_isRemotePath(path)) continue;
+        if (_ocrCompleteByKey[key] != true) {
+          final issue = _ocrIssueByKey[key] != null
+              ? '${_titleForDocKey(key)}: ${_ocrIssueByKey[key]}'
+              : '${_titleForDocKey(key)}: OCR not run or failed';
+          issues.add(issue);
+        }
+      }
+      if (issues.isNotEmpty) {
+        _showOcrValidationDialog(issues);
+        return;
+      }
     }
 
     if (_isSaving) return;
@@ -440,7 +610,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         final uploadedCompanyPan = await _uploadIfNeeded(
           key: 'company_pan',
           path: provider.submission.businessDocuments?.companyPanCard?.path,
-          documentType: 'custom_applicant_company_pan_card',
+          documentType: 'applicant_company_pan_card',
         );
         if (uploadedCompanyPan != null) {
           provider.setCompanyPanCard(uploadedCompanyPan, isPdf: _isPdfPath(uploadedCompanyPan));
@@ -449,7 +619,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         final uploadedDeed = await _uploadIfNeeded(
           key: 'partnership_deed',
           path: provider.submission.businessDocuments?.partnershipDeed?.path,
-          documentType: 'custom_applicant_partnership_deed',
+          documentType: 'applicant_partnership_deed',
         );
         if (uploadedDeed != null) {
           provider.setPartnershipDeed(uploadedDeed, isPdf: _isPdfPath(uploadedDeed));
@@ -460,7 +630,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         final uploadedCompanyPan = await _uploadIfNeeded(
           key: 'company_pan',
           path: provider.submission.businessDocuments?.companyPanCard?.path,
-          documentType: 'custom_applicant_company_pan_card',
+          documentType: 'applicant_company_pan_card',
         );
         if (uploadedCompanyPan != null) {
           provider.setCompanyPanCard(uploadedCompanyPan, isPdf: _isPdfPath(uploadedCompanyPan));
@@ -469,7 +639,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         final uploadedMoa = await _uploadIfNeeded(
           key: 'moa',
           path: provider.submission.businessDocuments?.moa?.path,
-          documentType: 'custom_applicant_moa',
+          documentType: 'applicant_moa',
         );
         if (uploadedMoa != null) {
           provider.setMoa(uploadedMoa, isPdf: _isPdfPath(uploadedMoa));
@@ -478,7 +648,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         final uploadedAoa = await _uploadIfNeeded(
           key: 'aoa',
           path: provider.submission.businessDocuments?.aoa?.path,
-          documentType: 'custom_applicant_aoa',
+          documentType: 'applicant_aoa',
         );
         if (uploadedAoa != null) {
           provider.setAoa(uploadedAoa, isPdf: _isPdfPath(uploadedAoa));
@@ -488,7 +658,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
       final uploadedGst = await _uploadIfNeeded(
         key: 'gst',
         path: provider.submission.businessDocuments?.gstRegistration?.path,
-        documentType: 'custom_applicant_gst_registration',
+        documentType: 'applicant_gst_registration',
       );
       if (uploadedGst != null) {
         provider.setGstRegistration(uploadedGst, isPdf: _isPdfPath(uploadedGst));
@@ -497,7 +667,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
       final uploadedLabour = await _uploadIfNeeded(
         key: 'labour',
         path: provider.submission.businessDocuments?.labourCertificate?.path,
-        documentType: 'custom_applicant_labour_certificate',
+        documentType: 'applicant_labour_certificate',
       );
       if (uploadedLabour != null) {
         provider.setLabourCertificate(uploadedLabour, isPdf: _isPdfPath(uploadedLabour));
@@ -507,7 +677,11 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
         // Track progress in application (backend only allows 1..7)
         await context.read<ApplicationProvider>().updateApplication(currentStep: 7);
         PremiumToast.showSuccess(context, 'GST/Labour saved successfully!');
-        context.go(AppRoutes.step6Msme);
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+        } else {
+          context.go(AppRoutes.step6Msme);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -534,35 +708,54 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
     final isPvtLimited = businessLoanType == 'pvt_limited';
     final isPartnerFlow = isPartnership || isPvtLimited;
     final cards = <Map<String, String>>[
-      if (isPartnership) {'key': 'company_pan', 'title': 'Company PAN Card'},
-      if (isPartnership) {'key': 'partnership_deed', 'title': 'Partnership Deed'},
-      if (isPvtLimited) {'key': 'company_pan', 'title': 'Company PAN Card'},
+      if (isPartnership) {'key': 'company_pan', 'title': 'Company PAN\nCard'},
+      if (isPartnership) {'key': 'partnership_deed', 'title': 'Partnership\nDeed'},
+      if (isPvtLimited) {'key': 'company_pan', 'title': 'Company PAN\nCard'},
       if (isPvtLimited) {'key': 'moa', 'title': 'MOA'},
       if (isPvtLimited) {'key': 'aoa', 'title': 'AOA'},
-      {'key': 'gst', 'title': 'GST Registration'},
-      {'key': 'labour', 'title': 'Labour Certificate'},
+      {'key': 'gst', 'title': 'GST\nRegistration'},
+      {'key': 'labour', 'title': 'Labour\nCertificate'},
     ];
     final totalSteps =
         isPartnerFlow && partnerCount > 0 ? (10 + 2 * partnerCount) : 10;
     final currentStep =
         isPartnerFlow && partnerCount > 0 ? (6 + 2 * partnerCount) : 7;
 
-    return Scaffold(
+    return PreventCloseOnBack(
+      onBack: () {
+        if (_isSaving) return;
+        if (widget.fromPreview) {
+          context.go(AppRoutes.step6Preview);
+          return;
+        }
+        context.go(
+          isPartnerFlow && partnerCount > 0
+              ? '${AppRoutes.partnerPan}?i=$partnerCount'
+              : AppRoutes.step4BankStatement,
+        );
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: Column(
           children: [
             AppHeader(
-              title: 'GST / Labour',
+              title: 'GST / Labour / UDYAM',
               icon: Icons.receipt_long,
               showBackButton: true,
               onBackPressed: _isSaving
                   ? null
-                  : () => context.go(
+                  : () {
+                      if (widget.fromPreview) {
+                        context.go(AppRoutes.step6Preview);
+                        return;
+                      }
+                      context.go(
                         isPartnerFlow && partnerCount > 0
                             ? '${AppRoutes.partnerPan}?i=$partnerCount'
                             : AppRoutes.step4BankStatement,
-                      ),
+                      );
+                    },
               showHomeButton: true,
               actions: const [
                 PreviewHeaderAction(backRoute: AppRoutes.step5BusinessDocs),
@@ -611,10 +804,10 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
                                 const SizedBox(height: 6),
                                 Text(
                                   isPartnership
-                                      ? 'Upload Company PAN Card, Partnership Deed, and GST or Labour certificate (any one required). You can upload photos or PDFs.'
+                                      ? 'Upload Company PAN Card and Partnership Deed. For GST, Labour licence, or UDYAM / MSME: only one document is required in total—you can upload GST or Labour here, or UDYAM on the next step. Photos or PDFs.'
                                       : isPvtLimited
-                                          ? 'Upload Company PAN Card, MOA, AOA, and GST or Labour certificate (any one required). You can upload photos or PDFs.'
-                                          : 'Upload GST or Labour certificate. Any one is required. You can upload photos or PDFs.',
+                                          ? 'Upload Company PAN Card, MOA, and AOA. For GST, Labour licence, or UDYAM / MSME: only one document is required in total—you can upload GST or Labour here, or UDYAM on the next step. Photos or PDFs.'
+                                          : 'GST, Labour licence, and UDYAM / MSME are not all required—upload any one. You can use GST or Labour here, or tap Continue and upload UDYAM on the next step. Photos or PDFs.',
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
                                     height: 1.3,
@@ -652,7 +845,7 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
                             children: [
                               // Header (icon + title + status)
                               Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Container(
                                     width: 36,
@@ -676,8 +869,6 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
                                         fontSize:
                                             (theme.textTheme.titleLarge?.fontSize ?? 20) + 2,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -875,7 +1066,8 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildProgressIndicator(
