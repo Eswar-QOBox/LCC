@@ -69,7 +69,7 @@ class _SubmissionSuccessScreenState extends State<SubmissionSuccessScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Our agent will review your documents. You will be contacted shortly.',
+                          'Your documents have been submitted for eligibility review. Partner institutions may contact you regarding next steps.',
                           style: Theme.of(context).textTheme.bodyLarge,
                           textAlign: TextAlign.center,
                         ),

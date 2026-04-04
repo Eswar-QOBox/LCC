@@ -159,7 +159,7 @@ class _LoanScreenState extends State<LoanScreen> {
                         ),
                       ),
                       Text(
-                        'PREMIUM FINANCE',
+                        'ELIGIBILITY VERIFICATION',
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
@@ -286,8 +286,8 @@ class _LoanScreenState extends State<LoanScreen> {
         ],
       },
       {
-        'title': '24/7 Application',
-        'subtitle': 'Apply anytime from anywhere.',
+        'title': '24/7 Submission',
+        'subtitle': 'Submit documents anytime, anywhere.',
         'gradient': [
           Color(0xFF4A148C),
           Color(0xFF6A1B9A),
@@ -561,6 +561,14 @@ class _LoanScreenState extends State<LoanScreen> {
               ),
           ],
         ),
+        const SizedBox(height: 4),
+        Text(
+          'Select category to submit documents for eligibility verification.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -725,7 +733,7 @@ class _LoanScreenState extends State<LoanScreen> {
       {
         'icon': Icons.check_circle,
         'title': 'Easy Process',
-        'subtitle': 'Simple steps, high approval rates.',
+        'subtitle': 'Simple steps for document submission.',
         'iconColor': AppTheme.successColor,
         'iconBgColor': AppTheme.successColor.withValues(alpha: 0.15),
       },
@@ -738,8 +746,8 @@ class _LoanScreenState extends State<LoanScreen> {
       },
       {
         'icon': Icons.speed,
-        'title': 'Fast Approval',
-        'subtitle': 'Response within 24 hours.',
+        'title': 'Quick submission',
+        'subtitle': 'Submission status within 24 hours.',
         'iconColor': const Color(0xFFF59E0B),
         'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.15),
       },
@@ -749,7 +757,7 @@ class _LoanScreenState extends State<LoanScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Why Choose Us?',
+          'Why Use JSEE?',
           style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
             fontSize: 18,

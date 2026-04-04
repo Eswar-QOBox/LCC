@@ -675,7 +675,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
                 const Icon(Icons.warning_amber, size: 48, color: Colors.orange),
                 const SizedBox(height: 16),
                 Text(
-                  'Professional loan type not set. Go back to home and start a Professional Loan.',
+                  'Professional eligibility type not set. Go back to home and select Professional eligibility.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyLarge,
                 ),
@@ -748,7 +748,7 @@ class _Step5ProfessionalDocsScreenState extends State<Step5ProfessionalDocsScree
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Required for Professional Loan',
+                                  'Required for Professional eligibility',
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.w800,
                                   ),

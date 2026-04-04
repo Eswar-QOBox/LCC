@@ -638,7 +638,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         const SizedBox(height: 12),
                         _buildInstructionItem(
                           context,
-                          'Slide to submit at the final step to confirm your application.',
+                          'Slide to submit at the final step to confirm your submission.',
                         ),
                       ],
                     ),
@@ -697,7 +697,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           width: double.infinity,
                           child: SlideToConfirm(
                             label: _isCreatingApplication
-                                ? 'Creating Application...'
+                                ? 'Creating submission...'
                                 : 'Slide to start',
                             height: 60,
                             borderRadius: const BorderRadius.all(Radius.circular(16)),
@@ -804,7 +804,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                           'Error creating application: $e');
                                       PremiumToast.showError(
                                         context,
-                                        'Could not start application. '
+                                        'Could not start submission. '
                                         'Please check your connection and try again.',
                                       );
                                     }
@@ -871,14 +871,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 const SizedBox(height: 12),
                 // Message
                 Text(
-                  'Application is in progress. Please talk to our agent.',
+                  'Submission is in progress. Partner institutions may contact you regarding next steps.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                // Application details
+                // Submission details
                 PremiumCard(
                   padding: const EdgeInsets.all(12),
                   child: Row(

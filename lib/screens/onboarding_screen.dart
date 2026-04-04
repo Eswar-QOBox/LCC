@@ -15,37 +15,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<OnboardingPage> _pages = [
     OnboardingPage(
-      title: 'Upload Your Loan Documents',
+      title: 'Upload Documents for Eligibility',
       description:
-          'JSEE Solutions helps you securely upload and share your loan documents in one simple place. No more emails, prints or paperwork.',
+          'JSEE Solutions helps you securely upload and organize your documents in one place for loan eligibility verification. No more emails, prints or paperwork.',
       icon: Icons.upload_file,
       color: Colors.blue,
     ),
     OnboardingPage(
       title: 'Safe & Organized',
       description:
-          'Your documents are stored safely and in an organized way, so you and your loan partner always know exactly what has been shared.',
+          'Your documents are stored safely and in an organized way, and can be shared with partner institutions for eligibility review.',
       icon: Icons.lock_outline,
       color: Colors.teal,
     ),
     OnboardingPage(
-      title: 'Track Your Loan Journey',
+      title: 'Track Submission Status',
       description:
-          'See which documents are pending, what has been completed, and keep your loan process moving without confusion.',
+          'See which documents are pending, what has been completed, and track your eligibility verification status without confusion.',
       icon: Icons.timeline,
       color: Colors.orange,
     ),
     OnboardingPage(
       title: 'EMI Calculator Built‑In',
       description:
-          'Use the EMI calculator to quickly check your monthly payments. Adjust loan amount, interest and tenure to find an EMI that fits you.',
+          'Use the EMI calculator to quickly check your monthly payments. For planning only. Loans are from external institutions.',
       icon: Icons.calculate_outlined,
       color: Colors.green,
     ),
     OnboardingPage(
       title: 'Welcome to JSEE Solutions',
       description:
-          'This app is made for easy loan document upload and smart EMI planning—so you can complete your loan faster and with confidence.',
+          'A simple and secure document upload platform for loan eligibility verification. Upload documents and use the EMI calculator to plan—eligibility and loans are through external institutions.',
       icon: Icons.verified_user,
       color: Colors.purple,
     ),

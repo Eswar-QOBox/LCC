@@ -81,7 +81,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
         if (errorStr.contains('isolate') || errorStr.contains('spawn')) {
           errorMessage = 'PDF generation encountered a system error. Please try again or restart the app.';
         } else if (errorStr.contains('permission') || errorStr.contains('access')) {
-          errorMessage = 'Permission denied. Please grant storage permissions and try again.';
+          errorMessage = 'Permission denied or access error. Please try again.';
         } else if (errorStr.contains('network') || errorStr.contains('connection')) {
           errorMessage = 'Network error. Please check your connection and try again.';
         } else {
@@ -259,14 +259,14 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                           ),
                           const SizedBox(height: 20),
                           Text(
-                            'Download Your Application',
+                            'Download Your Submission',
                             style: theme.textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Generate a PDF summary of your loan application',
+                            'Generate a PDF summary of your document submission',
                             style: theme.textTheme.bodyMedium,
                             textAlign: TextAlign.center,
                           ),
@@ -558,7 +558,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'The PDF will contain a summary of your application data. Document files are stored securely on our servers.',
+                              'The PDF will contain a summary of your submission data. Document files are stored securely on our servers.',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: Colors.blue.shade700,
                               ),

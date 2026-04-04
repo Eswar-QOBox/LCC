@@ -1495,7 +1495,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
     if (_frontPath == null) {
       _showValidationErrorDialog(
         title: 'Missing PAN Card',
-        message: 'You need to upload your PAN card to continue with the application.',
+        message: 'You need to upload your PAN card to continue with the submission.',
         instruction: 'Please capture or upload a clear image of your PAN card.',
         icon: Icons.credit_card_off,
       );

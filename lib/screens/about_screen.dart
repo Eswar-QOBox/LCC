@@ -117,7 +117,7 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'This is a Flutter application built with modern best practices and clean architecture principles.',
+              'JSEE Solutions is a simple and secure document upload platform designed to help users organize and submit their documents for loan eligibility verification purposes. The app does not provide loans, insurance, or financial products directly.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 32),
@@ -132,8 +132,11 @@ class AboutScreen extends StatelessWidget {
             _buildFeatureItem(context, 'Cross-platform support'),
             _buildFeatureItem(context, 'Material Design 3'),
             _buildFeatureItem(context, 'Responsive UI'),
+            _buildFeatureItem(context, 'Document upload & organization'),
+            _buildFeatureItem(context, 'Eligibility verification support'),
+            _buildFeatureItem(context, 'Secure submission'),
+            _buildFeatureItem(context, 'EMI calculator (for planning only)'),
             const SizedBox(height: 32),
-            // Our Partner Banks & NBFCs — card design with grid
             _buildPartnerBanksCard(context),
             const Spacer(),
             Center(

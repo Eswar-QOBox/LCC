@@ -8,14 +8,14 @@ class AppStrings {
 
   // Loan screen
   static const String homeTitle = 'Home';
-  static const String homeSubtitle = 'Start your loan application process';
+  static const String homeSubtitle = 'Upload documents to check your loan eligibility';
   static const String chooseLoanType = 'Choose Loan Type';
   static const String easyProcess = 'Easy Process';
   static const String easyProcessSubtitle = 'Simple steps';
   static const String secure = 'Secure';
   static const String secureSubtitle = 'Data protected';
   static const String quick = 'Quick';
-  static const String quickSubtitle = 'Fast approval';
+  static const String quickSubtitle = 'Quick document submission';
   static const String getAssistance = 'Get Assistance';
   static const String chooseContactMethod = 'Choose how you\'d like to contact us';
   static const String whatsapp = 'WhatsApp';
@@ -52,14 +52,14 @@ class AppStrings {
   static const String tabApplied = 'Submitted';
   static const String tabApproved = 'Approved';
   static const String tabIncomplete = 'Incomplete';
-  static const String errorLoadingApplications = 'Error Loading Applications';
+  static const String errorLoadingApplications = 'Error Loading Submissions';
   static const String retry = 'Retry';
-  static const String noApplications = 'No Applications';
-  static const String startApplication = 'Start Application';
+  static const String noApplications = 'No submissions';
+  static const String startApplication = 'Start submission';
   static const String refresh = 'Refresh';
   static const String statusRepaymentScheduled = 'Repayment Scheduled';
   static const String statusUnderReview = 'Under Review';
-  static const String statusIncomplete = 'Incomplete Application';
+  static const String statusIncomplete = 'Incomplete submission';
   static const String statusContinue = 'Continue where you left off';
   static const String statusInProgress = 'In Progress';
   static const String loanAmountLabel = 'Loan Amount';
@@ -96,13 +96,13 @@ class AppStrings {
   static String applicationsEmptyMessage(int tabIndex) {
     switch (tabIndex) {
       case 0:
-        return 'Your submitted and in-progress applications will appear here';
+        return 'Your submitted and in-progress submissions will appear here';
       case 1:
-        return 'Your approved applications will appear here';
+        return 'Your approved submissions will appear here';
       case 2:
-        return 'Your incomplete draft applications will appear here';
+        return 'Your incomplete draft submissions will appear here';
       default:
-        return 'Your applications will appear here';
+        return 'Your submissions will appear here';
     }
   }
 
@@ -123,17 +123,17 @@ class AppStrings {
       case 7:
         return 'Step 7: Preview';
       default:
-        return 'Start Application';
+        return 'Start submission';
     }
   }
 
   // Application restriction messages
-  static const String applicationInProgressTitle = 'Application In Progress';
+  static const String applicationInProgressTitle = 'Submission In Progress';
   static const String applicationInProgressMessage =
-      'You have an in-progress application. Please complete it before starting a new one.';
-  /// Banner shown on home when user has an in-progress application.
+      'You have an in-progress document submission. Please complete it before starting a new one.';
+  /// Banner shown on home when user has an in-progress document submission.
   static const String applicationInProgressBanner =
-      'There is an application in progress. Tap to continue.';
-  static const String viewExistingApplication = 'View Existing Application';
+      'You have a document submission in progress. Tap to continue.';
+  static const String viewExistingApplication = 'View Existing Submission';
   static const String cancel = 'Cancel';
 }
