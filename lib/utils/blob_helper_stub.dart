@@ -9,3 +9,5 @@ String createBlobUrlWebImpl(Uint8List bytes, String mimeType) {
   return 'data:$mimeType;base64,$base64';
 }
 
+void revokeBlobUrlWebImpl(String url) {}
+

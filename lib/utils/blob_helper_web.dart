@@ -17,3 +17,10 @@ String createBlobUrlWebImpl(Uint8List bytes, String mimeType) {
   }
 }
 
+void revokeBlobUrlWebImpl(String url) {
+  if (!url.startsWith('blob:')) return;
+  try {
+    html.Url.revokeObjectUrl(url);
+  } catch (_) {}
+}
+

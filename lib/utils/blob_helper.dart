@@ -15,3 +15,10 @@ String createBlobUrl(Uint8List bytes, {String mimeType = 'application/pdf'}) {
   return blob_impl.createBlobUrlWebImpl(bytes, mimeType);
 }
 
+/// Releases memory for a `blob:` URL created on web. No-op on other platforms
+/// or for `data:` fallbacks.
+void revokeBlobUrlIfPresent(String url) {
+  if (!kIsWeb) return;
+  blob_impl.revokeBlobUrlWebImpl(url);
+}
+

@@ -153,6 +153,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     Uint8List? webBytes,
   ) async {
     final passwordController = TextEditingController();
+    var dialogCancelled = false;
 
     final result = await showDialog<String?>(
       context: context,
@@ -175,7 +176,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               } catch (_) {
                 ok = false;
               }
-              if (!dialogContext.mounted) return;
+              if (dialogCancelled || !dialogContext.mounted) return;
               if (!ok) {
                 setDialogState(() => errorText = 'Incorrect password. Try again.');
                 return;
@@ -214,7 +215,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(null),
+                  onPressed: () {
+                    dialogCancelled = true;
+                    Navigator.of(dialogContext).pop(null);
+                  },
                   child: const Text('Cancel'),
                 ),
                 TextButton(
@@ -228,7 +232,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       },
     );
 
-    passwordController.dispose();
+    // Dispose after the route has torn down; immediate dispose can race with
+    // in-flight Unlock + TextField teardown and trigger a framework error.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      passwordController.dispose();
+    });
     return result;
   }
 
@@ -771,7 +779,18 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           localOrBlobPath: path,
           webBytes: bytesForCheck,
         );
-        if (resolvedPassword == null || !mounted) return;
+        if (!mounted) return;
+        if (resolvedPassword == null) {
+          if (kIsWeb && path.startsWith('blob:')) {
+            revokeBlobUrlIfPresent(path);
+          }
+          PremiumToast.showInfo(
+            context,
+            'Password is required for this PDF. Tap upload again to choose another file or enter the password.',
+            duration: const Duration(seconds: 4),
+          );
+          return;
+        }
 
         setState(() {
           _pages = [..._pages, path];
