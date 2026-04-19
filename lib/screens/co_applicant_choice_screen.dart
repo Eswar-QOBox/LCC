@@ -20,6 +20,8 @@ class CoApplicantChoiceScreen extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final provider = context.watch<SubmissionProvider>();
     final loanTypeParam = GoRouterState.of(context).uri.queryParameters['loanType'];
+    final withCoApplicantParam =
+        GoRouterState.of(context).uri.queryParameters['withCoApplicant'] == 'true';
     final normalizedLoanType = (loanTypeParam ?? '').trim();
     final isHomeOrCarEntry =
         normalizedLoanType == 'Home Loan' || normalizedLoanType == 'Car Loan';
@@ -106,7 +108,8 @@ class CoApplicantChoiceScreen extends StatelessWidget {
                               icon: Icons.person,
                               title: 'Single applicant',
                               subtitle: 'I am applying alone',
-                              selected: !provider.submission.hasCoApplicant,
+                              selected:
+                                  !provider.submission.hasCoApplicant && !withCoApplicantParam,
                               onTap: () {
                                 provider.setHasCoApplicant(false);
                                 if (hasLoanTypeFromSelection) {
@@ -124,7 +127,8 @@ class CoApplicantChoiceScreen extends StatelessWidget {
                               icon: Icons.people,
                               title: 'With co-applicant',
                               subtitle: 'Joint application with another person',
-                              selected: provider.submission.hasCoApplicant &&
+                              selected: (provider.submission.hasCoApplicant ||
+                                      withCoApplicantParam) &&
                                   (provider.submission.coApplicantFirmType == null),
                               onTap: () {
                                 provider.setHasCoApplicant(true);

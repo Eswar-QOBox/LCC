@@ -452,14 +452,6 @@ class _LoanScreenState extends State<LoanScreen> {
         'availableSoon': false,
       },
       {
-        'icon': Icons.person_add_alt_1,
-        'title': 'Loan with Co-applicant',
-        'subtitle': 'Joint application',
-        'iconColor': const Color(0xFF14B8A6),
-        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
-        'availableSoon': false,
-      },
-      {
         'icon': Icons.business,
         'title': 'Business Loan',
         'subtitle': 'Grow your business',
@@ -645,10 +637,9 @@ class _LoanScreenState extends State<LoanScreen> {
                   context.push('${AppRoutes.instructions}?loanType=${Uri.encodeComponent(title)}');
                   return;
                 }
-                // Loan with Co-applicant: collect co-applicant docs after bank statement
-                if (title == 'Loan with Co-applicant') {
+                if (title == 'Personal Loan') {
                   context.push(
-                    '${AppRoutes.instructions}?loanType=${Uri.encodeComponent('Personal Loan')}&withCoApplicant=true',
+                    '${AppRoutes.coApplicantChoice}?loanType=${Uri.encodeComponent(title)}',
                   );
                   return;
                 }
