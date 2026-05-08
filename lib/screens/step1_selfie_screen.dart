@@ -8,6 +8,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import 'face_grid_capture_screen.dart';
 import '../providers/submission_provider.dart';
 import '../services/document_service.dart';
@@ -315,7 +316,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         }
       } else {
         final imageFile = XFile(_imagePath!);
-        uploadResult = await _fileUploadService.uploadSelfie(imageFile);
+        uploadResult = await _fileUploadService.uploadSelfie(
+          imageFile,
+          leadId: context.read<AuthProvider>().leadId,
+        );
       }
 
       await appProvider.updateApplication(

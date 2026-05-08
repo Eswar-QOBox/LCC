@@ -652,6 +652,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         uploadResult = await _fileUploadService.uploadPan(
           XFile(_frontPath!),
           isPdf: _isPdf,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 

@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
@@ -1150,7 +1151,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
       if (localItems.isNotEmpty) {
         final files = localItems.map((item) => XFile(item.path)).toList();
-        final newUploadResults = await _fileUploadService.uploadSalarySlips(files);
+        final newUploadResults = await _fileUploadService.uploadSalarySlips(
+          files,
+          leadId: context.read<AuthProvider>().leadId,
+        );
         finalUploadedFiles.addAll(newUploadResults);
       }
 

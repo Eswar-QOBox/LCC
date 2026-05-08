@@ -1759,6 +1759,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           side: 'front',
           isPdf: _frontIsPdf,
           maskedBytes: maskedFrontBytes,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 
@@ -1791,6 +1792,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           side: 'back',
           isPdf: _backIsPdf,
           maskedBytes: maskedBackBytes,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 

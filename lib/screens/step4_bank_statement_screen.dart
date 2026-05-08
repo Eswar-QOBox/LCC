@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -670,7 +671,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
       if (localPaths.isNotEmpty) {
         final files = localPaths.map((path) => XFile(path)).toList();
-        final newUploadResults = await _fileUploadService.uploadBankStatements(files);
+        final newUploadResults = await _fileUploadService.uploadBankStatements(
+          files,
+          leadId: context.read<AuthProvider>().leadId,
+        );
         finalUploadedFiles.addAll(newUploadResults);
       }
 

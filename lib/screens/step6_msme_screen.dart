@@ -148,6 +148,11 @@ class _Step6MsmeScreenState extends State<Step6MsmeScreen> {
   }
 
   Future<void> _loadLeadId() async {
+    final cachedLeadId = context.read<AuthProvider>().leadId;
+    if (cachedLeadId != null) {
+      setState(() { _leadId = cachedLeadId; _loadingLead = false; });
+      return;
+    }
     setState(() => _loadingLead = true);
     try {
       final user = context.read<AuthProvider>().user;
