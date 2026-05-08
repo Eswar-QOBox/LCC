@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -69,7 +70,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadPreviousLoans();
-    _loadDeveloperMode();
+    if (kDebugMode) {
+      _loadDeveloperMode();
+    }
   }
 
   Future<void> _loadDeveloperMode() async {
@@ -258,68 +261,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Developer mode – allow multiple applications
-                    PremiumCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.developer_mode,
-                                  color: colorScheme.primary,
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Developer mode',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Allow multiple submissions in progress at once',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _developerMode ? 'On' : 'Off',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: _developerMode
-                                        ? AppTheme.successColor
-                                        : colorScheme.onSurfaceVariant,
+                    // Developer mode – debug builds only (hidden in release).
+                    if (kDebugMode) ...[
+                      PremiumCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    Icons.developer_mode,
+                                    color: colorScheme.primary,
+                                    size: 22,
                                   ),
                                 ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Developer mode',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Allow multiple submissions in progress at once',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
                               ),
-                              Switch(
-                                value: _developerMode,
-                                onChanged: (value) async {
-                                  await setDeveloperModeEnabled(value);
-                                  if (mounted) setState(() => _developerMode = value);
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _developerMode ? 'On' : 'Off',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: _developerMode
+                                          ? AppTheme.successColor
+                                          : colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                Switch(
+                                  value: _developerMode,
+                                  onChanged: (value) async {
+                                    await setDeveloperModeEnabled(value);
+                                    if (mounted) setState(() => _developerMode = value);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Previous Loans Section
                     _buildPreviousLoansSection(context),

@@ -3553,16 +3553,22 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            step,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Text(
+              step,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 3,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: isComplete
                   ? AppTheme.successColor.withValues(alpha: 0.1)
@@ -3576,7 +3582,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     ? AppTheme.successColor
                     : Colors.grey.shade700,
                 fontWeight: FontWeight.w600,
+                fontSize: 11,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
