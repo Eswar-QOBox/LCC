@@ -2,178 +2,63 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import '../models/additional_document.dart';
 import '../services/api_client.dart';
+import '../utils/api_config.dart';
 
 class AdditionalDocumentsService {
   final ApiClient _apiClient = ApiClient();
 
-  /// Get lead information including document requirements
-  /// Only returns lead if it matches the authenticated user's email
-  /// Returns null if no lead is found (valid empty state)
-  /// Throws exception only for actual errors (network, auth, server errors)
+  /// Find the lead for the authenticated user by email/phone.
+  /// JHipster GET /api/leads returns a paginated list; filter client-side by email.
   Future<Map<String, dynamic>?> getLeadByUser(
     String email, {
     String? phone,
   }) async {
     try {
-      // Directly search for lead by email using the leads endpoint
-      // Backend ensures users can only see their own lead (by email match)
       final normalizedEmail = email.toLowerCase().trim();
       final normalizedPhone = phone?.trim();
 
-      // We can pass either email or phone as search query
-      // The backend now supports finding by either for the logged-in user
-      final query = normalizedPhone ?? normalizedEmail;
-
-      final leadsResponse = await _apiClient.get(
-        '/api/v1/leads',
-        queryParameters: {'search': query, 'limit': '10'},
+      final response = await _apiClient.get(
+        ApiConfig.leadsEndpoint,
+        queryParameters: {'size': '50', 'sort': 'createdAt,desc'},
       );
 
-      if (leadsResponse.statusCode == 200) {
-        final leadsData = leadsResponse.data;
+      if (response.statusCode == 200) {
+        final list = response.data as List<dynamic>;
 
-        if (kDebugMode) {
-          print('Leads API response: $leadsData');
+        for (final item in list) {
+          if (item is! Map) continue;
+          final lead = Map<String, dynamic>.from(item);
+          final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
+          final leadPhone = (lead['phone'] as String? ?? '').trim();
+
+          if (leadEmail.isNotEmpty && leadEmail == normalizedEmail) return _normalizeLead(lead);
+          if (normalizedPhone != null && leadPhone.isNotEmpty && leadPhone == normalizedPhone) return _normalizeLead(lead);
         }
-
-        if (leadsData is Map && leadsData['success'] == true) {
-          final data = leadsData['data'];
-          if (data is Map && data['leads'] != null) {
-            final leads = data['leads'] as List;
-
-            if (kDebugMode) {
-              print('Found ${leads.length} leads in response');
-            }
-
-            // Find lead with matching email OR phone
-            // Backend filters, but we double-check for security and correct selection
-            // We want the most recent one (backend sorts by created_at DESC)
-            for (var lead in leads) {
-              if (lead is Map) {
-                final leadEmail = (lead['email'] as String? ?? '')
-                    .toLowerCase()
-                    .trim();
-                final leadPhone = (lead['phone'] as String? ?? '').trim();
-
-                bool matches = false;
-                if (leadEmail.isNotEmpty && leadEmail == normalizedEmail) {
-                  matches = true;
-                } else if (normalizedPhone != null &&
-                    leadPhone.isNotEmpty &&
-                    leadPhone == normalizedPhone) {
-                  matches = true;
-                }
-
-                if (matches) {
-                  if (kDebugMode) {
-                    print('Found matching lead: ${lead['id']}');
-                  }
-                  return lead as Map<String, dynamic>;
-                }
-              }
-            }
-          } else {
-            if (kDebugMode) {
-              print('Unexpected response structure: data or leads is null');
-            }
-          }
-        } else {
-          if (kDebugMode) {
-            print('API response success is false or unexpected structure');
-          }
-        }
-      } else if (leadsResponse.statusCode == 403) {
-        throw Exception(
-          'Access denied. You can only view your own lead information.',
-        );
-      } else if (leadsResponse.statusCode == 401) {
+      } else if (response.statusCode == 401) {
         throw Exception('Authentication required. Please log in again.');
+      } else if (response.statusCode == 403) {
+        throw Exception('Access denied.');
       }
 
-      // No matching lead found - return null (valid empty state, not an error)
-      if (kDebugMode) {
-        print(
-          'No lead found for email: $normalizedEmail - returning null (empty state)',
-        );
-      }
+      if (kDebugMode) print('No lead found for $normalizedEmail');
       return null;
     } on DioException catch (e) {
-      // Handle DioException (network errors, HTTP errors, etc.)
-      String errorMessage;
-
-      // Check for network/connection errors
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout ||
-          e.type == DioExceptionType.sendTimeout ||
-          e.type == DioExceptionType.connectionError) {
-        errorMessage =
-            'Unable to connect to server. Please check your internet connection and try again.';
-      } else if (e.response != null) {
-        // HTTP error response
-        final statusCode = e.response!.statusCode;
-        if (statusCode == 401) {
-          errorMessage = 'Authentication required. Please log in again.';
-        } else if (statusCode == 403) {
-          errorMessage =
-              'Access denied. You can only view your own lead information.';
-        } else if (statusCode == 404) {
-          errorMessage =
-              'Service temporarily unavailable. Please try again later.';
-        } else if (statusCode == 500) {
-          errorMessage = 'Server error. Please try again later.';
-        } else {
-          // Try to extract error message from response
-          final errorData = e.response?.data;
-          if (errorData is Map && errorData['message'] != null) {
-            errorMessage = errorData['message'].toString();
-          } else {
-            errorMessage =
-                'Failed to get lead information. Please try again later.';
-          }
-        }
-      } else {
-        // Other DioException
-        errorMessage =
-            'Network error: ${e.message ?? "Please check your internet connection and try again."}';
-      }
-
-      throw Exception(errorMessage);
+      final statusCode = e.response?.statusCode;
+      if (statusCode == 401) throw Exception('Authentication required. Please log in again.');
+      if (statusCode == 403) throw Exception('Access denied.');
+      throw Exception('Network error. Please check your connection and try again.');
     } catch (e) {
-      // Handle other exceptions (not DioException)
-      final errorString = e.toString();
-
-      // Preserve specific error messages
-      if (errorString.contains('Access denied') ||
-          errorString.contains('Authentication required')) {
-        rethrow;
-      }
-
-      // For unknown errors, include the original error message for debugging
-      if (kDebugMode) {
-        print('Error in getLeadByEmail: $e');
-      }
-
-      // Extract clean error message
-      String errorMessage = errorString.replaceFirst('Exception: ', '');
-      if (errorMessage.isEmpty || errorMessage == errorString) {
-        errorMessage =
-            'Failed to get lead information. Please try again later.';
-      }
-
-      throw Exception(errorMessage);
+      if (e.toString().contains('Access denied') || e.toString().contains('Authentication')) rethrow;
+      throw Exception('Failed to get lead information. Please try again later.');
     }
   }
 
-  /// Get lead by ID
+  /// Get lead by ID — JHipster GET /api/leads/{id}.
   Future<Map<String, dynamic>> getLead(String leadId) async {
     try {
-      final response = await _apiClient.get('/api/v1/leads/$leadId');
-
+      final response = await _apiClient.get('${ApiConfig.leadsEndpoint}/$leadId');
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true && data['data']?['lead'] != null) {
-          return data['data']['lead'] as Map<String, dynamic>;
-        }
+        return Map<String, dynamic>.from(response.data as Map);
       }
       throw Exception('Lead not found');
     } catch (e) {
@@ -181,111 +66,37 @@ class AdditionalDocumentsService {
     }
   }
 
-  /// Get user documents
+  /// Get documents uploaded for a lead — JHipster GET /api/lead-documents?leadId={id}.
   Future<List<UploadedDocument>> getUserDocuments(String userId) async {
     try {
-      final response = await _apiClient.get('/api/v1/uploads/user/$userId');
-
-      print('=== getUserDocuments API Response ===');
-      print('Status Code: ${response.statusCode}');
+      final response = await _apiClient.get(
+        ApiConfig.leadDocumentsEndpoint,
+        queryParameters: {'leadId.equals': userId, 'size': '100'},
+      );
 
       if (response.statusCode == 200) {
-        final data = response.data;
-        print('Response success: ${data['success']}');
-        print('Has documents: ${data['data']?['documents'] != null}');
-
-        if (data['success'] == true && data['data']?['documents'] != null) {
-          final documents = data['data']['documents'] as List;
-          print('Total documents from API: ${documents.length}');
-
-          // Debug: Print all documents before filtering
-          for (var doc in documents) {
-            print(
-              'Raw doc - folder: ${doc['folder']}, category: ${doc['category']}, status: ${doc['status']}, name: ${doc['name']}',
-            );
-          }
-
-          // Filter for additional documents AND regular documents (selfies, aadhaar, pan, etc.)
-          // Documents uploaded to additional_documents/{doc_type} will have folder = doc_type
-          // Regular documents are in folders like: selfies, aadhaar, pan, bank_statements, salary_slips
-          // The folder field contains the document type ID (e.g., 'applicant_aadhaar', 'spouse_pan', 'selfies')
-          // IMPORTANT: Always include rejected documents, even if they don't match the filter
-          final additionalDocs = documents.where((doc) {
-            final folder = doc['folder'] as String? ?? '';
-            final category = doc['category'] as String? ?? '';
-            final status = (doc['status'] as String? ?? '').toLowerCase();
-
-            // Always include rejected and verified documents
-            // This ensures history is preserved even if requirement is removed
-            if (status == 'rejected' || status == 'verified') {
-              print(
-                'Including $status document - folder: $folder, category: $category',
-              );
-              return true;
-            }
-
-            // Regular document folders (selfies, aadhaar, pan, etc.)
-            final regularDocFolders = [
-              'selfies',
-              'aadhaar',
-              'pan',
-              'bank_statements',
-              'salary_slips',
-            ];
-            if (regularDocFolders.contains(folder.toLowerCase())) {
-              print('Including regular document - folder: $folder');
-              return true;
-            }
-
-            // For other documents, check if they match additional document patterns
-            final matches =
-                folder.startsWith('applicant_') ||
-                folder.startsWith('spouse_') ||
-                folder.startsWith('custom_') ||
-                category.toLowerCase().contains('additional') ||
-                category.toLowerCase().contains('applicant') ||
-                category.toLowerCase().contains('spouse');
-            if (matches) {
-              print(
-                'Document matches filter - folder: $folder, category: $category',
-              );
-            }
-            return matches;
-          }).toList();
-
-          print('Filtered additional documents: ${additionalDocs.length}');
-
-          final result = additionalDocs
-              .map((doc) {
-                try {
-                  return UploadedDocument.fromJson(doc as Map<String, dynamic>);
-                } catch (e) {
-                  print('Error parsing document: $e, doc: $doc');
-                  return null;
-                }
-              })
-              .whereType<UploadedDocument>()
-              .toList();
-
-          print('Final parsed documents: ${result.length}');
-          for (var doc in result) {
-            print(
-              'Parsed doc - type: ${doc.documentType}, status: ${doc.status}, file: ${doc.fileName}',
-            );
-          }
-
-          return result;
-        }
+        final list = response.data as List<dynamic>;
+        return list
+            .map((item) {
+              try {
+                return UploadedDocument.fromJson(_jhipsterDocToLegacy(item as Map<String, dynamic>));
+              } catch (e) {
+                if (kDebugMode) print('Error parsing document: $e');
+                return null;
+              }
+            })
+            .whereType<UploadedDocument>()
+            .toList();
       }
-      print('No documents returned from API');
+
       return [];
     } catch (e) {
-      print('Error in getUserDocuments: $e');
+      if (kDebugMode) print('Error in getUserDocuments: $e');
       throw Exception('Failed to get documents: $e');
     }
   }
 
-  /// Upload additional document
+  /// Upload an additional document — JHipster POST /api/lead-documents (multipart).
   Future<Map<String, dynamic>> uploadAdditionalDocument({
     required String filePath,
     required String fileName,
@@ -297,28 +108,15 @@ class AdditionalDocumentsService {
       MultipartFile multipartFile;
 
       if (kIsWeb) {
-        // On web, use bytes
-        if (fileBytes == null) {
-          throw Exception('File bytes required for web upload');
-        }
-        String contentType = 'application/pdf';
-        if (fileName.toLowerCase().endsWith('.png')) {
-          contentType = 'image/png';
-        } else if (fileName.toLowerCase().endsWith('.jpg') ||
-            fileName.toLowerCase().endsWith('.jpeg')) {
-          contentType = 'image/jpeg';
-        }
+        if (fileBytes == null) throw Exception('File bytes required for web upload');
+        final contentType = _inferContentType(fileName);
         multipartFile = MultipartFile.fromBytes(
           fileBytes,
           filename: fileName,
           contentType: DioMediaType.parse(contentType),
         );
       } else {
-        // On mobile/desktop, use file path
-        multipartFile = await MultipartFile.fromFile(
-          filePath,
-          filename: fileName,
-        );
+        multipartFile = await MultipartFile.fromFile(filePath, filename: fileName);
       }
 
       final formData = FormData.fromMap({
@@ -328,21 +126,43 @@ class AdditionalDocumentsService {
       });
 
       final response = await _apiClient.post(
-        '/api/v1/uploads/additional-document',
+        ApiConfig.leadDocumentsUploadEndpoint,
         data: formData,
         options: Options(headers: {'Content-Type': 'multipart/form-data'}),
       );
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          return data['data']['file'] as Map<String, dynamic>;
-        }
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return Map<String, dynamic>.from(response.data as Map);
       }
 
       throw Exception('Failed to upload document');
     } catch (e) {
       throw Exception('Failed to upload document: $e');
     }
+  }
+
+  /// Normalize JHipster lead map so id is always a String (JHipster returns int).
+  static Map<String, dynamic> _normalizeLead(Map<String, dynamic> lead) {
+    return {...lead, 'id': lead['id']?.toString() ?? ''};
+  }
+
+  /// Convert JHipster LeadDocumentDTO shape to the legacy shape UploadedDocument.fromJson expects.
+  static Map<String, dynamic> _jhipsterDocToLegacy(Map<String, dynamic> doc) {
+    return {
+      'id': doc['id']?.toString() ?? '',
+      'name': doc['documentName'] ?? doc['fileName'] ?? '',
+      'folder': doc['documentType'] ?? '',
+      'category': doc['documentType'] ?? '',
+      'status': (doc['status'] as String? ?? 'pending').toLowerCase(),
+      'url': doc['fileUrl'] ?? doc['url'] ?? '',
+      'created_at': doc['uploadedAt'] ?? doc['createdAt'] ?? '',
+    };
+  }
+
+  static String _inferContentType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    if (lower.endsWith('.png')) return 'image/png';
+    return 'image/jpeg';
   }
 }

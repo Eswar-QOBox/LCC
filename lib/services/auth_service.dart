@@ -10,41 +10,33 @@ import '../utils/auth_errors.dart';
 class AuthService {
   final ApiClient _apiClient = ApiClient();
 
-  /// Login with email/phone and password
-  /// Returns a map with 'access_token', 'refresh_token', and 'user'
+  /// Login with email/username and password.
+  /// JHipster returns { id_token: "..." } — no refresh token.
   Future<Map<String, dynamic>> login(String identifier, String password) async {
     try {
-      // Determine if identifier is phone (all digits) or email
-      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
-      
       final response = await _apiClient.post(
-        '/api/v1/auth/login',
-        data: isPhone 
-            ? {'identifier': identifier.trim(), 'password': password}
-            : {'email': identifier.trim(), 'password': password},
+        ApiConfig.loginEndpoint,
+        data: {
+          'username': identifier.trim(),
+          'password': password,
+          'rememberMe': false,
+        },
       );
 
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final responseData = data['data'] as Map<String, dynamic>;
-
-          // Extract tokens and user
-          final accessToken = responseData['access_token'] as String;
-          final refreshToken = responseData['refresh_token'] as String;
-          final userJson = responseData['user'] as Map<String, dynamic>;
-
-          // Save tokens securely
+        final data = response.data as Map<String, dynamic>;
+        final idToken = data['id_token'] as String?;
+        if (idToken != null) {
           final storage = StorageService.instance;
-          await storage.saveTokens(accessToken, refreshToken);
+          // JHipster has no refresh token — store id_token as access token only.
+          await storage.saveTokens(idToken, '');
 
-          // Parse and return user
-          final user = User.fromJson(userJson);
-
+          // Fetch user details from /api/account
+          final me = await getMe();
           return {
-            'access_token': accessToken,
-            'refresh_token': refreshToken,
-            'user': user,
+            'access_token': idToken,
+            'refresh_token': '',
+            'user': me.user,
           };
         }
       }
@@ -55,107 +47,10 @@ class AuthService {
         statusCode: response.statusCode,
       );
     } catch (e) {
+      if (e is AuthException) rethrow;
       if (e is DioException) {
-        // Handle CORS/connection errors (common on web platform)
-        if (e.type == DioExceptionType.connectionError ||
-            e.type == DioExceptionType.connectionTimeout ||
-            e.type == DioExceptionType.receiveTimeout ||
-            e.type == DioExceptionType.sendTimeout) {
-          // Check if this is a CORS issue (connection error on web)
-          final errorMessage = e.message?.toLowerCase() ?? '';
-          if (errorMessage.contains('xmlhttprequest') ||
-              errorMessage.contains('cors') ||
-              errorMessage.contains('network')) {
-            throw AuthException(
-              code: 'NETWORK_ERROR',
-              message:
-                  'Connection error. This may be a CORS issue. Please ensure:\n'
-                  '1. Backend server is running on port 5000\n'
-                  '2. CORS is properly configured on the backend\n'
-                  '3. Backend includes CORS headers in POST responses (not just OPTIONS)',
-              statusCode: null,
-            );
-          }
-          throw AuthException(
-            code: 'NETWORK_ERROR',
-            message:
-                'Network error. Please check your internet connection and try again.',
-            statusCode: null,
-          );
-        }
-
-        // Handle HTTP status code errors
-        final statusCode = e.response?.statusCode;
-
-        // Map common HTTP status codes to error codes
-        String errorCode = AuthErrorCodes.internalError;
-        String errorMessage = 'Login failed';
-
-        if (statusCode == 404) {
-          errorCode = AuthErrorCodes.notFound;
-          errorMessage =
-              'Login endpoint not found. Please check if the server is running and the API endpoint is correct.';
-        } else if (statusCode == 401) {
-          errorCode = AuthErrorCodes.invalidCredentials;
-          errorMessage =
-              'Invalid email or password. Please check your credentials and try again.';
-        } else if (statusCode == 403) {
-          errorCode = AuthErrorCodes.forbidden;
-          errorMessage =
-              'Access forbidden. You do not have permission to access this resource.';
-        } else if (statusCode == 400) {
-          errorCode = AuthErrorCodes.validationError;
-          errorMessage =
-              'Invalid request. Please check your input and try again.';
-        } else if (statusCode == 500) {
-          errorCode = AuthErrorCodes.internalError;
-          errorMessage = 'Server error. Please try again later.';
-        }
-
-        // Handle API error responses with body
-        final errorData = e.response?.data;
-        if (errorData != null && errorData is Map) {
-          try {
-            // Handle different error response formats
-            dynamic errorObj = errorData['error'];
-
-            if (errorObj != null) {
-              if (errorObj is Map<String, dynamic>) {
-                // Error is an object with code and message
-                final code = errorObj['code'];
-                final message = errorObj['message'];
-                if (code != null) errorCode = code.toString();
-                if (message != null) errorMessage = message.toString();
-              } else if (errorObj is String) {
-                // Error is a simple string message
-                errorMessage = errorObj;
-              } else if (errorObj is int) {
-                // Error is a status code number
-                // Use the status code mapping above
-              }
-            } else if (errorData['message'] != null) {
-              // Error message at top level
-              errorMessage = errorData['message'].toString();
-            }
-          } catch (parseError) {
-            // If parsing fails, use the status code-based error message
-            // This handles cases where errorData format is unexpected
-          }
-        }
-
-        throw AuthException(
-          code: errorCode,
-          message: errorMessage,
-          statusCode: statusCode,
-        );
+        _handleDioException(e, context: 'Login');
       }
-
-      // Re-throw AuthException as-is
-      if (e is AuthException) {
-        rethrow;
-      }
-
-      // Wrap other exceptions
       throw AuthException(
         code: AuthErrorCodes.internalError,
         message: e.toString(),
@@ -163,139 +58,18 @@ class AuthService {
     }
   }
 
-  /// Refresh access token using refresh token
-  Future<String> refreshAccessToken(String refreshToken) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/auth/refresh',
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $refreshToken',
-            'Content-Type': 'application/json',
-          },
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final newAccessToken = data['data']['access_token'] as String;
-          final storage = StorageService.instance;
-          await storage.saveAccessToken(newAccessToken);
-          return newAccessToken;
-        }
-      }
-
-      throw AuthException(
-        code: AuthErrorCodes.unauthorized,
-        message: 'Token refresh failed',
-        statusCode: response.statusCode,
-      );
-    } catch (e) {
-      if (e is DioException) {
-        // Handle network errors
-        if (e.type == DioExceptionType.connectionTimeout ||
-            e.type == DioExceptionType.receiveTimeout ||
-            e.type == DioExceptionType.sendTimeout ||
-            e.type == DioExceptionType.connectionError) {
-          throw AuthException(
-            code: 'NETWORK_ERROR',
-            message:
-                'Network error. Please check your internet connection and try again.',
-            statusCode: null,
-          );
-        }
-
-        // Handle HTTP status code errors
-        final statusCode = e.response?.statusCode;
-
-        // Map common HTTP status codes to error codes
-        String errorCode = AuthErrorCodes.unauthorized;
-        String errorMessage = 'Token refresh failed';
-
-        if (statusCode == 404) {
-          errorCode = AuthErrorCodes.notFound;
-          errorMessage =
-              'Refresh endpoint not found. Please check if the server is running and the API endpoint is correct.';
-        } else if (statusCode == 401) {
-          errorCode = AuthErrorCodes.unauthorized;
-          errorMessage = 'Token refresh failed. Please login again.';
-        } else if (statusCode == 403) {
-          errorCode = AuthErrorCodes.forbidden;
-          errorMessage =
-              'Access forbidden. You do not have permission to access this resource.';
-        }
-
-        // Handle API error responses with body
-        final errorData = e.response?.data;
-        if (errorData != null && errorData is Map) {
-          try {
-            // Handle different error response formats
-            dynamic errorObj = errorData['error'];
-
-            if (errorObj != null) {
-              if (errorObj is Map<String, dynamic>) {
-                // Error is an object with code and message
-                final code = errorObj['code'];
-                final message = errorObj['message'];
-                if (code != null) errorCode = code.toString();
-                if (message != null) errorMessage = message.toString();
-              } else if (errorObj is String) {
-                // Error is a simple string message
-                errorMessage = errorObj;
-              }
-            } else if (errorData['message'] != null) {
-              // Error message at top level
-              errorMessage = errorData['message'].toString();
-            }
-          } catch (parseError) {
-            // If parsing fails, use the status code-based error message
-          }
-        }
-
-        throw AuthException(
-          code: errorCode,
-          message: errorMessage,
-          statusCode: statusCode,
-        );
-      }
-
-      // Re-throw AuthException as-is
-      if (e is AuthException) {
-        rethrow;
-      }
-
-      // Wrap other exceptions
-      throw AuthException(
-        code: AuthErrorCodes.internalError,
-        message: e.toString(),
-      );
-    }
-  }
-
-  /// Get current authenticated user + profile personalData (nullable)
+  /// Get current authenticated user from /api/account.
+  /// JHipster returns a flat user object (no success wrapper).
   Future<MeResponse> getMe() async {
     try {
       final response = await _apiClient.get(ApiConfig.meEndpoint);
 
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final userJson = data['data']['user'] as Map<String, dynamic>;
-          final personalDataRaw = data['data']['personalData'];
-          PersonalData? personalData;
-
-          if (personalDataRaw is Map) {
-            personalData = PersonalData.fromJson(
-              Map<String, dynamic>.from(personalDataRaw),
-            );
-          }
-
-          return MeResponse(
-            user: User.fromJson(userJson),
-            personalData: personalData,
-          );
-        }
+        final data = response.data as Map<String, dynamic>;
+        return MeResponse(
+          user: User.fromJson(data),
+          personalData: null,
+        );
       }
 
       throw AuthException(
@@ -304,80 +78,10 @@ class AuthService {
         statusCode: response.statusCode,
       );
     } catch (e) {
+      if (e is AuthException) rethrow;
       if (e is DioException) {
-        // Handle network errors
-        if (e.type == DioExceptionType.connectionTimeout ||
-            e.type == DioExceptionType.receiveTimeout ||
-            e.type == DioExceptionType.sendTimeout ||
-            e.type == DioExceptionType.connectionError) {
-          throw AuthException(
-            code: 'NETWORK_ERROR',
-            message:
-                'Network error. Please check your internet connection and try again.',
-            statusCode: null,
-          );
-        }
-
-        // Handle HTTP status code errors
-        final statusCode = e.response?.statusCode;
-
-        // Map common HTTP status codes to error codes
-        String errorCode = AuthErrorCodes.internalError;
-        String errorMessage = 'Failed to get user';
-
-        if (statusCode == 404) {
-          errorCode = AuthErrorCodes.notFound;
-          errorMessage =
-              'User endpoint not found. Please check if the server is running and the API endpoint is correct.';
-        } else if (statusCode == 401) {
-          errorCode = AuthErrorCodes.unauthorized;
-          errorMessage = 'Unauthorized. Please login again.';
-        } else if (statusCode == 403) {
-          errorCode = AuthErrorCodes.forbidden;
-          errorMessage =
-              'Access forbidden. You do not have permission to access this resource.';
-        }
-
-        // Handle API error responses with body
-        final errorData = e.response?.data;
-        if (errorData != null && errorData is Map) {
-          try {
-            // Handle different error response formats
-            dynamic errorObj = errorData['error'];
-
-            if (errorObj != null) {
-              if (errorObj is Map<String, dynamic>) {
-                // Error is an object with code and message
-                final code = errorObj['code'];
-                final message = errorObj['message'];
-                if (code != null) errorCode = code.toString();
-                if (message != null) errorMessage = message.toString();
-              } else if (errorObj is String) {
-                // Error is a simple string message
-                errorMessage = errorObj;
-              }
-            } else if (errorData['message'] != null) {
-              // Error message at top level
-              errorMessage = errorData['message'].toString();
-            }
-          } catch (parseError) {
-            // If parsing fails, use the status code-based error message
-          }
-        }
-
-        throw AuthException(
-          code: errorCode,
-          message: errorMessage,
-          statusCode: statusCode,
-        );
+        _handleDioException(e, context: 'GetMe');
       }
-
-      // Re-throw AuthException as-is
-      if (e is AuthException) {
-        rethrow;
-      }
-
-      // Wrap other exceptions
       throw AuthException(
         code: AuthErrorCodes.internalError,
         message: e.toString(),
@@ -385,142 +89,111 @@ class AuthService {
     }
   }
 
-  /// Get current authenticated user
+  /// Get current authenticated user.
   Future<User> getCurrentUser() async {
     final me = await getMe();
     return me.user;
   }
 
-  /// Logout - clear tokens
+  /// Logout — clear stored tokens.
   Future<void> logout() async {
     final storage = StorageService.instance;
     await storage.clearAll();
   }
 
-  /// Check if user is logged in
+  /// Check if user is logged in.
   Future<bool> isLoggedIn() async {
     final storage = StorageService.instance;
     return await storage.isLoggedIn();
   }
 
-  /// Request password reset (forgot password)
-  /// Accepts email or phone number as identifier
-  /// Returns a message and optionally a temporary password
+  /// Request password reset.
+  /// JHipster endpoint: POST /api/account/reset-password/init with plain-text email body.
   Future<Map<String, dynamic>> forgotPassword(String identifier) async {
     try {
-      // Determine if identifier looks like a phone number (all digits)
-      final isPhone = RegExp(r'^\d+$').hasMatch(identifier.trim());
-      
       final response = await _apiClient.post(
-        '/api/v1/auth/forgot-password',
-        data: isPhone 
-            ? {'identifier': identifier.trim()}
-            : {'email': identifier.trim()},
+        ApiConfig.forgotPasswordEndpoint,
+        data: identifier.trim(),
+        options: Options(headers: {'Content-Type': 'text/plain'}),
       );
 
+      // JHipster returns 200 with no body on success
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final responseData = data['data'] as Map<String, dynamic>;
-          return {
-            'message': responseData['message'] as String? ?? 'Password reset request processed',
-            'tempPassword': responseData['tempPassword'] as String?,
-          };
-        }
+        return {'message': 'Password reset email sent. Please check your inbox.'};
       }
 
       throw AuthException(
         code: AuthErrorCodes.internalError,
-        message: 'Password reset failed: Invalid response',
+        message: 'Password reset failed',
         statusCode: response.statusCode,
       );
     } catch (e) {
+      if (e is AuthException) rethrow;
       if (e is DioException) {
-        // Handle CORS/connection errors
-        if (e.type == DioExceptionType.connectionError ||
-            e.type == DioExceptionType.connectionTimeout ||
-            e.type == DioExceptionType.receiveTimeout ||
-            e.type == DioExceptionType.sendTimeout) {
-          final errorMessage = e.message?.toLowerCase() ?? '';
-          if (errorMessage.contains('xmlhttprequest') ||
-              errorMessage.contains('cors') ||
-              errorMessage.contains('network')) {
-            throw AuthException(
-              code: 'NETWORK_ERROR',
-              message:
-                  'Connection error. This may be a CORS issue. Please ensure:\n'
-                  '1. Backend server is running on port 5000\n'
-                  '2. CORS is properly configured on the backend\n'
-                  '3. Backend includes CORS headers in POST responses (not just OPTIONS)',
-              statusCode: null,
-            );
-          }
-          throw AuthException(
-            code: 'NETWORK_ERROR',
-            message:
-                'Network error. Please check your internet connection and try again.',
-            statusCode: null,
-          );
-        }
-
-        // Handle HTTP status code errors
-        final statusCode = e.response?.statusCode;
-
-        String errorCode = AuthErrorCodes.internalError;
-        String errorMessage = 'Password reset failed';
-
-        if (statusCode == 404) {
-          errorCode = AuthErrorCodes.notFound;
-          errorMessage =
-              'Password reset endpoint not found. Please check if the server is running.';
-        } else if (statusCode == 400) {
-          errorCode = AuthErrorCodes.validationError;
-          errorMessage = 'Invalid email address. Please check your input.';
-        } else if (statusCode == 500) {
-          errorCode = AuthErrorCodes.internalError;
-          errorMessage = 'Server error. Please try again later.';
-        }
-
-        // Handle API error responses with body
-        final errorData = e.response?.data;
-        if (errorData != null && errorData is Map) {
-          try {
-            dynamic errorObj = errorData['error'];
-
-            if (errorObj != null) {
-              if (errorObj is Map<String, dynamic>) {
-                final code = errorObj['code'];
-                final message = errorObj['message'];
-                if (code != null) errorCode = code.toString();
-                if (message != null) errorMessage = message.toString();
-              } else if (errorObj is String) {
-                errorMessage = errorObj;
-              }
-            } else if (errorData['message'] != null) {
-              errorMessage = errorData['message'].toString();
-            }
-          } catch (parseError) {
-            // If parsing fails, use the status code-based error message
-          }
-        }
-
-        throw AuthException(
-          code: errorCode,
-          message: errorMessage,
-          statusCode: statusCode,
-        );
+        _handleDioException(e, context: 'ForgotPassword');
       }
-
-      // Re-throw AuthException as-is
-      if (e is AuthException) {
-        rethrow;
-      }
-
-      // Wrap other exceptions
       throw AuthException(
         code: AuthErrorCodes.internalError,
         message: e.toString(),
       );
     }
+  }
+
+  /// Centralised DioException → AuthException conversion.
+  Never _handleDioException(DioException e, {required String context}) {
+    if (e.type == DioExceptionType.connectionError ||
+        e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout ||
+        e.type == DioExceptionType.sendTimeout) {
+      throw AuthException(
+        code: 'NETWORK_ERROR',
+        message: 'Network error. Please check your internet connection and try again.',
+        statusCode: null,
+      );
+    }
+
+    final statusCode = e.response?.statusCode;
+    String errorCode = AuthErrorCodes.internalError;
+    String errorMessage = '$context failed';
+
+    switch (statusCode) {
+      case 400:
+        errorCode = AuthErrorCodes.validationError;
+        errorMessage = 'Invalid request. Please check your input.';
+        break;
+      case 401:
+        errorCode = AuthErrorCodes.invalidCredentials;
+        errorMessage = 'Invalid username or password.';
+        break;
+      case 403:
+        errorCode = AuthErrorCodes.forbidden;
+        errorMessage = 'Access forbidden.';
+        break;
+      case 404:
+        errorCode = AuthErrorCodes.notFound;
+        errorMessage = 'Endpoint not found. Please check the server configuration.';
+        break;
+      case 500:
+        errorCode = AuthErrorCodes.internalError;
+        errorMessage = 'Server error. Please try again later.';
+        break;
+    }
+
+    // Override with body message if present
+    final errorData = e.response?.data;
+    if (errorData != null) {
+      if (errorData is String && errorData.isNotEmpty) {
+        errorMessage = errorData;
+      } else if (errorData is Map) {
+        final msg = errorData['message'] ?? errorData['detail'] ?? errorData['title'];
+        if (msg != null) errorMessage = msg.toString();
+      }
+    }
+
+    throw AuthException(
+      code: errorCode,
+      message: errorMessage,
+      statusCode: statusCode,
+    );
   }
 }

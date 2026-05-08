@@ -102,6 +102,11 @@ class _CoApplicantFirmDocsScreenState
   }
 
   Future<void> _loadLeadId() async {
+    final cachedLeadId = context.read<AuthProvider>().leadId;
+    if (cachedLeadId != null) {
+      if (mounted) setState(() => _leadId = cachedLeadId);
+      return;
+    }
     try {
       final authProvider = context.read<AuthProvider>();
       final user = authProvider.user;
