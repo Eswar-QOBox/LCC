@@ -27,7 +27,7 @@ class BusinessLoanTypeScreen extends StatelessWidget {
     return PreventCloseOnBack(
       backRoute: AppRoutes.home,
       child: Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -75,7 +75,7 @@ class BusinessLoanTypeScreen extends StatelessWidget {
                       title: 'Partnership',
                       subtitle: 'Two or more partners',
                       icon: Icons.groups,
-                      iconColor: const Color(0xFF14B8A6),
+                      iconColor: AppTheme.successColor,
                       onTap: () => _goToInstructions(context, 'partnership'),
                       enabled: true,
                     ),
@@ -85,7 +85,7 @@ class BusinessLoanTypeScreen extends StatelessWidget {
                       title: 'Pvt Limited',
                       subtitle: 'Private limited company (MOA & AOA)',
                       icon: Icons.apartment,
-                      iconColor: const Color(0xFF7C3AED),
+                      iconColor: AppTheme.secondaryColor,
                       onTap: () => _goToInstructions(context, 'pvt_limited'),
                       enabled: true,
                     ),

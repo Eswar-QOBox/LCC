@@ -151,7 +151,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                           height: 36,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
+                            color: const Color(0xFFF0F5FF),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
@@ -291,7 +291,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -329,7 +329,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         });
                         _setControllerText(_loanAmountController, _formatNumber(_loanAmount.round()));
                       },
-                      badgeColor: const Color(0xFFDBEAFE),
+                      badgeColor: const Color(0xFFDEECFF),
                       badgeTextColor: AppTheme.primaryColor,
                     ),
                     const SizedBox(height: 24),
@@ -362,7 +362,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         });
                         _setControllerText(_interestRateController, _interestRate.toStringAsFixed(1));
                       },
-                      badgeColor: const Color(0xFFDBEAFE),
+                      badgeColor: const Color(0xFFDEECFF),
                       badgeTextColor: AppTheme.primaryColor,
                       isPrefixIcon: true,
                       helperText:
@@ -397,7 +397,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                         _setControllerText(_tenureMonthsController, _tenureMonths.round().toString());
                       },
                       badgeColor: const Color(0xFFF3E8FF),
-                      badgeTextColor: const Color(0xFF9333EA),
+                      badgeTextColor: AppTheme.secondaryColor,
                       isPrefixIcon: true,
                     ),
                     const SizedBox(height: 32),
@@ -452,7 +452,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
           end: Alignment.bottomRight,
           colors: [
             AppTheme.primaryColor,
-            const Color(0xFF0052CC),
+            AppTheme.secondaryColor,
           ],
         ),
         boxShadow: [
@@ -701,7 +701,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
+        color: const Color(0xFFF0F5FF),
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -712,7 +712,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF1E293B),
+              color: Color(0xFF172030),
             ),
           ),
           const SizedBox(height: 24),
@@ -730,7 +730,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                     painter: DonutChartPainter(
                       principalPercentage: _principalPercentage,
                       principalColor: AppTheme.primaryColor,
-                      interestColor: const Color(0xFFF59E0B),
+                      interestColor: AppTheme.warningColor,
                     ),
                   ),
                   Container(
@@ -758,7 +758,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
+                            color: Color(0xFF172030),
                           ),
                         ),
                       ],
@@ -781,7 +781,7 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
               ),
               const SizedBox(width: 32),
               _buildLegendItem(
-                color: const Color(0xFFF59E0B),
+                color: AppTheme.warningColor,
                 label: 'Interest',
                 value: _formatCurrency(_totalInterest),
               ),
@@ -795,16 +795,16 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
           // Summary Items
           _buildSummaryItem(
             icon: Icons.payments,
-            iconBgColor: const Color(0xFFDCFCE7),
-            iconColor: const Color(0xFF16A34A),
+            iconBgColor: const Color(0xFFD4FAE8),
+            iconColor: AppTheme.successColor,
             label: 'Monthly EMI',
             value: '₹ ${_formatNumber(_monthlyEMI.round())}',
-            valueColor: const Color(0xFF16A34A),
+            valueColor: AppTheme.successColor,
           ),
           const SizedBox(height: 16),
           _buildSummaryItem(
             icon: Icons.account_balance_wallet,
-            iconBgColor: const Color(0xFFDBEAFE),
+            iconBgColor: const Color(0xFFDEECFF),
             iconColor: AppTheme.primaryColor,
             label: 'Total Amount',
             value: '₹ ${_formatNumber(_totalAmount.round())}',
@@ -814,10 +814,10 @@ class _LoanCalculatorScreenState extends State<LoanCalculatorScreen> {
           _buildSummaryItem(
             icon: Icons.trending_up,
             iconBgColor: const Color(0xFFFEF3C7),
-            iconColor: const Color(0xFFEA580C),
+            iconColor: AppTheme.warningColor,
             label: 'Total Interest',
             value: '₹ ${_formatNumber(_totalInterest.round())}',
-            valueColor: const Color(0xFFF59E0B),
+            valueColor: AppTheme.warningColor,
           ),
         ],
       ),

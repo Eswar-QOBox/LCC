@@ -936,7 +936,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         break;
       case 'Professional Loan':
         loanIcon = Icons.work_outline;
-        loanColor = const Color(0xFF0EA5E9);
+        loanColor = AppTheme.infoColor;
         break;
       case 'Education Loan':
         loanIcon = Icons.school;

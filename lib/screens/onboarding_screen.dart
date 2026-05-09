@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_theme.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -19,35 +20,35 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           'JSEE Solutions helps you securely upload and organize your documents in one place for loan eligibility verification. No more emails, prints or paperwork.',
       icon: Icons.upload_file,
-      color: Colors.blue,
+      color: AppTheme.primaryColor,
     ),
     OnboardingPage(
       title: 'Safe & Organized',
       description:
           'Your documents are stored safely and in an organized way, and can be shared with partner institutions for eligibility review.',
       icon: Icons.lock_outline,
-      color: Colors.teal,
+      color: AppTheme.infoColor,
     ),
     OnboardingPage(
       title: 'Track Submission Status',
       description:
           'See which documents are pending, what has been completed, and track your eligibility verification status without confusion.',
       icon: Icons.timeline,
-      color: Colors.orange,
+      color: AppTheme.warningColor,
     ),
     OnboardingPage(
       title: 'EMI Calculator Built‑In',
       description:
           'Use the EMI calculator to quickly check your monthly payments. For planning only. Loans are from external institutions.',
       icon: Icons.calculate_outlined,
-      color: Colors.green,
+      color: AppTheme.successColor,
     ),
     OnboardingPage(
       title: 'Welcome to JSEE Solutions',
       description:
           'A simple and secure document upload platform for loan eligibility verification. Upload documents and use the EMI calculator to plan—eligibility and loans are through external institutions.',
       icon: Icons.verified_user,
-      color: Colors.purple,
+      color: AppTheme.secondaryColor,
     ),
   ];
 

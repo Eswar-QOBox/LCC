@@ -672,10 +672,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F9FF), // sky-50
+        color: const Color(0xFFF0F5FF),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE0F2FE), // sky-100
+          color: const Color(0xFFDEECFF),
           width: 1,
         ),
       ),
@@ -710,7 +710,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
-                  color: const Color(0xFF1E293B), // slate-800
+                  color: const Color(0xFF172030),
                 ),
               ),
             ],
@@ -739,7 +739,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: const Color(0xFFBAE6FD), // sky-200
+            color: const Color(0xFFCCE0FF),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -755,7 +755,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             style: theme.textTheme.bodyMedium?.copyWith(
               fontSize: 15,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF475569), // slate-600
+              color: const Color(0xFF576175),
             ),
           ),
         ),

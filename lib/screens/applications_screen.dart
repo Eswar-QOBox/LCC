@@ -98,7 +98,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -108,7 +108,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
             // Tabs Section
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: colorScheme.surface,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
@@ -232,7 +232,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
           end: Alignment.bottomRight,
           colors: [
             AppTheme.primaryColor,
-            const Color(0xFF0052CC), // royal-blue
+            AppTheme.secondaryColor, // royal-blue
           ],
         ),
         borderRadius: const BorderRadius.only(
@@ -419,11 +419,11 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         break;
       case AppStrings.loanTypeProfessional:
         loanIcon = Icons.work_outline;
-        loanColor = const Color(0xFF0EA5E9);
+        loanColor = AppTheme.infoColor;
         break;
       case 'Student Loan':
         loanIcon = Icons.school;
-        loanColor = const Color(0xFFF59E0B);
+        loanColor = AppTheme.warningColor;
         break;
       case AppStrings.loanTypeEducation:
         loanIcon = Icons.school;
@@ -431,15 +431,15 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         break;
       case AppStrings.loanTypeMortgage:
         loanIcon = Icons.home_work;
-        loanColor = const Color(0xFF7C3AED);
+        loanColor = AppTheme.secondaryColor;
         break;
       case AppStrings.loanTypeProperty:
         loanIcon = Icons.business_center;
-        loanColor = const Color(0xFF14B8A6);
+        loanColor = AppTheme.successColor;
         break;
       case AppStrings.loanTypeEmergency:
         loanIcon = Icons.emergency;
-        loanColor = const Color(0xFFDC2626);
+        loanColor = AppTheme.errorColor;
         break;
       default:
         loanIcon = Icons.account_balance_wallet;

@@ -85,7 +85,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -270,7 +270,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               : _isProfessionalLoan
                                   ? 'Passport-style photo'
                                   : 'Passport-style photo with white background',
-                          iconColor: const Color(0xFF7C3AED),
+                          iconColor: AppTheme.secondaryColor,
                         ),
                         const SizedBox(height: 12),
                         _buildDocumentItem(
@@ -298,7 +298,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                       ? 'PAN Card (Student)'
                                       : 'PAN Card',
                           description: 'Front side required',
-                          iconColor: const Color(0xFFF59E0B),
+                          iconColor: AppTheme.warningColor,
                         ),
                         const SizedBox(height: 12),
                         if (_isBusinessProprietor) ...[
@@ -307,7 +307,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.badge_outlined,
                             title: 'Aadhaar (Spouse)',
                             description: 'Front and back sides required',
-                            iconColor: const Color(0xFF14B8A6),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -315,7 +315,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.credit_card_outlined,
                             title: 'PAN (Spouse)',
                             description: 'Front side required',
-                            iconColor: const Color(0xFF0EA5E9),
+                            iconColor: AppTheme.infoColor,
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -337,7 +337,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.badge_outlined,
                             title: 'Passport (optional)',
                             description: 'Photo or PDF, if available',
-                            iconColor: const Color(0xFFF59E0B),
+                            iconColor: AppTheme.warningColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -345,7 +345,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.school_outlined,
                             title: 'Admission Letter',
                             description: 'From your institution (photo or PDF)',
-                            iconColor: const Color(0xFFF59E0B),
+                            iconColor: AppTheme.warningColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -353,7 +353,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.description_outlined,
                             title: 'Academic Mark Sheets',
                             description: 'SSC, Inter, Graduation (photo or PDF)',
-                            iconColor: const Color(0xFFF59E0B),
+                            iconColor: AppTheme.warningColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -361,7 +361,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.work_outline,
                             title: 'If working: 3 months payslips + ID card',
                             description: 'Required only if you are currently working',
-                            iconColor: const Color(0xFF0D9488),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                         ] else if (_isBusinessProprietor) ...[
@@ -370,7 +370,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.receipt_long,
                             title: 'GST / Labour Certificate',
                             description: 'At least one required (photo or PDF)',
-                            iconColor: const Color(0xFF7C3AED),
+                            iconColor: AppTheme.secondaryColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -378,7 +378,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.workspace_premium,
                             title: 'MSME Certificate',
                             description: 'Photo or PDF',
-                            iconColor: const Color(0xFF0D9488),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -386,7 +386,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.home_outlined,
                             title: 'Own House Proof',
                             description: 'Photo or PDF',
-                            iconColor: const Color(0xFF14B8A6),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                         ] else if (_isProfessionalLoan) ...[
@@ -396,7 +396,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.school,
                               title: 'MBBS / Medical Degree',
                               description: 'Degree certificate (photo or PDF)',
-                              iconColor: const Color(0xFF0EA5E9),
+                              iconColor: AppTheme.infoColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -404,7 +404,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.badge,
                               title: 'Medical Licence',
                               description: 'Council registration (photo or PDF)',
-                              iconColor: const Color(0xFF0EA5E9),
+                              iconColor: AppTheme.infoColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -412,7 +412,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.medical_services,
                               title: 'Prescription / Letterhead',
                               description: 'Proof of practice (photo or PDF)',
-                              iconColor: const Color(0xFF0EA5E9),
+                              iconColor: AppTheme.infoColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -420,7 +420,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.receipt_long,
                               title: 'ITR (Income Tax Return)',
                               description: 'Last 2 years (photo or PDF)',
-                              iconColor: const Color(0xFF0D9488),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                           ] else if (_isProfessionalCa) ...[
@@ -429,7 +429,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.school_outlined,
                               title: 'CA Degree',
                               description: 'ICAI qualification (photo or PDF)',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -437,7 +437,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.description,
                               title: 'Certificate of Practice (COP)',
                               description: 'Photo or PDF',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -445,7 +445,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.card_membership,
                               title: 'ICAI Certificate',
                               description: 'Membership certificate (photo or PDF)',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -453,7 +453,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.receipt_long,
                               title: 'ITR (Income Tax Return)',
                               description: 'Last 2 years (photo or PDF)',
-                              iconColor: const Color(0xFF0D9488),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -461,7 +461,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.account_balance,
                               title: 'Balance Sheet',
                               description: 'Practice/firm assets, liabilities (photo or PDF)',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -469,7 +469,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.trending_up,
                               title: 'P&L Statement',
                               description: 'Profit & Loss (photo or PDF)',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -479,7 +479,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.badge,
                             title: 'PAN Card (Firm)',
                             description: 'Firm PAN card (photo or PDF)',
-                            iconColor: const Color(0xFFF59E0B),
+                            iconColor: AppTheme.warningColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -487,7 +487,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.receipt_long,
                             title: 'GST',
                             description: 'GST registration certificate',
-                            iconColor: const Color(0xFF7C3AED),
+                            iconColor: AppTheme.secondaryColor,
                           ),
                           const SizedBox(height: 12),
                           if (_isCarLoanPartnership) ...[
@@ -496,7 +496,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.description_outlined,
                               title: 'Partnership Deed',
                               description: 'Partnership deed document',
-                              iconColor: const Color(0xFF0EA5E9),
+                              iconColor: AppTheme.infoColor,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -506,7 +506,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.verified_outlined,
                               title: 'Incorporation Certificate',
                               description: 'Company incorporation certificate',
-                              iconColor: const Color(0xFF0EA5E9),
+                              iconColor: AppTheme.infoColor,
                             ),
                             const SizedBox(height: 12),
                             _buildDocumentItem(
@@ -514,7 +514,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.article_outlined,
                               title: 'AOA & MOA',
                               description: 'Articles & Memorandum of Association',
-                              iconColor: const Color(0xFF059669),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -531,7 +531,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.receipt,
                             title: 'ITR (Firm)',
                             description: 'Latest 2 years ITR (firm)',
-                            iconColor: const Color(0xFF0D9488),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -539,7 +539,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.photo_camera,
                             title: '${_isCarLoanPartnership ? "Partners" : "Authorized Person"} Photo (×2)',
                             description: 'Two passport-style photos',
-                            iconColor: const Color(0xFF14B8A6),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -547,7 +547,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.credit_card,
                             title: '${_isCarLoanPartnership ? "Partners" : "Authorized Person"} PAN',
                             description: 'PAN card (photo or PDF)',
-                            iconColor: const Color(0xFFF59E0B),
+                            iconColor: AppTheme.warningColor,
                           ),
                           const SizedBox(height: 12),
                           _buildDocumentItem(
@@ -555,7 +555,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.home_outlined,
                             title: 'Address Proof',
                             description: 'Aadhaar, Passport, Voter ID or Driving Licence',
-                            iconColor: const Color(0xFF7C3AED),
+                            iconColor: AppTheme.secondaryColor,
                           ),
                           const SizedBox(height: 12),
                         ] else ...[
@@ -565,7 +565,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               icon: Icons.person_add_alt_1,
                               title: 'Co-applicant Aadhaar & PAN',
                               description: 'Co-applicant Aadhaar (front & back) and PAN.',
-                              iconColor: const Color(0xFF14B8A6),
+                              iconColor: AppTheme.successColor,
                             ),
                             const SizedBox(height: 12),
                           ],
@@ -574,7 +574,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             icon: Icons.description,
                             title: 'Salary Slips',
                             description: 'Last 3 months for income verification',
-                            iconColor: const Color(0xFF0D9488),
+                            iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -589,7 +589,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           description: _isProfessionalLoan
                               ? 'KYC, residence, qualification & practice details'
                               : 'Complete the personal data form',
-                          iconColor: const Color(0xFF7C3AED),
+                          iconColor: AppTheme.secondaryColor,
                         ),
                       ],
                     ),

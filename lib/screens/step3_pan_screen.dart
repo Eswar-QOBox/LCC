@@ -1375,10 +1375,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: const Color(0xFFEF4444), size: 28),
+              child: Icon(icon, color: AppTheme.errorColor, size: 28),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1480,7 +1480,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
+              backgroundColor: AppTheme.errorColor,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2335,7 +2335,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                   top: 8,
                   right: 8,
                   child: Material(
-                    color: const Color(0xFFEF4444),
+                    color: AppTheme.errorColor,
                     shape: const CircleBorder(),
                     child: InkWell(
                       onTap: () {
@@ -2346,7 +2346,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
+                          color: AppTheme.errorColor,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: Colors.white,
@@ -2415,7 +2415,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               end: Alignment.bottomRight,
               colors: [
                 const Color(0xFFDC2626).withValues(alpha: 0.1), // red-600
-                const Color(0xFFEF4444).withValues(alpha: 0.05), // red-500
+                AppTheme.errorColor.withValues(alpha: 0.05), // red-500
               ],
             ),
             borderRadius: BorderRadius.circular(20),

@@ -54,7 +54,7 @@ class _PartnerCountScreenState extends State<PartnerCountScreen> {
     return PreventCloseOnBack(
       onBack: () => context.go(AppRoutes.step4BankStatement),
       child: Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [

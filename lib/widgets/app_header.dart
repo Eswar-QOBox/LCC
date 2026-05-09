@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_theme.dart';
 
 /// Reusable App Header widget for consistent header across all screens
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
@@ -39,7 +40,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           end: Alignment.bottomRight,
           colors: [
             colorScheme.primary,
-            const Color(0xFF0052CC), // royal-blue
+            AppTheme.secondaryColor,
           ],
         ),
         boxShadow: [

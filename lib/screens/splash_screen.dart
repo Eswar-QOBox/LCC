@@ -70,7 +70,7 @@ class _SplashScreenState extends State<SplashScreen>
     final isPortrait = screenHeight > screenWidth;
     
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         minimum: EdgeInsets.zero,
         child: FadeTransition(

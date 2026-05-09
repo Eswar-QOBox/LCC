@@ -1230,7 +1230,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             : (isProfessional ? AppRoutes.step3Pan : AppRoutes.step3Pan));
       },
       child: Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -1370,13 +1370,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFFEFF6FF), // blue-50
-            Color(0xFFDBEAFE), // blue-100/50
+            Color(0xFFF0F5FF), // primary-tint-50
+            Color(0xFFDEECFF), // primary-tint-100
           ],
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFDBEAFE).withValues(alpha: 0.5),
+          color: const Color(0xFFDEECFF).withValues(alpha: 0.5),
           width: 1,
         ),
         boxShadow: [
@@ -1422,7 +1422,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
-                        color: const Color(0xFF1E293B),
+                        color: const Color(0xFF172030),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1430,7 +1430,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       'Last 6 months from today',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 12,
-                        color: const Color(0xFF64748B),
+                        color: const Color(0xFF576175),
                       ),
                     ),
                   ],
@@ -1457,7 +1457,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: const Color(0xFFDBEAFE), // blue-100
+            color: const Color(0xFFDEECFF), // primary-tint-100
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: AppTheme.primaryColor, size: 18),
@@ -1469,7 +1469,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             style: theme.textTheme.bodyMedium?.copyWith(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF334155), // slate-700
+              color: const Color(0xFF1E2A40),
             ),
           ),
         ),
@@ -1500,7 +1500,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD32F2F), // red-600
+                  color: AppTheme.errorColor,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
@@ -1516,7 +1516,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: const Color(0xFFB71C1C), // red-700
+                    color: AppTheme.errorColor,
                   ),
                 ),
               ),
@@ -1529,7 +1529,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: const Color(0xFFFFCDD2).withValues(alpha: 0.2),
+                color: AppTheme.errorColor.withValues(alpha: 0.15),
                 width: 1,
               ),
               boxShadow: [
@@ -1547,7 +1547,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   children: [
                     const Icon(
                       Icons.warning,
-                      color: Color(0xFFD32F2F),
+                      color: AppTheme.errorColor,
                       size: 16,
                     ),
                     const SizedBox(width: 6),
@@ -1556,7 +1556,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFFD32F2F),
+                        color: AppTheme.errorColor,
                         letterSpacing: 1.0,
                       ),
                     ),
@@ -1568,7 +1568,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   text: TextSpan(
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontSize: 14,
-                      color: const Color(0xFF475569),
+                      color: const Color(0xFF576175),
                       height: 1.5,
                     ),
                     children: [
@@ -1577,7 +1577,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         text: _formatDateWithYear(_calculatedStartDate!),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
+                          color: Color(0xFF172030),
                         ),
                       ),
                       const TextSpan(text: ' to '),
@@ -1585,7 +1585,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         text: _formatDateWithYear(_statementEndDate!),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
+                          color: Color(0xFF172030),
                         ),
                       ),
                     ],
@@ -1597,7 +1597,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFFD32F2F),
+                    color: AppTheme.errorColor,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1612,7 +1612,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     children: [
                       const Icon(
                         Icons.schedule,
-                        color: Color(0xFFD32F2F),
+                        color: AppTheme.errorColor,
                         size: 12,
                       ),
                       const SizedBox(width: 6),
@@ -1621,7 +1621,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFFD32F2F),
+                          color: AppTheme.errorColor,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -1670,7 +1670,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: const Color(0xFF1E293B),
+                      color: const Color(0xFF172030),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1688,7 +1688,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4), // emerald-50
+                  color: const Color(0xFFEDFBF4),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -1696,7 +1696,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   children: [
                     const Icon(
                       Icons.check_circle,
-                      color: Color(0xFF22C55E), // emerald-600
+                      color: AppTheme.successColor, // emerald-600
                       size: 12,
                     ),
                     const SizedBox(width: 4),
@@ -1705,7 +1705,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF22C55E),
+                        color: AppTheme.successColor,
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -1736,10 +1736,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       width: 160,
       height: 213, // aspect ratio 3:4
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF), // blue-50
+        color: const Color(0xFFF0F5FF), // primary-tint-50
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFFDBEAFE), // blue-100
+          color: const Color(0xFFDEECFF), // primary-tint-100
           width: 2,
         ),
       ),
@@ -1754,7 +1754,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 const Icon(
                   Icons.picture_as_pdf,
                   size: 60,
-                  color: Color(0xFF3B82F6), // blue-500
+                  color: AppTheme.primaryColor,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1762,7 +1762,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF2563EB), // blue-600
+                    color: AppTheme.primaryColor,
                     letterSpacing: 2.0,
                   ),
                 ),
@@ -1786,7 +1786,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444), // red-500
+                        color: AppTheme.errorColor,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: Colors.white,
@@ -1900,7 +1900,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   gradient: LinearGradient(
                     colors: [
                       AppTheme.primaryColor,
-                      const Color(0xFF0052CC), // royal-blue
+                      AppTheme.secondaryColor,
                     ],
                   ),
                   borderRadius: BorderRadius.circular(20),

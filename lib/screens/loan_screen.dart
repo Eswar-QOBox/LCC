@@ -61,7 +61,7 @@ class _LoanScreenState extends State<LoanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -271,36 +271,36 @@ class _LoanScreenState extends State<LoanScreen> {
         'title': 'No Paperwork Hassle',
         'subtitle': 'Completely digital and paperless verification',
         'gradient': [
-          Color(0xFF002B5B),
-          Color(0xFF003B8E),
-          Color(0xFF0052CC),
+          Color(0xFF0F2460),
+          Color(0xFF234AB8),
+          Color(0xFF5C8DFF),
         ],
       },
       {
         'title': 'Multi-Document Support',
         'subtitle': 'Upload identity, address & income proof easily',
         'gradient': [
-          Color(0xFF1A4D2E),
-          Color(0xFF2D7A3D),
-          Color(0xFF3FA55F),
+          Color(0xFF0B3D20),
+          Color(0xFF145C34),
+          Color(0xFF24C278),
         ],
       },
       {
         'title': '24/7 Submission',
         'subtitle': 'Submit documents anytime, anywhere.',
         'gradient': [
-          Color(0xFF4A148C),
-          Color(0xFF6A1B9A),
-          Color(0xFF8E24AA),
+          Color(0xFF1A0A60),
+          Color(0xFF3520A8),
+          Color(0xFF8161FF),
         ],
       },
       {
         'title': 'Quick Verification',
         'subtitle': 'AI-powered document verification in minutes.',
         'gradient': [
-          Color(0xFF0D47A1),
-          Color(0xFF1565C0),
-          Color(0xFF1976D2),
+          Color(0xFF0A1850),
+          Color(0xFF1A448E),
+          Color(0xFF1AA2E6),
         ],
       },
     ];
@@ -455,24 +455,24 @@ class _LoanScreenState extends State<LoanScreen> {
         'icon': Icons.business,
         'title': 'Business Loan',
         'subtitle': 'Grow your business',
-        'iconColor': const Color(0xFF7C3AED),
-        'iconBgColor': const Color(0xFF7C3AED).withValues(alpha: 0.1),
+        'iconColor': AppTheme.secondaryColor,
+        'iconBgColor': AppTheme.secondaryColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.work_outline,
         'title': 'Professional Loan',
         'subtitle': 'For professionals',
-        'iconColor': const Color(0xFF0EA5E9),
-        'iconBgColor': const Color(0xFF0EA5E9).withValues(alpha: 0.1),
+        'iconColor': AppTheme.infoColor,
+        'iconBgColor': AppTheme.infoColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.school,
         'title': 'Student Loan',
         'subtitle': 'Fund your education',
-        'iconColor': const Color(0xFFF59E0B),
-        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.1),
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
@@ -487,16 +487,16 @@ class _LoanScreenState extends State<LoanScreen> {
         'icon': Icons.directions_car,
         'title': 'Car Loan',
         'subtitle': 'Finance your vehicle',
-        'iconColor': const Color(0xFF14B8A6),
-        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
+        'iconColor': AppTheme.successColor,
+        'iconBgColor': AppTheme.successColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.home_work,
         'title': 'Mortgage',
         'subtitle': 'Secure your property',
-        'iconColor': const Color(0xFFEC4899),
-        'iconBgColor': const Color(0xFFEC4899).withValues(alpha: 0.1),
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.1),
         'availableSoon': true,
       },
     ];
@@ -739,8 +739,8 @@ class _LoanScreenState extends State<LoanScreen> {
         'icon': Icons.speed,
         'title': 'Quick submission',
         'subtitle': 'Submission status within 24 hours.',
-        'iconColor': const Color(0xFFF59E0B),
-        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.15),
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.15),
       },
     ];
 
