@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
+import '../widgets/auth_theme_widgets.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -82,137 +83,153 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     return Scaffold(
+      backgroundColor: Colors.transparent,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Skip Button
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Align(
-                alignment: Alignment.topRight,
-                child: TextButton(
-                  onPressed: _skipToLogin,
-                  child: Text(
-                    'Skip',
-                    style: TextStyle(
-                      color: colorScheme.primary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+        child: AuthThemedBackground(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const AuthLogoBadge(size: 44),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'JSEE Solutions',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
+                    TextButton(
+                      onPressed: _skipToLogin,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white.withValues(alpha: 0.88),
+                      ),
+                      child: const Text('Skip'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: _onPageChanged,
+                    itemCount: _pages.length,
+                    itemBuilder: (context, index) {
+                      return _buildPage(_pages[index], theme);
+                    },
                   ),
                 ),
-              ),
-            ),
-            // PageView
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                onPageChanged: _onPageChanged,
-                itemCount: _pages.length,
-                itemBuilder: (context, index) {
-                  return _buildPage(_pages[index], colorScheme, theme);
-                },
-              ),
-            ),
-            // Page Indicators
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _pages.length,
-                (index) => _buildIndicator(index == _currentPage, colorScheme),
-              ),
-            ),
-            const SizedBox(height: 32),
-            // Next/Get Started Button
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    _pages.length,
+                    (index) => _buildIndicator(index == _currentPage),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                AuthGradientButton(
+                  label: _currentPage == _pages.length - 1
+                      ? 'Get Started'
+                      : 'Next',
                   onPressed: _nextPage,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: colorScheme.primary,
-                    foregroundColor: colorScheme.onPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                  ),
-                  child: Text(
-                    _currentPage == _pages.length - 1 ? 'Get Started' : 'Next',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPage(OnboardingPage page, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: AuthGlassCard(
+        padding: const EdgeInsets.fromLTRB(22, 24, 22, 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 110,
+              height: 110,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppTheme.primaryColor.withValues(alpha: 0.82),
+                    AppTheme.secondaryColor.withValues(alpha: 0.36),
+                    Colors.transparent,
+                  ],
+                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
               ),
+              child: Icon(page.icon, size: 52, color: Colors.white),
+            ),
+            const SizedBox(height: 26),
+            Text(
+              page.title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.2,
+              ),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
+            Text(
+              page.description,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: Colors.white.withValues(alpha: 0.78),
+                height: 1.45,
+                fontSize: 15,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                color: Colors.white.withValues(alpha: 0.08),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              ),
+              child: const Text(
+                'Secure • Guided • Fast',
+                style: TextStyle(
+                  color: Color(0xD9FFFFFF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPage(OnboardingPage page, ColorScheme colorScheme, ThemeData theme) {
-    return Padding(
-      padding: const EdgeInsets.all(32.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Icon
-          Container(
-            width: 150,
-            height: 150,
-            decoration: BoxDecoration(
-              color: page.color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              page.icon,
-              size: 80,
-              color: page.color,
-            ),
-          ),
-          const SizedBox(height: 48),
-          // Title
-          Text(
-            page.title,
-            style: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.onSurface,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          // Description
-          Text(
-            page.description,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIndicator(bool isActive, ColorScheme colorScheme) {
+  Widget _buildIndicator(bool isActive) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(horizontal: 4.0),
-      height: 8,
-      width: isActive ? 24 : 8,
+      height: 7,
+      width: isActive ? 26 : 9,
       decoration: BoxDecoration(
-        color: isActive ? colorScheme.primary : colorScheme.primary.withOpacity(0.3),
-        borderRadius: BorderRadius.circular(4),
+        gradient: isActive
+            ? const LinearGradient(
+                colors: [AppTheme.primaryColor, AppTheme.secondaryColor],
+              )
+            : null,
+        color: isActive ? null : Colors.white.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(20),
       ),
     );
   }

@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_routes.dart';
 import '../providers/auth_provider.dart';
+import '../utils/app_theme.dart';
+import '../widgets/auth_theme_widgets.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Check authentication status
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     // Wait for auth check to complete if still loading
     while (authProvider.isLoading) {
       await Future.delayed(const Duration(milliseconds: 100));
@@ -64,82 +66,57 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final screenWidth = mediaQuery.size.width;
-    final screenHeight = mediaQuery.size.height;
-    final isPortrait = screenHeight > screenWidth;
-    
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.transparent,
       body: SafeArea(
-        minimum: EdgeInsets.zero,
         child: FadeTransition(
           opacity: _fadeAnimation,
-          child: Center(
-            child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: screenWidth,
-                  maxHeight: screenHeight,
+          child: AuthThemedBackground(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 24,
                 ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isPortrait ? 24.0 : 48.0,
-                    vertical: isPortrait ? 48.0 : 24.0,
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // Calculate responsive size based on available space
-                      final availableWidth = constraints.maxWidth;
-                      final availableHeight = constraints.maxHeight;
-                      final minDimension = availableWidth < availableHeight
-                          ? availableWidth
-                          : availableHeight;
-                      
-                      // Use 70% of the smaller dimension, with min/max bounds
-                      final imageSize = (minDimension * 0.7).clamp(150.0, 500.0);
-                      
-                      return SizedBox(
-                        width: imageSize,
-                        height: imageSize,
-                        child: Image.asset(
-                          'assets/main_logo.jpeg',
-                          fit: BoxFit.contain,
-                          filterQuality: FilterQuality.high,
-                          errorBuilder: (context, error, stackTrace) {
-                            // Robust error handling with fallback
-                            return Container(
-                              width: imageSize,
-                              height: imageSize,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.image_not_supported_outlined,
-                                    size: imageSize * 0.3,
-                                    color: Theme.of(context).colorScheme.primary,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Logo not found',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: AuthGlassCard(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const AuthLogoBadge(size: 96),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'JSEE Solutions',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      );
-                    },
+                        const SizedBox(height: 8),
+                        Text(
+                          'Smart Lending Management Platform',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.72),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        const SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              AppTheme.primaryColor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
