@@ -7,6 +7,7 @@ import '../services/loan_application_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
+import '../widgets/brand_glass_header.dart';
 import '../widgets/premium_toast.dart';
 
 class LoanScreen extends StatefulWidget {
@@ -104,114 +105,46 @@ class _LoanScreenState extends State<LoanScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    return BrandGlassHeader(trailing: _buildNotificationButton(context));
+  }
+
+  Widget _buildNotificationButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.6),
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outline.withValues(alpha: 0.1),
-            width: 1,
-          ),
-        ),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        shape: BoxShape.circle,
       ),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Logo and Title
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Image.asset(
-                        'assets/JSEE_icon.jpg',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'JSEE Solutions',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      Text(
-                        'ELIGIBILITY VERIFICATION',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 1.2,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              
-              // Notification Button
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Center(
-                      child: Icon(
-                        Icons.notifications_outlined,
-                        color: colorScheme.onSurfaceVariant,
-                        size: 22,
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: AppTheme.errorColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.surface,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Icon(
+              Icons.notifications_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: 22,
+            ),
           ),
-        ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.surface,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -24,6 +24,7 @@ class AdditionalDocumentsService {
 
       if (response.statusCode == 200) {
         final list = response.data as List<dynamic>;
+        final phoneDigits = _digitsOnly(normalizedPhone);
 
         for (final item in list) {
           if (item is! Map) continue;
@@ -32,7 +33,13 @@ class AdditionalDocumentsService {
           final leadPhone = (lead['phone'] as String? ?? '').trim();
 
           if (leadEmail.isNotEmpty && leadEmail == normalizedEmail) return _normalizeLead(lead);
-          if (normalizedPhone != null && leadPhone.isNotEmpty && leadPhone == normalizedPhone) return _normalizeLead(lead);
+          if (phoneDigits.isNotEmpty) {
+            final leadDigits = _digitsOnly(leadPhone);
+            if (leadDigits.isNotEmpty &&
+                (leadDigits == phoneDigits || leadDigits.endsWith(phoneDigits) || phoneDigits.endsWith(leadDigits))) {
+              return _normalizeLead(lead);
+            }
+          }
         }
       } else if (response.statusCode == 401) {
         throw Exception('Authentication required. Please log in again.');
@@ -66,12 +73,12 @@ class AdditionalDocumentsService {
     }
   }
 
-  /// Get documents uploaded for a lead — JHipster GET /api/lead-documents?leadId={id}.
-  Future<List<UploadedDocument>> getUserDocuments(String userId) async {
+  /// Get documents uploaded for a lead — JHipster GET /api/lead-documents?leadId.equals={id}.
+  Future<List<UploadedDocument>> getLeadDocuments(String leadId) async {
     try {
       final response = await _apiClient.get(
         ApiConfig.leadDocumentsEndpoint,
-        queryParameters: {'leadId.equals': userId, 'size': '100'},
+        queryParameters: {'leadId.equals': leadId, 'size': '100', 'sort': 'uploadedAt,desc'},
       );
 
       if (response.statusCode == 200) {
@@ -91,9 +98,14 @@ class AdditionalDocumentsService {
 
       return [];
     } catch (e) {
-      if (kDebugMode) print('Error in getUserDocuments: $e');
+      if (kDebugMode) print('Error in getLeadDocuments: $e');
       throw Exception('Failed to get documents: $e');
     }
+  }
+
+  /// Backward-compatible wrapper used by legacy screens.
+  Future<List<UploadedDocument>> getUserDocuments(String leadId) {
+    return getLeadDocuments(leadId);
   }
 
   /// Upload an additional document — JHipster POST /api/lead-documents (multipart).
@@ -103,6 +115,8 @@ class AdditionalDocumentsService {
     required String documentType,
     required String leadId,
     List<int>? fileBytes,
+    /// Shown in CRM / lists (e.g. same as rejected doc + " · Reuploaded"). Backend uses this instead of raw filename when set.
+    String? displayName,
   }) async {
     try {
       MultipartFile multipartFile;
@@ -123,6 +137,7 @@ class AdditionalDocumentsService {
         'file': multipartFile,
         'documentType': documentType,
         'leadId': leadId,
+        if (displayName != null && displayName.trim().isNotEmpty) 'displayName': displayName.trim(),
       });
 
       final response = await _apiClient.post(
@@ -141,6 +156,8 @@ class AdditionalDocumentsService {
     }
   }
 
+  static String _digitsOnly(String? s) => (s ?? '').replaceAll(RegExp(r'\D'), '');
+
   /// Normalize JHipster lead map so id is always a String (JHipster returns int).
   static Map<String, dynamic> _normalizeLead(Map<String, dynamic> lead) {
     return {...lead, 'id': lead['id']?.toString() ?? ''};
@@ -148,14 +165,19 @@ class AdditionalDocumentsService {
 
   /// Convert JHipster LeadDocumentDTO shape to the legacy shape UploadedDocument.fromJson expects.
   static Map<String, dynamic> _jhipsterDocToLegacy(Map<String, dynamic> doc) {
+    final docType = doc['documentType'];
+    final docTypeStr = docType == null ? '' : docType.toString();
+    final statusRaw = doc['status'];
+    final statusStr = statusRaw == null ? 'pending' : statusRaw.toString();
     return {
       'id': doc['id']?.toString() ?? '',
-      'name': doc['documentName'] ?? doc['fileName'] ?? '',
-      'folder': doc['documentType'] ?? '',
-      'category': doc['documentType'] ?? '',
-      'status': (doc['status'] as String? ?? 'pending').toLowerCase(),
+      'name': doc['name'] ?? doc['documentName'] ?? doc['fileName'] ?? '',
+      'folder': docTypeStr,
+      'category': docTypeStr,
+      'status': statusStr.toLowerCase(),
       'url': doc['fileUrl'] ?? doc['url'] ?? '',
-      'created_at': doc['uploadedAt'] ?? doc['createdAt'] ?? '',
+      'uploadedAt': doc['uploadedAt'] ?? doc['createdAt'] ?? '',
+      'size': doc['fileSize'] == null ? '' : doc['fileSize'].toString(),
     };
   }
 

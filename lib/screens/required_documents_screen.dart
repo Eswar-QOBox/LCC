@@ -24,7 +24,7 @@ class RequiredDocumentsScreen extends StatefulWidget {
 }
 
 class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final AdditionalDocumentsService _documentsService =
       AdditionalDocumentsService();
   final ImagePicker _imagePicker = ImagePicker();
@@ -35,12 +35,15 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
   String? _error;
   String? _leadId;
   String? _userId;
-  Map<String, bool> _uploadingStatus = {};
+  final Map<String, bool> _uploadingStatus = {};
+  /// After a successful **re-upload** (replacement file), upload stays disabled while status is pending so users do not tap again thinking nothing happened.
+  final Set<String> _replacementSubmittedIds = {};
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 2, vsync: this);
     // Ensure error is null at start
     _error = null;
@@ -53,8 +56,16 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      _loadDocuments();
+    }
   }
 
   Future<void> _loadDocuments() async {
@@ -94,10 +105,14 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         user.email,
         phone: phoneNumber,
       );
-        _leadId = leadData?['id'] as String?;
+        var resolvedId = leadData?['id']?.toString();
+        if (resolvedId == null || resolvedId.isEmpty) {
+          resolvedId = authProvider.leadId;
+        }
+        _leadId = resolvedId;
 
         if (kDebugMode) {
-          print('Lead ID retrieved: $_leadId');
+          print('Lead ID retrieved: $_leadId (fromLead=${leadData?['id']}, authLead=${authProvider.leadId})');
         }
       } catch (e) {
         // Only actual errors reach here (network, auth, server errors)
@@ -138,8 +153,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         return;
       }
 
-      // If leadData is null or leadId is null, treat as empty state (not an error)
-      if (leadData == null || _leadId == null) {
+      // No CRM lead id: cannot load lead documents from API
+      if (_leadId == null || _leadId!.isEmpty) {
         if (kDebugMode) {
           print(
             'No lead found - showing empty state (user logged in but no lead record)',
@@ -154,17 +169,18 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         return;
       }
 
-      // Get document requirements
-      final requirements =
-          (leadData['additionalDocumentRequirements'] ??
+      // Get document requirements (may be empty; rejected CRM docs still surface via lead-documents API)
+      final requirements = leadData != null
+          ? (leadData['additionalDocumentRequirements'] ??
                   leadData['additional_documents'] ??
                   leadData['additionalDocuments']) as List<dynamic>? ??
-              [];
+              []
+          : <dynamic>[];
 
       // Get uploaded documents
       List<UploadedDocument> uploadedDocs = [];
       try {
-        uploadedDocs = await _documentsService.getUserDocuments(user.id);
+        uploadedDocs = await _documentsService.getLeadDocuments(_leadId!);
       } catch (e) {
         // If getting uploaded documents fails, continue with empty list
         // This allows the screen to still show required documents even if uploads can't be fetched
@@ -192,13 +208,14 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       // This ensures they appear in the UI even if removed from backend requirements
       for (var upload in uploadedDocs) {
         // skip if already in requirements
-        if (requiredDocs.any((req) => req.id == upload.documentType)) {
+        if (requiredDocs.any((req) => leadDocumentTypeMatches(req.id, upload.documentType))) {
           continue;
         }
 
-        // Add if verified or rejected
-        if (upload.status == DocumentStatus.verified || 
-            upload.status == DocumentStatus.rejected) {
+        // Add if verified, rejected, or still pending on server (so CRM pipeline docs appear without extra_requirements rows)
+        if (upload.status == DocumentStatus.verified ||
+            upload.status == DocumentStatus.rejected ||
+            upload.status == DocumentStatus.pending) {
           
           if (kDebugMode) {
              print('Adding synthetic requirement for ${upload.status} document: ${upload.documentType}');
@@ -213,6 +230,14 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           syntheticReq.status = upload.status;
           
           requiredDocs.add(syntheticReq);
+        }
+      }
+
+      // Re-enable upload after admin verifies or rejects again.
+      for (final id in List<String>.from(_replacementSubmittedIds)) {
+        final st = _latestUploadStatusForRequirementId(id, uploadedDocs);
+        if (st == DocumentStatus.verified || st == DocumentStatus.rejected) {
+          _replacementSubmittedIds.remove(id);
         }
       }
 
@@ -265,6 +290,8 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       return;
     }
 
+    final wasReupload = _latestRejectedForRequirement(requirement) != null;
+
     setState(() {
       _uploadingStatus[requirement.id] = true;
     });
@@ -291,6 +318,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           );
         } else {
           // On mobile, use in-app simple camera UI (no grids)
+          if (!mounted) return;
           pickedFile = await Navigator.of(context).push<XFile?>(
             MaterialPageRoute(
               builder: (_) => const SimpleCameraCaptureScreen(),
@@ -364,13 +392,24 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         documentType: requirement.id,
         leadId: _leadId!,
         fileBytes: fileBytes,
+        displayName: _displayNameForReupload(requirement),
       );
 
       // Refresh documents
       await _loadDocuments();
 
       if (mounted) {
-        PremiumToast.showSuccess(context, 'Document uploaded successfully');
+        if (wasReupload) {
+          setState(() {
+            _replacementSubmittedIds.add(requirement.id);
+          });
+        }
+        PremiumToast.showSuccess(
+          context,
+          wasReupload
+              ? 'Replacement submitted for review.'
+              : 'Document uploaded successfully',
+        );
       }
     } catch (e) {
       String errorMessage = e.toString();
@@ -451,16 +490,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
   }
 
   DocumentStatus _getDocumentStatus(DocumentRequirement requirement) {
-    final uploadedDoc = _uploadedDocuments.firstWhere(
-      (doc) => doc.documentType == requirement.id,
-      orElse: () => UploadedDocument(
-        id: '',
-        documentType: '',
-        fileName: '',
-        fileSize: '',
-        uploadedAt: DateTime.now(),
-      ),
-    );
+    final uploadedDoc = _firstUploadedForRequirement(requirement);
 
     if (uploadedDoc.id.isEmpty) {
       return _uploadingStatus[requirement.id] == true
@@ -469,6 +499,59 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     }
 
     return uploadedDoc.status;
+  }
+
+  UploadedDocument _firstUploadedForRequirement(DocumentRequirement requirement) {
+    return _uploadedDocuments.firstWhere(
+      (doc) => leadDocumentTypeMatches(doc.documentType, requirement.id),
+      orElse: () => UploadedDocument(
+        id: '',
+        documentType: '',
+        fileName: '',
+        fileSize: '',
+        uploadedAt: DateTime.now(),
+      ),
+    );
+  }
+
+  UploadedDocument? _latestRejectedForRequirement(DocumentRequirement requirement) {
+    UploadedDocument? best;
+    for (final d in _uploadedDocuments) {
+      if (!leadDocumentTypeMatches(d.documentType, requirement.id)) continue;
+      if (d.status != DocumentStatus.rejected) continue;
+      if (best == null || d.uploadedAt.isAfter(best.uploadedAt)) {
+        best = d;
+      }
+    }
+    return best;
+  }
+
+  /// Server `name` for re-upload after reject: same display base as rejected row + middle dot + Reuploaded.
+  String? _displayNameForReupload(DocumentRequirement requirement) {
+    final rejected = _latestRejectedForRequirement(requirement);
+    if (rejected == null) return null;
+    final raw = rejected.fileName.trim();
+    final base = raw.isNotEmpty
+        ? stripLeadDocumentReuploadSuffix(raw)
+        : requirement.label;
+    final core = base.trim().isNotEmpty ? base.trim() : requirement.label;
+    return '$core · Reuploaded';
+  }
+
+  /// Latest server row for this requirement (by `uploadedAt`), for gating re-upload lock.
+  DocumentStatus _latestUploadStatusForRequirementId(
+    String requirementId,
+    List<UploadedDocument> uploads,
+  ) {
+    UploadedDocument? latest;
+    for (final d in uploads) {
+      if (!leadDocumentTypeMatches(d.documentType, requirementId)) continue;
+      if (latest == null || d.uploadedAt.isAfter(latest.uploadedAt)) {
+        latest = d;
+      }
+    }
+    if (latest == null || latest.id.isEmpty) return DocumentStatus.pending;
+    return latest.status;
   }
 
   @override
@@ -721,6 +804,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     final colorScheme = theme.colorScheme;
     final status = _getDocumentStatus(requirement);
     final isUploading = _uploadingStatus[requirement.id] == true;
+    final uploadedRow = _firstUploadedForRequirement(requirement);
 
     IconData statusIcon;
     Color statusColor;
@@ -757,7 +841,9 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
         break;
     }
 
-    final canUpload = status != DocumentStatus.uploading;
+    final awaitingReviewAfterReupload = _replacementSubmittedIds.contains(requirement.id) &&
+        (status == DocumentStatus.pending || status == DocumentStatus.uploaded);
+
     final isPrimaryAction =
         status == DocumentStatus.pending || status == DocumentStatus.rejected;
     final buttonLabel = status == DocumentStatus.pending ||
@@ -788,7 +874,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             children: [
               Expanded(
                 child: Text(
-                  requirement.label,
+                  uploadedRow.id.isNotEmpty &&
+                          leadDocumentDisplayNameHasReuploadTag(uploadedRow.fileName)
+                      ? stripLeadDocumentReuploadSuffix(uploadedRow.fileName)
+                      : requirement.label,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
@@ -797,6 +886,25 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (uploadedRow.id.isNotEmpty &&
+                  leadDocumentDisplayNameHasReuploadTag(uploadedRow.fileName)) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.35)),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Reuploaded',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               if (requirement.isCustom) ...[
                 const SizedBox(width: 4),
                 Container(
@@ -836,8 +944,22 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
               ),
             ],
           ),
+          if (uploadedRow.id.isNotEmpty &&
+              leadDocumentDisplayNameHasReuploadTag(uploadedRow.fileName)) ...[
+            const SizedBox(height: 2),
+            Text(
+              uploadedRow.fileName,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 10,
+                fontStyle: FontStyle.italic,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
           const SizedBox(height: 8),
-          if (!canUpload)
+          if (isUploading)
             const Center(
               child: SizedBox(
                 width: 20,
@@ -845,16 +967,31 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
-          else
+          else ...[
             SizedBox(
               width: double.infinity,
               child: PremiumButton(
                 label: buttonLabel,
                 icon: Icons.upload,
                 isPrimary: isPrimaryAction,
-                onPressed: isUploading ? null : () => _uploadDocument(requirement),
+                onPressed: awaitingReviewAfterReupload
+                    ? null
+                    : () => _uploadDocument(requirement),
               ),
             ),
+            if (awaitingReviewAfterReupload) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Replacement sent. Upload is disabled until this document is verified or rejected again.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                  height: 1.25,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
         ],
       ),
     );
@@ -1104,16 +1241,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
   ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final uploadedDoc = _uploadedDocuments.firstWhere(
-      (doc) => doc.documentType == requirement.id,
-      orElse: () => UploadedDocument(
-        id: '',
-        documentType: '',
-        fileName: '',
-        fileSize: '',
-        uploadedAt: DateTime.now(),
-      ),
-    );
+    final uploadedDoc = _firstUploadedForRequirement(requirement);
 
     return Container(
       decoration: BoxDecoration(
@@ -1141,7 +1269,10 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
             children: [
               Expanded(
                 child: Text(
-                  requirement.label,
+                  uploadedDoc.id.isNotEmpty &&
+                          leadDocumentDisplayNameHasReuploadTag(uploadedDoc.fileName)
+                      ? stripLeadDocumentReuploadSuffix(uploadedDoc.fileName)
+                      : requirement.label,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
@@ -1150,6 +1281,25 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (uploadedDoc.id.isNotEmpty &&
+                  leadDocumentDisplayNameHasReuploadTag(uploadedDoc.fileName)) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.35)),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Reuploaded',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
               if (requirement.isCustom)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -1198,7 +1348,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
                 color: colorScheme.onSurfaceVariant,
                 fontSize: 10,
               ),
-              maxLines: 1,
+              maxLines: leadDocumentDisplayNameHasReuploadTag(uploadedDoc.fileName) ? 2 : 1,
               overflow: TextOverflow.ellipsis,
             ),
           ],
