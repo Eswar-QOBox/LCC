@@ -1,9 +1,109 @@
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../utils/app_theme.dart';
+
+/// Same full-bleed stack as [OnboardingScreen] (Mercotrace `OnboardingScreen.tsx`).
+class MercotraceMarketingBackground extends StatelessWidget {
+  const MercotraceMarketingBackground({
+    super.key,
+    required this.child,
+    this.visual,
+    this.slideVisualIndex = 0,
+    this.animated = false,
+    this.showBranding = false,
+  });
+
+  final Widget child;
+  final MercotraceOnboardingSlideVisual? visual;
+  final int slideVisualIndex;
+  final bool animated;
+  final bool showBranding;
+
+  MercotraceOnboardingSlideVisual get _resolved =>
+      visual ??
+      MercotraceOnboardingSlideVisual
+          .slides[slideVisualIndex % MercotraceOnboardingSlideVisual.slides.length];
+
+  @override
+  Widget build(BuildContext context) {
+    final v = _resolved;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: AppTheme.mercotraceSlate950),
+        _gradientLayer(v),
+        _patternLayer(v),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: RadialGradient(
+                center: const Alignment(-0.4, -0.6),
+                radius: 0.55,
+                colors: [
+                  Colors.white.withValues(alpha: 0.2),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        ),
+        const _MercotraceMarketingParticleLayer(),
+        if (showBranding)
+          Positioned(left: 24, right: 24, bottom: 36, child: _BrandingCopy()),
+        child,
+      ],
+    );
+  }
+
+  Widget _gradientLayer(MercotraceOnboardingSlideVisual v) {
+    final decoration = BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: v.gradient,
+      ),
+    );
+    if (animated) {
+      return Positioned.fill(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          decoration: decoration,
+        ),
+      );
+    }
+    return Positioned.fill(child: DecoratedBox(decoration: decoration));
+  }
+
+  Widget _patternLayer(MercotraceOnboardingSlideVisual v) {
+    final inner = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: v.patternCenter,
+          radius: v.patternRadius,
+          colors: [
+            Colors.white.withValues(alpha: v.patternPeakWhite),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+    if (animated) {
+      return Positioned.fill(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+          child: Opacity(opacity: 0.3, child: inner),
+        ),
+      );
+    }
+    return Positioned.fill(
+      child: Opacity(opacity: 0.3, child: inner),
+    );
+  }
+}
 
 class AuthThemedBackground extends StatelessWidget {
   const AuthThemedBackground({
@@ -17,54 +117,10 @@ class AuthThemedBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF1E3A8A),
-                  const Color(0xFF1D4ED8),
-                  const Color(0xFF4C1D95),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.bottomCenter,
-                end: Alignment.topCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.30),
-                  Colors.transparent,
-                ],
-              ),
-            ),
-          ),
-        ),
-        const _RadialBloom(
-          size: 300,
-          top: 120,
-          left: -40,
-          color: Color(0x4D5C8DFF),
-        ),
-        const _RadialBloom(
-          size: 260,
-          bottom: 90,
-          right: -40,
-          color: Color(0x408161FF),
-        ),
-        const _ParticleLayer(),
-        if (showBranding)
-          Positioned(left: 24, right: 24, bottom: 36, child: _BrandingCopy()),
-        child,
-      ],
+    return MercotraceMarketingBackground(
+      slideVisualIndex: 0,
+      showBranding: showBranding,
+      child: child,
     );
   }
 }
@@ -105,6 +161,82 @@ class AuthGlassCard extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Primary CTA on auth screens — white surface and primary-colored label (matches React `bg-white text-blue-600`).
+class AuthLightCtaButton extends StatelessWidget {
+  const AuthLightCtaButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.isLoading = false,
+    this.trailingIcon = Icons.arrow_forward_rounded,
+    this.height = 56,
+    /// When set (e.g. Mercotrace onboarding `rounded-2xl`), overrides pill shape.
+    this.cornerRadius,
+    /// Defaults to [AppTheme.primaryColor]; Mercotrace uses `text-blue-600`.
+    this.labelAndIconColor,
+    this.labelFontSize,
+    this.labelFontWeight,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool isLoading;
+  final IconData trailingIcon;
+  final double height;
+  final double? cornerRadius;
+  final Color? labelAndIconColor;
+  final double? labelFontSize;
+  final FontWeight? labelFontWeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = labelAndIconColor ?? AppTheme.primaryColor;
+    final radius = cornerRadius ?? height / 2;
+    final fontSize = labelFontSize ?? 16;
+    final fontWeight = labelFontWeight ?? FontWeight.w700;
+    return Material(
+      color: Colors.white,
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(radius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(radius),
+        onTap: isLoading ? null : onPressed,
+        child: SizedBox(
+          height: height,
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      valueColor: AlwaysStoppedAnimation<Color>(accent),
+                    ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: TextStyle(
+                          color: accent,
+                          fontSize: fontSize,
+                          fontWeight: fontWeight,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(trailingIcon, size: 20, color: accent),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -224,77 +356,36 @@ class AuthLogoBadge extends StatelessWidget {
   }
 }
 
-class _ParticleLayer extends StatelessWidget {
-  const _ParticleLayer();
+/// 15 × `w-2 h-2` at `bg-white/30` — Mercotrace onboarding particles.
+class _MercotraceMarketingParticleLayer extends StatelessWidget {
+  const _MercotraceMarketingParticleLayer();
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final height = constraints.maxHeight;
+          final w = constraints.maxWidth;
+          final h = constraints.maxHeight;
           return Stack(
-            children: List.generate(20, (index) {
-              final seed = index + 1;
-              final x = (math.sin(seed * 37) * 0.45 + 0.5) * width;
-              final y = (math.cos(seed * 53) * 0.45 + 0.5) * height;
-              final opacity = 0.10 + (seed % 5) * 0.05;
+            children: List.generate(15, (i) {
+              final u = ((i * 7919) % 997) / 997.0;
+              final v = ((i * 6271) % 991) / 991.0;
               return Positioned(
-                left: x,
-                top: y,
+                left: u * w,
+                top: v * h,
                 child: Container(
-                  width: 3,
-                  height: 3,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(
-                      alpha: opacity.clamp(0.1, 0.4),
-                    ),
+                    color: Colors.white.withValues(alpha: 0.3),
                   ),
                 ),
               );
             }),
           );
         },
-      ),
-    );
-  }
-}
-
-class _RadialBloom extends StatelessWidget {
-  const _RadialBloom({
-    required this.size,
-    this.top,
-    this.left,
-    this.right,
-    this.bottom,
-    required this.color,
-  });
-
-  final double size;
-  final double? top;
-  final double? left;
-  final double? right;
-  final double? bottom;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
-      child: IgnorePointer(
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: [color, Colors.transparent]),
-          ),
-        ),
       ),
     );
   }

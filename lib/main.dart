@@ -6,6 +6,7 @@ import 'providers/submission_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/application_provider.dart';
 import 'utils/app_theme.dart';
+import 'utils/app_theme_mode.dart';
 import 'utils/app_routes.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -66,28 +67,33 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
       ],
-      child: MaterialApp.router(
-        title: 'JSEE Solutions',
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.light,
-        routerConfig: _router,
-        debugShowCheckedModeBanner: false,
-        builder: (context, child) {
-          return PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) async {
-              if (didPop) return;
-              final router = GoRouter.of(context);
-              // Use GoRouter's stack so back from e.g. Personal Loan → Instructions returns to home
-              if (router.canPop()) {
-                router.pop();
-              } else {
-                // No route to pop — go to home instead of exiting the app
-                router.go(AppRoutes.home);
-              }
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: appThemeModeNotifier,
+        builder: (context, themeMode, _) {
+          return MaterialApp.router(
+            title: 'JSEE Solutions',
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: themeMode,
+            routerConfig: _router,
+            debugShowCheckedModeBanner: false,
+            builder: (context, child) {
+              return PopScope(
+                canPop: false,
+                onPopInvokedWithResult: (didPop, result) async {
+                  if (didPop) return;
+                  final router = GoRouter.of(context);
+                  // Use GoRouter's stack so back from e.g. Personal Loan → Instructions returns to home
+                  if (router.canPop()) {
+                    router.pop();
+                  } else {
+                    // No route to pop — go to home instead of exiting the app
+                    router.go(AppRoutes.home);
+                  }
+                },
+                child: child ?? const SizedBox.shrink(),
+              );
             },
-            child: child ?? const SizedBox.shrink(),
           );
         },
       ),

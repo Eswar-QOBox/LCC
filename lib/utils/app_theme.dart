@@ -4,6 +4,21 @@ class AppTheme {
   // ── Brand palette — matched to the React frontend CSS variables ──
   // primary:  hsl(222 100% 68%) → #5C8DFF  vivid blue
   static const Color primaryColor   = Color(0xFF5C8DFF);
+
+  /// Login / onboarding full-screen backgrounds — Tailwind `from-blue-400 via-blue-500 to-violet-500`
+  /// (see Memematestrace `OnboardingScreen.tsx` slide gradients).
+  static const Color authGradientStart = Color(0xFF60A5FA); // blue-400
+  static const Color authGradientMid = Color(0xFF3B82F6); // blue-500
+  static const Color authGradientEnd = Color(0xFF8B5CF6); // violet-500
+
+  /// Tailwind palette — Mercotrace `OnboardingScreen.tsx` / `LoginScreen.tsx`
+  static const Color twBlue400 = Color(0xFF60A5FA);
+  static const Color twBlue500 = Color(0xFF3B82F6);
+  static const Color twBlue600 = Color(0xFF2563EB);
+  static const Color twViolet400 = Color(0xFFA78BFA);
+  static const Color twViolet500 = Color(0xFF8B5CF6);
+  /// `bg-slate-950` under Mercotrace onboarding gradients
+  static const Color mercotraceSlate950 = Color(0xFF020617);
   // accent:   hsl(252 100% 69%) → #8161FF  violet-purple
   static const Color secondaryColor = Color(0xFF8161FF);
   // lighter tint of primary for tertiary uses
@@ -292,4 +307,63 @@ class AppTheme {
       ),
     );
   }
+}
+
+/// One Mercotrace onboarding slide: `bg-gradient-to-br` + `bgPattern` (see `OnboardingScreen.tsx`).
+class MercotraceOnboardingSlideVisual {
+  const MercotraceOnboardingSlideVisual({
+    required this.gradient,
+    required this.patternCenter,
+    required this.patternPeakWhite,
+    required this.patternRadius,
+  });
+
+  final List<Color> gradient;
+  final Alignment patternCenter;
+  final double patternPeakWhite;
+  final double patternRadius;
+
+  /// Cycles when there are more than four intro pages.
+  static const List<MercotraceOnboardingSlideVisual> slides = [
+    MercotraceOnboardingSlideVisual(
+      gradient: [
+        AppTheme.twBlue400,
+        AppTheme.twBlue500,
+        AppTheme.twViolet500,
+      ],
+      patternCenter: Alignment(-0.6, 0.6),
+      patternPeakWhite: 0.1,
+      patternRadius: 0.5,
+    ),
+    MercotraceOnboardingSlideVisual(
+      gradient: [
+        AppTheme.twBlue500,
+        AppTheme.twViolet500,
+        AppTheme.twBlue400,
+      ],
+      patternCenter: Alignment(0.6, -0.6),
+      patternPeakWhite: 0.1,
+      patternRadius: 0.5,
+    ),
+    MercotraceOnboardingSlideVisual(
+      gradient: [
+        AppTheme.twViolet500,
+        AppTheme.twBlue500,
+        AppTheme.twViolet400,
+      ],
+      patternCenter: Alignment.center,
+      patternPeakWhite: 0.15,
+      patternRadius: 0.6,
+    ),
+    MercotraceOnboardingSlideVisual(
+      gradient: [
+        AppTheme.twBlue400,
+        AppTheme.twViolet500,
+        AppTheme.twBlue500,
+      ],
+      patternCenter: Alignment(-0.4, 0.4),
+      patternPeakWhite: 0.1,
+      patternRadius: 0.5,
+    ),
+  ];
 }

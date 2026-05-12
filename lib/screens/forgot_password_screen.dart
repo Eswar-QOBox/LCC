@@ -58,8 +58,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: AuthThemedBackground(
+      body: AuthThemedBackground(
+        child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -130,7 +130,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           const SizedBox(height: 18),
                           Consumer<AuthProvider>(
                             builder: (context, authProvider, _) {
-                              return AuthGradientButton(
+                              return AuthLightCtaButton(
                                 label: 'Send Reset Request',
                                 isLoading: authProvider.isLoading,
                                 height: 58,
@@ -176,7 +176,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               ),
                             ),
                           const SizedBox(height: 18),
-                          AuthGradientButton(
+                          AuthLightCtaButton(
                             label: 'Back to Login',
                             height: 58,
                             onPressed: () => context.go(AppRoutes.login),

@@ -57,9 +57,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: AuthThemedBackground(
-          showBranding: false,
+      body: AuthThemedBackground(
+        showBranding: false,
+        child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -195,7 +195,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 10),
                         Consumer<AuthProvider>(
                           builder: (context, authProvider, _) {
-                            return AuthGradientButton(
+                            return AuthLightCtaButton(
                               label: 'Sign In',
                               isLoading: authProvider.isLoading,
                               height: 60,

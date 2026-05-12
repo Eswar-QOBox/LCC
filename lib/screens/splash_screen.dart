@@ -68,10 +68,10 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: SafeArea(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: AuthThemedBackground(
+      body: AuthThemedBackground(
+        child: SafeArea(
+          child: FadeTransition(
+            opacity: _fadeAnimation,
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(

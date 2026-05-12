@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
+import '../widgets/auth_theme_widgets.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import '../services/loan_application_service.dart';
@@ -85,10 +87,12 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
+      backgroundColor: Colors.transparent,
+      body: MercotraceMarketingBackground(
+        slideVisualIndex: 0,
+        child: SafeArea(
+          child: Column(
+            children: [
             // Header with back button and logo
             _buildHeader(context),
             
@@ -827,6 +831,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -952,47 +957,57 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outline.withValues(alpha: 0.1),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => context.go(AppRoutes.home),
-            color: colorScheme.onSurface,
-          ),
-          const SizedBox(width: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: Image.asset(
-                'assets/JSEE_icon.jpg',
-                fit: BoxFit.cover,
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.18),
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.white.withValues(alpha: 0.12),
+                width: 1,
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Text(
-            'JSEE Solutions',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 18,
-            ),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.go(AppRoutes.home),
+                color: Colors.white,
+              ),
+              const SizedBox(width: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Image.asset(
+                    'assets/JSEE_icon.jpg',
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'JSEE Solutions',
+                style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ) ??
+                    const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                      color: Colors.white,
+                    ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
