@@ -167,13 +167,17 @@ class AdditionalDocumentsService {
   static Map<String, dynamic> _jhipsterDocToLegacy(Map<String, dynamic> doc) {
     final docType = doc['documentType'];
     final docTypeStr = docType == null ? '' : docType.toString();
+    final docKeyRaw = doc['documentKey'] ?? doc['document_key'];
+    final docKeyStr = docKeyRaw == null ? '' : docKeyRaw.toString().trim();
+    final folderStr =
+        docKeyStr.isNotEmpty ? docKeyStr : docTypeStr;
     final statusRaw = doc['status'];
     final statusStr = statusRaw == null ? 'pending' : statusRaw.toString();
     return {
       'id': doc['id']?.toString() ?? '',
       'name': doc['name'] ?? doc['documentName'] ?? doc['fileName'] ?? '',
-      'folder': docTypeStr,
-      'category': docTypeStr,
+      'folder': folderStr,
+      'category': folderStr,
       'status': statusStr.toLowerCase(),
       'url': doc['fileUrl'] ?? doc['url'] ?? '',
       'uploadedAt': doc['uploadedAt'] ?? doc['createdAt'] ?? '',

@@ -133,6 +133,19 @@ class DocumentRequirement {
         'bank_statement': 'Bank Statement',
         'salary_slips': 'Salary Slip',
         'salary_slip': 'Salary Slip',
+        // CRM “Request additional documents” catalog (must match web slugs)
+        'additional_salary_certificate': 'Salary Certificate',
+        'additional_bank_statement_6m': 'Bank Statement (Last 6 Months)',
+        'additional_trade_license': 'Trade License Copy',
+        'additional_visa_copy': 'Visa Copy',
+        'additional_emirates_id_back': 'Emirates ID (Back)',
+        'additional_passport_copy': 'Passport Copy',
+        'additional_cancelled_cheque': 'Cancelled Cheque',
+        'additional_tenancy_contract': 'Tenancy Contract',
+        'additional_utility_bill': 'Utility Bill (Address Proof)',
+        'additional_employment_letter': 'Employment Letter',
+        'additional_credit_card_statement': 'Credit Card Statement',
+        'additional_existing_loan_statement': 'Existing Loan Statement',
       };
 
       // Determine label

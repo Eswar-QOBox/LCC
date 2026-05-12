@@ -193,9 +193,17 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           .map((doc) => doc.documentType)
           .toList();
       final requiredDocs = requirements
-          .map((id) {
+          .map((raw) {
             try {
-              return DocumentRequirement.fromId(id as String, uploadedDocTypes);
+              final id = raw is String
+                  ? raw
+                  : (raw is Map
+                          ? (raw['id'] ?? raw['slug'] ?? raw['documentKey'])
+                          : raw)
+                      ?.toString() ??
+                      '';
+              if (id.isEmpty) return null;
+              return DocumentRequirement.fromId(id, uploadedDocTypes);
             } catch (e) {
               // Skip invalid document requirement IDs
               return null;

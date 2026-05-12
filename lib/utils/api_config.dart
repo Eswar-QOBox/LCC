@@ -1,7 +1,7 @@
 class ApiConfig {
   // JHipster Spring Boot backend
   // Change to your server IP for LAN testing: 'http://192.168.1.100:8080'
-  static const String baseUrl = 'http://localhost:8080';
+  static const String baseUrl = 'https://jsee.qualityoutsidethebox.org';
 
   static const List<String> supportedLoanTypes = [
     'Personal Loan',
