@@ -288,6 +288,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     if (kIsWeb || firstLocal.startsWith('blob:')) return;
     final provider = context.read<SubmissionProvider>();
     final aadhaarName = _referenceNameForOcr(provider);
+    if (kDebugMode) {
+      debugPrint(
+          '[DocValidation] Bank step START refName="$aadhaarName" '
+          'isCoApplicant=${widget.isCoApplicant} isPdf=$_isPdf');
+    }
     try {
       Uint8List? imageBytes;
       if (_isPdf && firstLocal.toLowerCase().endsWith('.pdf')) {
@@ -295,6 +300,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       }
       final periodStart = _calculatedStartDate;
       final periodEnd = _statementEndDate;
+      if (kDebugMode) {
+        debugPrint(
+            '[DocValidation] Bank OCR period start=$periodStart end=$periodEnd '
+            'pdfBytes=${imageBytes != null}');
+      }
       final result = imageBytes != null
           ? await OcrService.extractBankStatementName(
               firstLocal,
@@ -318,7 +328,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           provider.setBankStatementNameMatchesAadhaar(result.nameMatchesAadhaar);
         }
         if (kDebugMode) {
-          debugPrint('[BankStatement] OCR extracted: ${result.accountHolderName}, nameMatchesAadhaar: ${result.nameMatchesAadhaar}');
+          debugPrint(
+              '[DocValidation] Bank step DONE holder="${result.accountHolderName}" '
+              'nameMatchesAadhaar=${result.nameMatchesAadhaar} ref="$aadhaarName"');
+          debugPrint(
+              '[BankStatement] OCR extracted: ${result.accountHolderName}, nameMatchesAadhaar: ${result.nameMatchesAadhaar}');
         }
         if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
           if (result.nameMatchesAadhaar) {
@@ -1120,25 +1134,101 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
   bool _isPdfPath(String path) => path.toLowerCase().endsWith('.pdf');
 
+  /// OCR often breaks account numbers with spaces (e.g. "35 123 4567 8901") or puts
+  /// the number on the line after "Account No". Allow internal whitespace in the capture.
   String? _extractAccountToken(String text) {
     final upper = text.toUpperCase();
+
+    String? normalizeAccountRaw(String? raw) {
+      if (raw == null) return null;
+      final normalized = raw.replaceAll(RegExp(r'[^0-9X\*]'), '');
+      if (normalized.length >= 6 && normalized.length <= 22) return normalized;
+      return null;
+    }
+
+    // After label: spaced digit runs (6–22 digit-class chars when non-digits stripped).
+    const spacedDigits = r'([0-9X\*](?:\s*[0-9X\*]){5,21})';
+
     final patterns = <RegExp>[
+      // Prefer explicit "ACCOUNT NO" / "ACCOUNT NUMBER" (avoids "STATEMENT OF ACCOUNT").
       RegExp(
-        r'(?:A\/?C(?:COUNT)?(?:\s*(?:NO|NUMBER))?|ACCOUNT(?:\s*(?:NO|NUMBER))?)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        r'ACCOUNT\s*(?:NO|NUMBER|N0|#)\s*[.:\-]?\s*' + spacedDigits,
         caseSensitive: false,
       ),
       RegExp(
-        r'(?:ACCT|ACCOUNT)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        r'(?:A\/?C(?:COUNT)?)\s*(?:NO|NUMBER|N0|#)?\s*[.:\-]?\s*' + spacedDigits,
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:ACCT|ACC\.?)\s*(?:NO|NUMBER|N0)?\s*[.:\-]?\s*' + spacedDigits,
         caseSensitive: false,
       ),
     ];
 
     for (final re in patterns) {
       final m = re.firstMatch(upper);
-      final raw = m?.group(1);
+      final n = normalizeAccountRaw(m?.group(1));
+      if (n != null) return n;
+    }
+
+    // SBI-style OCR: "Account No" line, then CIF digits on next line, then ": 11534674370"
+    // on its own line — digits are not adjacent to "NO". Bridge with a non-greedy gap to first ": digits".
+    final bridge = RegExp(
+      r'ACCOUNT\s*(?:NO|NUMBER|N0|#)([\s\S]{0,400}?):\s*([0-9X\*](?:\s*[0-9X\*]){5,21})',
+      caseSensitive: false,
+    );
+    RegExpMatch? lastBridge;
+    for (final m in bridge.allMatches(upper)) {
+      final n = normalizeAccountRaw(m.group(2));
+      if (n != null && n.length >= 9) lastBridge = m;
+    }
+    if (lastBridge != null) {
+      final n = normalizeAccountRaw(lastBridge.group(2));
+      if (n != null) return n;
+    }
+
+    final bridgeAc = RegExp(
+      r'(?:A\/?C)\s*(?:NO|NUMBER|N0|#)([\s\S]{0,400}?):\s*([0-9X\*](?:\s*[0-9X\*]){5,21})',
+      caseSensitive: false,
+    );
+    RegExpMatch? lastAc;
+    for (final m in bridgeAc.allMatches(upper)) {
+      final n = normalizeAccountRaw(m.group(2));
+      if (n != null && n.length >= 9) lastAc = m;
+    }
+    if (lastAc != null) {
+      final n = normalizeAccountRaw(lastAc.group(2));
+      if (n != null) return n;
+    }
+
+    // Standalone value line ": 11534674370" (rejects ": 09-04-2026" — '-' not in digit capture).
+    final colonLine = RegExp(
+      r'^\s*:\s*([0-9X\*](?:\s*[0-9X\*]){5,21})\s*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    RegExpMatch? lastColon;
+    for (final m in colonLine.allMatches(upper)) {
+      final raw = m.group(1);
       if (raw == null) continue;
-      final normalized = raw.replaceAll(RegExp(r'[^0-9X\*]'), '');
-      if (normalized.length >= 6) return normalized;
+      if (raw.contains('-') || raw.contains('/')) continue;
+      final n = normalizeAccountRaw(raw);
+      if (n != null && n.length >= 9) lastColon = m;
+    }
+    if (lastColon != null) {
+      final n = normalizeAccountRaw(lastColon.group(1));
+      if (n != null) return n;
+    }
+
+    if (kDebugMode) {
+      final hasLabel = upper.contains('ACCOUNT') &&
+          (upper.contains('ACCOUNT NO') ||
+              upper.contains('ACCOUNT NUMBER') ||
+              RegExp(r'ACCOUNT\s+NO', caseSensitive: false).hasMatch(upper));
+      debugPrint(
+        '[BankStatement] account extract: ${patterns.map((re) => re.hasMatch(upper)).toList()} '
+        'hasAccountNoLabel=$hasLabel',
+      );
     }
     return null;
   }

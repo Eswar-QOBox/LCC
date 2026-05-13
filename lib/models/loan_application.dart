@@ -84,8 +84,48 @@ class LoanApplication {
     final status = (meta['status'] as String?) ?? 'draft';
     final loanAmount = (meta['loanAmount'] as num?)?.toDouble();
 
-    Map<String, dynamic>? _safeMap(dynamic v) =>
+    Map<String, dynamic>? safeMap(dynamic v) =>
         v is Map ? Map<String, dynamic>.from(v) : null;
+
+    String? readLeadIdFromStep(Map<String, dynamic>? step) {
+      if (step == null) return null;
+      final uploaded = step['uploadedFile'];
+      if (uploaded is Map) {
+        final lead = uploaded['lead'];
+        if (lead is Map && lead['id'] != null) {
+          return lead['id'].toString();
+        }
+      }
+      final lead = step['lead'];
+      if (lead is Map && lead['id'] != null) {
+        return lead['id'].toString();
+      }
+      return null;
+    }
+
+    /// When the list API omits top-level `lead`, CRM lead id may still exist under step uploads.
+    String? inferLeadIdFromRemarksMeta(Map<String, dynamic> meta) {
+      const keys = <String>[
+        'step1Selfie',
+        'step2Aadhaar',
+        'step3Pan',
+        'step4BankStatement',
+        'step5PersonalData',
+        'step6Preview',
+        'step7Submission',
+      ];
+      for (final k in keys) {
+        final v = meta[k];
+        if (v is Map<String, dynamic>) {
+          final lid = readLeadIdFromStep(v);
+          if (lid != null && lid.isNotEmpty) return lid;
+        } else if (v is Map) {
+          final lid = readLeadIdFromStep(Map<String, dynamic>.from(v));
+          if (lid != null && lid.isNotEmpty) return lid;
+        }
+      }
+      return null;
+    }
 
     final loanType = _normalizeBackendLoanType(
       json['loanType'] as String? ?? 'Personal Loan',
@@ -94,11 +134,18 @@ class LoanApplication {
     // applicantName is reused as applicationId in our mapping
     final applicationId = json['applicantName'] as String? ?? id;
 
-    // lead.id is the userId equivalent in JHipster
+    // lead.id is the userId equivalent in JHipster (CRM lead). Backend sometimes returns `lead: null`
+    // on list DTOs; infer from remarks so we can filter client-side to the logged-in customer.
     final leadMap = json['lead'] as Map<String, dynamic>?;
-    final userId = leadMap?['id']?.toString() ?? '';
+    var userId = leadMap?['id']?.toString() ?? '';
+    if (userId.isEmpty) {
+      final inferred = inferLeadIdFromRemarksMeta(meta);
+      if (inferred != null && inferred.isNotEmpty) {
+        userId = inferred;
+      }
+    }
 
-    DateTime _parseDate(dynamic v) {
+    DateTime parseDate(dynamic v) {
       if (v is String) {
         try {
           return DateTime.parse(v);
@@ -115,16 +162,16 @@ class LoanApplication {
       status: status,
       applicationId: applicationId,
       loanAmount: loanAmount,
-      step1Selfie: _safeMap(meta['step1Selfie']),
-      step2Aadhaar: _safeMap(meta['step2Aadhaar']),
-      step3Pan: _safeMap(meta['step3Pan']),
-      step4BankStatement: _safeMap(meta['step4BankStatement']),
-      step5PersonalData: _safeMap(meta['step5PersonalData']),
-      step6Preview: _safeMap(meta['step6Preview']),
-      step7Submission: _safeMap(meta['step7Submission']),
-      createdAt: _parseDate(json['createdAt']),
-      updatedAt: _parseDate(json['respondedAt'] ?? json['createdAt']),
-      submittedAt: status == 'submitted' ? _parseDate(json['respondedAt'] ?? json['createdAt']) : null,
+      step1Selfie: safeMap(meta['step1Selfie']),
+      step2Aadhaar: safeMap(meta['step2Aadhaar']),
+      step3Pan: safeMap(meta['step3Pan']),
+      step4BankStatement: safeMap(meta['step4BankStatement']),
+      step5PersonalData: safeMap(meta['step5PersonalData']),
+      step6Preview: safeMap(meta['step6Preview']),
+      step7Submission: safeMap(meta['step7Submission']),
+      createdAt: parseDate(json['createdAt']),
+      updatedAt: parseDate(json['respondedAt'] ?? json['createdAt']),
+      submittedAt: status == 'submitted' ? parseDate(json['respondedAt'] ?? json['createdAt']) : null,
     );
   }
 

@@ -15,13 +15,18 @@ class LoanApplicationService {
   }
 
   /// Get all loan applications for the current user.
-  /// Maps JHipster /api/loan-submissions (list) → List<LoanApplication>.
+  /// Maps JHipster GET /api/loan-submissions to a list of LoanApplication models.
+  ///
+  /// When `customerLeadId` is set (CRM lead for this login), results are restricted to
+  /// rows whose inferred lead id matches. This mitigates a backend issue where the list
+  /// endpoint can return other customers' submissions while still authenticated.
   Future<List<LoanApplication>> getApplications({
     int page = 1,
     int limit = 20,
     String? status,
     String? loanType,
     String? search,
+    String? customerLeadId,
   }) async {
     try {
       // JHipster pagination is 0-based
@@ -38,9 +43,14 @@ class LoanApplicationService {
 
       if (response.statusCode == 200) {
         final list = response.data as List<dynamic>;
-        return list
+        var apps = list
             .map((json) => LoanApplication.fromJhipsterJson(json as Map<String, dynamic>))
             .toList();
+        final want = customerLeadId?.trim();
+        if (want != null && want.isNotEmpty) {
+          apps = apps.where((a) => a.userId == want).toList();
+        }
+        return apps;
       }
 
       throw Exception('Failed to fetch applications');
@@ -77,11 +87,15 @@ class LoanApplicationService {
 
   /// Create a new loan application.
   /// Maps Flutter's LoanApplication fields onto JHipster's LoanSubmissionDTO.
+  ///
+  /// [customerLeadId] is the CRM lead id for the logged-in customer. The backend
+  /// requires this for `ROLE_USER` creates (`lead` must reference an accessible lead).
   Future<LoanApplication> createApplication({
     required String loanType,
     double? loanAmount,
     int currentStep = 1,
     String status = 'draft',
+    String? customerLeadId,
   }) async {
     try {
       final backendLoanType = _loanTypeForBackend(loanType);
@@ -93,16 +107,26 @@ class LoanApplicationService {
         if (loanAmount != null) 'loanAmount': loanAmount,
       });
 
+      final data = <String, dynamic>{
+        'loanType': backendLoanType,
+        'applicantName': '',
+        'status': 'PENDING',
+        'attemptNumber': 1,
+        'remarks': meta,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      final leadRaw = customerLeadId?.trim();
+      if (leadRaw != null && leadRaw.isNotEmpty) {
+        final asInt = int.tryParse(leadRaw);
+        if (asInt != null) {
+          data['lead'] = <String, dynamic>{'id': asInt};
+        }
+      }
+
       final response = await _apiClient.post(
         ApiConfig.loanSubmissionsEndpoint,
-        data: {
-          'loanType': backendLoanType,
-          'applicantName': '',
-          'status': 'PENDING',
-          'attemptNumber': 1,
-          'remarks': meta,
-          'createdAt': DateTime.now().toUtc().toIso8601String(),
-        },
+        data: data,
       );
 
       if (response.statusCode == 201) {
@@ -114,6 +138,13 @@ class LoanApplicationService {
       throw Exception('Failed to create application');
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      if (e.response?.statusCode == 403) {
+        final body = e.response?.data;
+        final msg = body is Map
+            ? (body['detail'] ?? body['title'] ?? 'Forbidden').toString()
+            : 'Forbidden';
+        throw Exception(msg);
+      }
       if (e.response?.statusCode == 400) {
         final msg = e.response?.data?['detail'] ?? e.response?.data?['title'] ?? 'Invalid request';
         throw Exception(msg);
@@ -165,6 +196,13 @@ class LoanApplicationService {
         'remarks': jsonEncode(existingMeta),
         'createdAt': existing.createdAt.toUtc().toIso8601String(),
       };
+      final existingLead = existing.userId.trim();
+      if (existingLead.isNotEmpty) {
+        final lid = int.tryParse(existingLead);
+        if (lid != null) {
+          updateData['lead'] = <String, dynamic>{'id': lid};
+        }
+      }
 
       final response = await _apiClient.put(
         '${ApiConfig.loanSubmissionsEndpoint}/$applicationId',
@@ -181,6 +219,13 @@ class LoanApplicationService {
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
       if (e.response?.statusCode == 404) throw Exception('Application not found');
+      if (e.response?.statusCode == 403) {
+        final body = e.response?.data;
+        final msg = body is Map
+            ? (body['detail'] ?? body['title'] ?? 'Forbidden').toString()
+            : 'Forbidden';
+        throw Exception(msg);
+      }
       if (e.response?.statusCode == 400) {
         final msg = e.response?.data?['detail'] ?? e.response?.data?['title'] ?? 'Invalid request';
         throw Exception(msg);

@@ -11,6 +11,7 @@ import '../utils/developer_mode.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
@@ -56,9 +57,15 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     });
 
     try {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final apps = await _applicationService.getApplications(
         status: 'all',
         limit: 100,
+        customerLeadId: customerLeadId,
       );
       // Backend normalizes Professional Loan → Personal Loan; restore display type
       // so routing works. (Education Loan → Student Loan is handled in fromJson.)

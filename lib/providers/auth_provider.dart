@@ -193,6 +193,25 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Waits briefly for CRM `leadId` to be resolved after login, so loan lists can
+  /// filter to the current customer when calling LoanApplicationService.getApplications.
+  Future<String?> waitForLeadId({
+    int attempts = 15,
+    Duration step = const Duration(milliseconds: 200),
+  }) async {
+    if (_leadId != null && _leadId!.trim().isNotEmpty) {
+      return _leadId!.trim();
+    }
+    for (var i = 0; i < attempts; i++) {
+      await Future<void>.delayed(step);
+      if (_leadId != null && _leadId!.trim().isNotEmpty) {
+        return _leadId!.trim();
+      }
+    }
+    final v = _leadId?.trim();
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
   /// Request password reset (forgot password) - accepts email or phone
   Future<Map<String, dynamic>?> forgotPassword(String identifier) async {
     _isLoading = true;

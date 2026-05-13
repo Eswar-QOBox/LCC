@@ -14,6 +14,7 @@ import '../widgets/slide_to_confirm.dart';
 import '../widgets/auth_theme_widgets.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/loan_application_service.dart';
 import '../models/loan_application.dart';
 import '../utils/app_theme.dart';
@@ -714,10 +715,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                   setState(() => _isCreatingApplication = true);
                                   try {
                                     // Before creating a new application, check existing ones.
+                                    final auth = context.read<AuthProvider>();
+                                    final customerLeadId = auth.user?.role ==
+                                            'admin'
+                                        ? null
+                                        : await auth.waitForLeadId();
+                                    if (!mounted) return;
                                     final existingApps =
                                         await _applicationService.getApplications(
                                       status: 'all',
                                       limit: 50,
+                                      customerLeadId: customerLeadId,
                                     );
 
                                     final hasApproved = existingApps
@@ -777,13 +785,23 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     }
                                     debugPrint(
                                         'Creating application for loan type: $loanType');
+                                    if (customerLeadId == null &&
+                                        auth.user?.role != 'admin') {
+                                      PremiumToast.showError(
+                                        context,
+                                        'Your profile is not linked yet. Pull down to refresh, '
+                                        'or log out and sign in again, then try starting the application.',
+                                      );
+                                      return;
+                                    }
                                     // Create application so step screens have an applicationId
-                                    // for uploads and saving step data
+                                    // for uploads and saving step data (backend requires lead for customers).
                                     final application =
                                         await _applicationService.createApplication(
                                       loanType: loanType,
                                       currentStep: 1,
                                       status: 'draft',
+                                      customerLeadId: customerLeadId,
                                     );
                                     if (!mounted) return;
                                     // Backend may return a different label; keep selected loan type in app.

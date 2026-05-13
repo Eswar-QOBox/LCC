@@ -1,8 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/loan_application.dart';
+import '../providers/auth_provider.dart';
 import '../services/loan_application_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
@@ -28,22 +30,29 @@ class _LoanScreenState extends State<LoanScreen> {
   bool _hasApplicationInProgress = false;
   final LoanApplicationService _applicationService = LoanApplicationService();
 
+  /// Only drafts / active flows — not `submitted` (those are "Under review", not "continue filling").
   static bool _isContinueable(LoanApplication a) {
-    return a.isDraft || a.isInProgress || a.isPaused || a.isSubmitted;
+    return a.isDraft || a.isInProgress || a.isPaused;
   }
 
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
-    _checkApplicationInProgress();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkApplicationInProgress());
   }
 
   Future<void> _checkApplicationInProgress() async {
     try {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final applications = await _applicationService.getApplications(
         status: 'all',
         limit: 50,
+        customerLeadId: customerLeadId,
       );
       if (!mounted) return;
       final hasInProgress = applications.any(_isContinueable);

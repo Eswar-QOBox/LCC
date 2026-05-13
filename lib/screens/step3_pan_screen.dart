@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -807,6 +807,13 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _extractedName = result.name;
         _extractedFatherName = result.fatherName;
         _internalDocumentValid = result.isInternallyValid;
+
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] PAN OCR pan=${result.panNumber} '
+              'name="${result.name}" father="${result.fatherName}" '
+              'internalValid=${result.isInternallyValid}');
+        }
 
         // Ensure Aadhaar name context is available for later validation (applicant only).
         if (!widget.isSpouse) {

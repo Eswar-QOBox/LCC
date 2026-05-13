@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1063,6 +1063,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
+            if (kDebugMode) {
+              debugPrint(
+                  '[DocValidation] Aadhaar front OCR name="${result.name}" '
+                  'internalValid=${result.isInternallyValid} '
+                  'hasNumber=${result.hasAadhaarNumber} hasDob=${result.hasDateOfBirth}');
+            }
             // Store name for PAN cross-validation
             _aadhaarName = result.name;
             if (widget.isCoApplicant) {
@@ -1337,6 +1343,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
+            if (kDebugMode) {
+              debugPrint(
+                  '[DocValidation] Aadhaar front OCR (bytes) name="${result.name}" '
+                  'internalValid=${result.isInternallyValid}');
+            }
             _aadhaarName = result.name;
             provider.updatePersonalDataField(fullName: result.name);
           }

@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' show Rect;
@@ -1151,6 +1151,13 @@ class OcrService {
 
       debugPrint(
           'Bank Statement OCR - extracted: $best, nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
+      if (kDebugMode) {
+        debugPrint(
+            '[DocValidation] BankStatement OCR summary '
+            'holder="${best ?? ""}" nameMatchesAadhaar=$nameMatchesAadhaar '
+            'ref="${aadhaarNameReference ?? ""}" '
+            'periodFilter=${statementPeriodStart != null && statementPeriodEnd != null}');
+      }
       return BankStatementOcrResult(
         success: true,
         accountHolderName: best,
@@ -1166,6 +1173,30 @@ class OcrService {
     }
   }
 
+  /// Same idea as PAN vs Aadhaar name match: allow **N** vs **NAGIREDDY**,
+  /// truncated OCR tokens, etc. Substring check stays first (cheap + robust).
+  static bool _bankTokenMatchesReferenceWord(String refWord, String bankToken) {
+    if (refWord.isEmpty || bankToken.isEmpty) return false;
+    if (refWord == bankToken) return true;
+    if (bankToken.length == 1 && refWord.startsWith(bankToken)) return true;
+    if (refWord.length == 1 && bankToken.startsWith(refWord)) return true;
+    if (refWord.length >= 3 && bankToken.length >= 3) {
+      if (refWord.startsWith(bankToken) || bankToken.startsWith(refWord)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static List<String> _bankStatementNameTokensUpper(String textUpper) {
+    return textUpper
+        .replaceAll(RegExp(r'[^A-Z]'), ' ')
+        .split(RegExp(r'\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
   /// Returns true if words from [aadhaarName] (from Aadhaar card) appear in
   /// [bankStatementText] (OCR text). Used to verify account holder name.
   static bool _aadhaarNameWordsFoundInBankStatementText(
@@ -1177,12 +1208,48 @@ class OcrService {
         .toList();
     if (nameWords.isEmpty) return false;
     final textUpper = bankStatementText.toUpperCase();
+    final bankTokens = _bankStatementNameTokensUpper(textUpper);
+
+    if (kDebugMode) {
+      debugPrint(
+          '[DocValidation] Bank↔name check reference="$aadhaarName" '
+          'refWords>=2=${nameWords.join("|")} bankTokens=${bankTokens.join("|")} '
+          'ocrLen=${textUpper.length}');
+    }
+
     for (final word in nameWords) {
       if (word.isEmpty) continue;
-      if (!textUpper.contains(word)) {
-        debugPrint('Bank statement name check: word "$word" not found in text');
+      if (textUpper.contains(word)) {
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] Bank↔name refWord="$word" OK (substring)');
+        }
+        continue;
+      }
+      var matchedToken = false;
+      for (final t in bankTokens) {
+        if (_bankTokenMatchesReferenceWord(word, t)) {
+          matchedToken = true;
+          if (kDebugMode) {
+            debugPrint(
+                '[DocValidation] Bank↔name refWord="$word" OK (token="$t")');
+          }
+          break;
+        }
+      }
+      if (!matchedToken) {
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] Bank↔name refWord="$word" FAIL '
+              '(bankTokens=${bankTokens.join(", ")})');
+        }
+        debugPrint(
+            'Bank statement name check: word "$word" not found in text or tokens');
         return false;
       }
+    }
+    if (kDebugMode) {
+      debugPrint('[DocValidation] Bank↔name: all reference words matched');
     }
     return true;
   }

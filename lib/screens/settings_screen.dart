@@ -87,9 +87,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     try {
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final apps = await _applicationService.getApplications(
         status: 'all',
         limit: 50,
+        customerLeadId: customerLeadId,
       );
       
       // Filter only submitted and approved loans (excluding drafts)
