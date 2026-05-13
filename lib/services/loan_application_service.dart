@@ -96,6 +96,8 @@ class LoanApplicationService {
     int currentStep = 1,
     String status = 'draft',
     String? customerLeadId,
+    /// Shown on the web dashboard (`LoanSubmission.applicantName`); avoids blank / numeric-only labels.
+    String? applicantDisplayName,
   }) async {
     try {
       final backendLoanType = _loanTypeForBackend(loanType);
@@ -107,9 +109,10 @@ class LoanApplicationService {
         if (loanAmount != null) 'loanAmount': loanAmount,
       });
 
+      final display = applicantDisplayName?.trim();
       final data = <String, dynamic>{
         'loanType': backendLoanType,
-        'applicantName': '',
+        'applicantName': display != null && display.isNotEmpty ? display : '',
         'status': 'PENDING',
         'attemptNumber': 1,
         'remarks': meta,

@@ -237,6 +237,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // Important disclaimer notice (facilitator role & document authenticity)
+                    _buildDisclaimerNotice(context),
                     const SizedBox(height: 32),
                     // Required Documents Section
                     Column(
@@ -802,6 +805,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                       currentStep: 1,
                                       status: 'draft',
                                       customerLeadId: customerLeadId,
+                                      applicantDisplayName: (auth.user != null && auth.user!.name.trim().isNotEmpty)
+                                          ? auth.user!.name.trim()
+                                          : null,
                                     );
                                     if (!mounted) return;
                                     // Backend may return a different label; keep selected loan type in app.
@@ -1093,6 +1099,69 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             Icons.arrow_forward_ios,
             size: 16,
             color: AppTheme.textMutedOnLightSurface,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDisclaimerNotice(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final headlineStyle = theme.textTheme.bodySmall?.copyWith(
+      color: AppTheme.warningColor,
+      fontWeight: FontWeight.w700,
+      fontSize: 13,
+      height: 1.45,
+    );
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colorScheme.onSurfaceVariant,
+      height: 1.5,
+      fontSize: 13,
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.warningColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.warningColor.withValues(alpha: 0.35),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: AppTheme.warningColor,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Important Disclaimer',
+                  style: headlineStyle,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'JSEE Solutions acts only as a facilitator and is not responsible for loan approval/rejection decisions made by banks or NBFCs.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.justify,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect or fake documents.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.justify,
+                ),
+              ],
+            ),
           ),
         ],
       ),

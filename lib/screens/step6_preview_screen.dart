@@ -2500,6 +2500,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     const SizedBox(height: 40),
                     // Dynamic button: Close if submitted, Submit if not submitted
                     if (!isSubmitted) ...[
+                      // Final disclaimer shown just before submission
+                      _buildSubmissionDisclaimer(context),
+                      const SizedBox(height: 20),
                       // Not submitted - show Submit button
                       SlideToConfirm(
                         label: submission.isComplete
@@ -3068,6 +3071,70 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             style: TextStyle(
               color: Colors.grey.shade600,
               fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Final disclaimer shown directly above the "Slide to Submit" control on
+  /// the preview screen. Reminds the user that JSEE Solutions is only a
+  /// facilitator and that they are responsible for the authenticity of the
+  /// documents they submit.
+  Widget _buildSubmissionDisclaimer(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      color: AppTheme.warningColor,
+      fontWeight: FontWeight.w700,
+      fontSize: 14,
+    );
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colorScheme.onSurfaceVariant,
+      height: 1.5,
+      fontSize: 13,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.warningColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.warningColor.withValues(alpha: 0.35),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: AppTheme.warningColor,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Before You Submit', style: titleStyle),
+                const SizedBox(height: 6),
+                Text(
+                  'JSEE Solutions acts only as a facilitator and is not responsible for loan approval/rejection decisions made by banks or NBFCs.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.justify,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect or fake documents.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.justify,
+                ),
+              ],
             ),
           ),
         ],

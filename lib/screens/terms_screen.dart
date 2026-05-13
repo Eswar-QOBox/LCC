@@ -202,6 +202,26 @@ class TermsScreen extends StatelessWidget {
                     _buildSectionCard(
                       context,
                       number: '4',
+                      icon: Icons.handshake_outlined,
+                      title: 'Facilitator Role',
+                      content:
+                          'JSEE Solutions acts only as a facilitator and is not responsible for loan approval or rejection decisions made by banks or NBFCs. All lending decisions rest solely with the partner financial institutions.',
+                    ),
+                    const SizedBox(height: 20),
+                    // Section 5
+                    _buildSectionCard(
+                      context,
+                      number: '5',
+                      icon: Icons.fact_check_outlined,
+                      title: 'Document Authenticity',
+                      content:
+                          'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect, misleading or fake documents submitted by you.',
+                    ),
+                    const SizedBox(height: 20),
+                    // Section 6
+                    _buildSectionCard(
+                      context,
+                      number: '6',
                       icon: Icons.check_circle_outline,
                       title: 'Acceptance',
                       content:
