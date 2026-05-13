@@ -761,6 +761,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       if (mounted && context.mounted) {
         final submissionProvider = context.read<SubmissionProvider>();
         final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+        final businessLoanType =
+            (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+        final isBusinessLoan = loanType.contains('business') &&
+            (businessLoanType == 'proprietor' ||
+                businessLoanType == 'partnership' ||
+                businessLoanType == 'pvt_limited');
         final professionalType =
             (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
         final isProfessionalLoan = loanType.contains('professional') &&
@@ -780,7 +786,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           return;
         }
         // Professional: Personal Data -> Preview. Student: require academic docs first, then Preview.
-        // Personal loan: Salary Slips (if needed) -> Preview.
+        // Business loan: Preview (no salary slips). Personal loan: Salary Slips (if needed) -> Preview.
         if (isStudentLoan) {
           final studentDocs =
               submissionProvider.submission.studentDocuments;
@@ -791,6 +797,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                 ? AppRoutes.step6Preview
                 : AppRoutes.step5StudentDocs,
           );
+        } else if (isBusinessLoan) {
+          context.go(AppRoutes.step6Preview);
         } else if (isProfessionalLoan) {
           context.go(AppRoutes.step6Preview);
         } else {

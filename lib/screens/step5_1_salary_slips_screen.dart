@@ -871,6 +871,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
     // Load existing data from backend and sync with provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final appProvider = context.read<ApplicationProvider>();
+      final submissionProvider = context.read<SubmissionProvider>();
+      final loanType = (appProvider.currentApplication?.loanType ??
+              submissionProvider.submission.loanType ??
+              '')
+          .toLowerCase();
+      if (loanType.contains('business')) {
+        context.go(AppRoutes.step6Preview);
+        return;
+      }
       _loadExistingData();
       // Sync with provider after draft loads (in case it loads after initState)
       _syncWithProvider();

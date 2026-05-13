@@ -2089,6 +2089,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                         child: _buildStudentLoanDocumentsSectionChild(submission),
                       ),
                       const SizedBox(height: 20),
+                    ] else if (isBusinessLoan) ...[
+                      // Proprietor / partnership / Pvt Ltd use branches above.
+                      // Any other Business Loan routing must not fall through to salary slips.
                     ] else ...[
                       if (submission.hasCoApplicant) ...[
                         _buildPremiumSection(
