@@ -405,8 +405,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
       // Prefer uploaded file URL over local blob path (blob URLs don't persist on web refresh)
       String? effectivePath;
-      if (uploadedFile != null && uploadedFile['url'] != null) {
-        final relativeUrl = uploadedFile['url'] as String;
+      final uploadedRemote =
+          uploadedFile?['url'] ?? uploadedFile?['fileUrl'];
+      if (uploadedFile != null && uploadedRemote != null) {
+        final relativeUrl = uploadedRemote as String;
         debugPrint('📷 Selfie Screen: relativeUrl = $relativeUrl');
         // Build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
         if (relativeUrl.startsWith('http')) {

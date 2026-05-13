@@ -673,7 +673,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 [];
           }
           for (final upload in existingUploads) {
-            final url = upload['url'] as String?;
+            final url = upload['url'] as String? ?? upload['fileUrl'] as String?;
             if (url != null &&
                 remoteUrls.any((r) => r.contains(url) || url.contains(r)) &&
                 !finalUploadedFiles.any((f) => f['url'] == url)) {

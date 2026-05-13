@@ -58,6 +58,29 @@ class Step6PreviewScreen extends StatefulWidget {
 }
 
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
+  /// JHipster lead-document payloads use [fileUrl]; older clients used [url].
+  String? _remotePathFromUploadMap(Map<String, dynamic>? m) {
+    if (m == null) return null;
+    final v = m['url'] ?? m['fileUrl'];
+    if (v == null) return null;
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  /// Never turn device cache paths into fake API URLs (e.g. /data/... -> /api/v1/data/...).
+  bool _isDeviceLocalFilesystemPath(String p) {
+    if (p.startsWith('http://') ||
+        p.startsWith('https://') ||
+        p.startsWith('blob:')) {
+      return false;
+    }
+    if (p.startsWith('/data/')) return true;
+    if (p.startsWith('/storage/')) return true;
+    if (p.startsWith('/private/var/')) return true;
+    if (p.startsWith('/var/mobile/')) return true;
+    return false;
+  }
+
   String? _authToken;
   bool _isLoadingAuth = true;
   
@@ -68,7 +91,27 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   /// Aadhaar number on card image is always masked in preview (no toggle to reveal).
   static const bool _maskAadhaarNumberInPreview = true;
 
-  void _openImagePreview(String imagePath) {
+  bool _isRemoteDocumentPath(String path) {
+    final p = path.trim().toLowerCase();
+    return p.startsWith('http://') || p.startsWith('https://');
+  }
+
+  /// Remote upload URLs require a bearer token. [Image.network] is invoked without
+  /// headers while [_isLoadingAuth] is still true (during `refreshApplication`), which
+  /// yields 401 and "Image not available" even though the file exists on the server.
+  Future<void> _waitForAuthIfRemote(String path) async {
+    if (!_isRemoteDocumentPath(path)) return;
+    const step = Duration(milliseconds: 50);
+    const cap = Duration(seconds: 90);
+    final sw = Stopwatch()..start();
+    while (mounted && _isLoadingAuth && sw.elapsed < cap) {
+      await Future<void>.delayed(step);
+    }
+  }
+
+  Future<void> _openImagePreview(String imagePath) async {
+    await _waitForAuthIfRemote(imagePath);
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -356,8 +399,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
     String? buildFullUrl(String? relativePath) {
       if (relativePath == null || relativePath.isEmpty) return null;
-      
-      String path = relativePath;
+      final trimmed = relativePath.trim();
+      if (_isDeviceLocalFilesystemPath(trimmed)) return null;
+
+      String path = trimmed;
       
       // Fix for "baseUrl" prefix if present
       if (path.startsWith('baseUrl')) {
@@ -410,8 +455,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           final imagePath = stepData['imagePath'] as String?;
           final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
           // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
-          final relativeUrl = uploadedFile?['url'] as String?;
-          final effectivePath = buildFullUrl(relativeUrl) ?? buildFullUrl(imagePath);
+          final relativeUrl = _remotePathFromUploadMap(uploadedFile);
+          final effectivePath = buildFullUrl(relativeUrl) ??
+              buildFullUrl(imagePath) ??
+              imagePath;
           if (effectivePath != null && effectivePath.isNotEmpty) {
             submissionProvider.setSelfie(effectivePath);
           }
@@ -439,9 +486,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       
       // Prefer uploaded file URLs
       final effectiveFront =
-          buildFullUrl(frontUpload?['url'] as String?) ?? buildFullUrl(frontPath);
+          buildFullUrl(_remotePathFromUploadMap(frontUpload)) ??
+              buildFullUrl(frontPath) ??
+              frontPath;
       final effectiveBack =
-          buildFullUrl(backUpload?['url'] as String?) ?? buildFullUrl(backPath);
+          buildFullUrl(_remotePathFromUploadMap(backUpload)) ??
+              buildFullUrl(backPath) ??
+              backPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
@@ -477,7 +528,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // PAN uses 'uploadedFile' not 'frontUpload'
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final effectiveFront =
-          buildFullUrl(uploadedFile?['url'] as String?) ?? buildFullUrl(frontPath);
+          buildFullUrl(_remotePathFromUploadMap(uploadedFile)) ??
+              buildFullUrl(frontPath) ??
+              frontPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setPanFront(effectiveFront, isPdf: isPdf);
       }
@@ -495,7 +548,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (uploadedPages != null && uploadedPages.isNotEmpty) {
         for (var upload in uploadedPages) {
           if (upload is Map<String, dynamic>) {
-            final url = buildFullUrl(upload['url'] as String?);
+            final url = buildFullUrl(_remotePathFromUploadMap(upload));
             if (url != null && url.isNotEmpty) {
               effectivePages.add(url);
             }
@@ -538,7 +591,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (uploadedSalarySlips != null && uploadedSalarySlips.isNotEmpty) {
         for (var upload in uploadedSalarySlips) {
           if (upload is Map<String, dynamic>) {
-            final raw = (upload['url'] as String?) ?? (upload['path'] as String?);
+            final raw = _remotePathFromUploadMap(upload) ??
+                (upload['path'] as String?);
             final url = buildFullUrl(raw);
             if (url != null && url.isNotEmpty) {
               effectiveSalarySlips.add(url);
@@ -586,7 +640,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         if (coUploaded != null && coUploaded.isNotEmpty) {
           for (final upload in coUploaded) {
             if (upload is Map<String, dynamic>) {
-              final url = buildFullUrl(upload['url'] as String?);
+              final url = buildFullUrl(_remotePathFromUploadMap(upload));
               if (url != null && url.isNotEmpty) {
                 effectiveCoPages.add(url);
               }
@@ -724,7 +778,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   /// Build full URL from relative path (same logic as _loadExistingData)
   String? _buildFullUrlForSelfie(String? path) {
     if (path == null || path.isEmpty) return null;
-    String p = path;
+    final trimmed = path.trim();
+    if (_isDeviceLocalFilesystemPath(trimmed)) return null;
+    String p = trimmed;
     if (p.startsWith('baseUrl')) {
       p = p.replaceFirst('baseUrl', ApiConfig.baseUrl);
     }
@@ -781,8 +837,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           final stepData = application.step1Selfie as Map<String, dynamic>;
           final imagePath = stepData['imagePath'] as String?;
           final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
-          final relativeUrl = uploadedFile?['url'] as String?;
-          final effectivePath = _buildFullUrlForSelfie(relativeUrl) ?? _buildFullUrlForSelfie(imagePath);
+          final relativeUrl = _remotePathFromUploadMap(uploadedFile);
+          final effectivePath = _buildFullUrlForSelfie(relativeUrl) ??
+              _buildFullUrlForSelfie(imagePath) ??
+              imagePath;
           if (kDebugMode && effectivePath != null) {
             print('_getSelfiePath: effectivePath = $effectivePath');
           }
@@ -1437,7 +1495,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                       child: Material(
                                         color: Colors.transparent,
                                         child: InkWell(
-                                          onTap: () => _openImagePreview(selfiePath),
+                                          onTap: (_isRemoteDocumentPath(selfiePath) &&
+                                                  _isLoadingAuth)
+                                              ? null
+                                              : () => _openImagePreview(selfiePath),
                                           child: PlatformImage(
                                             imagePath: selfiePath,
                                             fit: BoxFit.cover,
@@ -2689,14 +2750,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           child: InkWell(
             onTap: showAsPdf
                 ? null
-                : () => _openDocumentPreview(
-                      context,
-                      path: path,
-                      label: label,
-                      showAsPdf: showAsPdf,
-                      maskImage: maskImage,
-                      numberRects: clampedRects,
-                    ),
+                : (_isRemoteDocumentPath(path) && _isLoadingAuth)
+                    ? null
+                    : () => _openDocumentPreview(
+                          context,
+                          path: path,
+                          label: label,
+                          showAsPdf: showAsPdf,
+                          maskImage: maskImage,
+                          numberRects: clampedRects,
+                        ),
             child: LayoutBuilder(
               builder: (_, constraints) {
                 final w = constraints.maxWidth;
@@ -2857,6 +2920,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     bool maskImage = false,
     List<Map<String, double>>? numberRects,
   }) async {
+    await _waitForAuthIfRemote(path);
+    if (!context.mounted) return;
     await showDialog<void>(
       context: context,
       barrierDismissible: true,

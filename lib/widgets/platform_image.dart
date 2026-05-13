@@ -123,6 +123,19 @@ class _PlatformImageState extends State<PlatformImage> {
     return false;
   }
 
+  /// Path for [Image.file] / [File] on IO platforms ([file://] URIs from some pickers).
+  String _localPathForFileImage(String raw) {
+    final t = raw.trim();
+    if (t.toLowerCase().startsWith('file:')) {
+      try {
+        return Uri.parse(t).toFilePath();
+      } catch (_) {
+        return t.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return t;
+  }
+
 
   Future<void> _fetchWebImageIfNeeded() async {
     final normalized = _normalizeUrlIfNeeded(widget.imagePath);
@@ -150,9 +163,13 @@ class _PlatformImageState extends State<PlatformImage> {
         
         if (response.statusCode == 200) {
           final bytes = response.bodyBytes;
-          
-          // Validate that we received actual image data, not HTML or other content
-          if (_isValidImageData(bytes)) {
+          final contentType =
+              (response.headers['content-type'] ?? '').toLowerCase();
+          final serverSaysImage = contentType.startsWith('image/');
+
+          // Prefer magic-byte check; also trust Content-Type: image/* so HEIC/AVIF/BMP
+          // and other formats the decoder supports are not rejected here.
+          if (_isValidImageData(bytes) || serverSaysImage) {
             if (mounted) {
               setState(() {
                 _webFetchedBytes = response.bodyBytes;
@@ -291,7 +308,7 @@ class _PlatformImageState extends State<PlatformImage> {
         );
       } else {
         return Image.file(
-          File(widget.imagePath),
+          File(_localPathForFileImage(widget.imagePath)),
           fit: effectiveFit,
           width: widget.width,
           height: widget.height,
