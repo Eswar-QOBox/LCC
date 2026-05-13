@@ -1171,33 +1171,60 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       if (n != null) return n;
     }
 
-    // SBI-style OCR: "Account No" line, then CIF digits on next line, then ": 11534674370"
-    // on its own line — digits are not adjacent to "NO". Bridge with a non-greedy gap to first ": digits".
-    final bridge = RegExp(
-      r'ACCOUNT\s*(?:NO|NUMBER|N0|#)([\s\S]{0,400}?):\s*([0-9X\*](?:\s*[0-9X\*]){5,21})',
+    // SBI-style OCR: labels ("Account No") sit in one column; the real number appears many
+    // lines later as ": 11534674370", often after a shorter ": 517001" (PIN). A single
+    // non-greedy bridge to the *first* colon+digits therefore latches the wrong field and
+    // never reaches the account — scan a wide window after each label and take the last
+    // colon segment that normalizes to >= 9 digits.
+    const accountScanWindow = 8000;
+    final colonDigits = RegExp(r':\s*([0-9X\*](?:\s*[0-9X\*]){5,21})');
+    String? lastAccountLikeInWindow(String window) {
+      RegExpMatch? last;
+      for (final cm in colonDigits.allMatches(window)) {
+        final n = normalizeAccountRaw(cm.group(1));
+        if (n != null && n.length >= 9) last = cm;
+      }
+      if (last == null) return null;
+      return normalizeAccountRaw(last.group(1));
+    }
+
+    final accountNoLabelRe = RegExp(
+      r'ACCOUNT\s*(?:NO|NUMBER|N0|#)',
       caseSensitive: false,
     );
-    RegExpMatch? lastBridge;
-    for (final m in bridge.allMatches(upper)) {
-      final n = normalizeAccountRaw(m.group(2));
-      if (n != null && n.length >= 9) lastBridge = m;
-    }
-    if (lastBridge != null) {
-      final n = normalizeAccountRaw(lastBridge.group(2));
+    for (final labelM in accountNoLabelRe.allMatches(upper)) {
+      final end = (labelM.end + accountScanWindow) > upper.length
+          ? upper.length
+          : labelM.end + accountScanWindow;
+      final n = lastAccountLikeInWindow(upper.substring(labelM.end, end));
       if (n != null) return n;
     }
 
-    final bridgeAc = RegExp(
-      r'(?:A\/?C)\s*(?:NO|NUMBER|N0|#)([\s\S]{0,400}?):\s*([0-9X\*](?:\s*[0-9X\*]){5,21})',
+    final acNoLabelRe = RegExp(
+      r'(?:A\/?C)\s*(?:NO|NUMBER|N0|#)',
       caseSensitive: false,
     );
-    RegExpMatch? lastAc;
-    for (final m in bridgeAc.allMatches(upper)) {
-      final n = normalizeAccountRaw(m.group(2));
-      if (n != null && n.length >= 9) lastAc = m;
+    for (final labelM in acNoLabelRe.allMatches(upper)) {
+      final end = (labelM.end + accountScanWindow) > upper.length
+          ? upper.length
+          : labelM.end + accountScanWindow;
+      final n = lastAccountLikeInWindow(upper.substring(labelM.end, end));
+      if (n != null) return n;
     }
-    if (lastAc != null) {
-      final n = normalizeAccountRaw(lastAc.group(2));
+
+    // SBI: CIF on its own line, account on the next line as ": …" (no "Account No" nearby).
+    final cifThenColonAcct = RegExp(
+      r'^\s*\d{8,12}\s*\n\s*:\s*([0-9X\*](?:\s*[0-9X\*]){5,21})\s*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    RegExpMatch? lastCifColon;
+    for (final m in cifThenColonAcct.allMatches(upper)) {
+      final n = normalizeAccountRaw(m.group(1));
+      if (n != null && n.length >= 9) lastCifColon = m;
+    }
+    if (lastCifColon != null) {
+      final n = normalizeAccountRaw(lastCifColon.group(1));
       if (n != null) return n;
     }
 
