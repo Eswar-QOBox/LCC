@@ -44,6 +44,10 @@ class AppTheme {
   // border:     hsl(220 20%  88%) → #DAE0EA
   static const Color _border        = Color(0xFFDAE0EA);
 
+  /// Text on explicit white/light surfaces when app theme is dark (avoid white-on-white).
+  static const Color textOnLightSurface = _lightFg;
+  static const Color textMutedOnLightSurface = _mutedFg;
+
   // ── Dark mode surfaces ──
   // background: hsl(222 47%  11%) → #0F1729
   static const Color _darkBg        = Color(0xFF0F1729);
@@ -173,9 +177,24 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: _lightFg,
         ),
+        titleMedium: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: _lightFg,
+        ),
         bodyLarge: TextStyle(
           fontSize: 16,
           color: _lightFg,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 14,
+          height: 1.45,
+          color: _lightFg,
+        ),
+        bodySmall: TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: _mutedFg,
         ),
       ),
     );
@@ -300,9 +319,24 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: Colors.white,
         ),
+        titleMedium: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: Colors.white,
+        ),
         bodyLarge: TextStyle(
           fontSize: 16,
           color: Colors.white,
+        ),
+        bodyMedium: TextStyle(
+          fontSize: 14,
+          height: 1.45,
+          color: Colors.white,
+        ),
+        bodySmall: TextStyle(
+          fontSize: 12,
+          height: 1.4,
+          color: _darkMutedFg,
         ),
       ),
     );

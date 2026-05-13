@@ -670,9 +670,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 },
                                 child: RichText(
                                   text: TextSpan(
-                                    style: theme.textTheme.bodyLarge,
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      color: colorScheme.onSurface,
+                                    ),
                                     children: [
-                                      const TextSpan(
+                                      TextSpan(
                                         text: 'I accept the ',
                                       ),
                                       TextSpan(
@@ -1020,8 +1022,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     required Color iconColor,
   }) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1056,13 +1057,14 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
+                    color: AppTheme.textOnLightSurface,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   description,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+                    color: AppTheme.textMutedOnLightSurface,
                     fontSize: 13,
                   ),
                 ),
@@ -1072,7 +1074,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
           Icon(
             Icons.arrow_forward_ios,
             size: 16,
-            color: colorScheme.onSurfaceVariant,
+            color: AppTheme.textMutedOnLightSurface,
           ),
         ],
       ),
