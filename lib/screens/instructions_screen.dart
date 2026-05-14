@@ -211,7 +211,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                           ? 'Step-by-step: 1) Selfie 2) Aadhaar 3) PAN 4) Bank Statement 5) Co-applicant Aadhaar & PAN 6) Salary Slips 7) Personal Details 8) Preview & Submit. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.'
                                           : 'Step-by-step: 1) Selfie 2) Aadhaar 3) PAN 4) Bank Statement 5) Salary Slips 6) Personal Details 7) Preview & Submit. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.')
                                       : 'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
-                                  textAlign: TextAlign.justify,
+                                  textAlign: TextAlign.start,
                                   style: theme.textTheme.bodyMedium?.copyWith(
                                     color: AppTheme.textOnLightSurface,
                                     height: 1.5,
@@ -259,7 +259,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 height: 1.45,
                                 fontSize: 13,
                               ),
-                              textAlign: TextAlign.justify,
+                              textAlign: TextAlign.start,
                             ),
                           ),
                         ],
@@ -1196,13 +1196,13 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                 Text(
                   'JSEE Solutions acts only as a facilitator and is not responsible for loan approval/rejection decisions made by banks or NBFCs.',
                   style: bodyStyle,
-                  textAlign: TextAlign.justify,
+                  textAlign: TextAlign.start,
                 ),
                 const SizedBox(height: 6),
                 Text(
                   'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect or fake documents.',
                   style: bodyStyle,
-                  textAlign: TextAlign.justify,
+                  textAlign: TextAlign.start,
                 ),
               ],
             ),

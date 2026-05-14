@@ -3196,13 +3196,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                 Text(
                   'JSEE Solutions acts only as a facilitator and is not responsible for loan approval/rejection decisions made by banks or NBFCs.',
                   style: bodyStyle,
-                  textAlign: TextAlign.justify,
+                  textAlign: TextAlign.start,
                 ),
                 const SizedBox(height: 6),
                 Text(
                   'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect or fake documents.',
                   style: bodyStyle,
-                  textAlign: TextAlign.justify,
+                  textAlign: TextAlign.start,
                 ),
               ],
             ),
