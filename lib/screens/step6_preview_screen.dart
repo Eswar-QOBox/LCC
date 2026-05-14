@@ -96,6 +96,33 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return p.startsWith('http://') || p.startsWith('https://');
   }
 
+  /// Backend GET / refresh may omit `aadhaarNumber` in step 5 meta (PII); step 2 stores
+  /// masked `frontAadhaarNumber` / `backAadhaarNumber`. Prefer step 5 when present.
+  String? _resolvedAadhaarForPersonalSync({
+    required Map<String, dynamic> step5,
+    required Map<String, dynamic>? step2,
+    required String? fromSubmission,
+  }) {
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final s = v is String ? v : v.toString();
+      final t = s.trim();
+      return t.isEmpty ? null : t;
+    }
+
+    final fromStep5 =
+        pick(step5['aadhaarNumber']) ?? pick(step5['aadharNumber']);
+    if (fromStep5 != null) return fromStep5;
+
+    if (step2 != null) {
+      final fromStep2 =
+          pick(step2['frontAadhaarNumber']) ?? pick(step2['backAadhaarNumber']);
+      if (fromStep2 != null) return fromStep2;
+    }
+
+    return pick(fromSubmission);
+  }
+
   /// Remote upload URLs require a bearer token. [Image.network] is invoked without
   /// headers while [_isLoadingAuth] is still true (during `refreshApplication`), which
   /// yields 401 and "Image not available" even though the file exists on the server.
@@ -690,13 +717,20 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     // Sync Personal Data
     if (application.step5PersonalData != null) {
       final stepData = application.step5PersonalData as Map<String, dynamic>;
+      final step2Map = application.step2Aadhaar is Map<String, dynamic>
+          ? application.step2Aadhaar as Map<String, dynamic>
+          : null;
       final personalData = PersonalData(
         nameAsPerAadhaar: stepData['nameAsPerAadhaar'] as String?,
         dateOfBirth: stepData['dateOfBirth'] != null
             ? DateTime.tryParse(stepData['dateOfBirth'] as String)
             : null,
         panNo: stepData['panNo'] as String?,
-        aadhaarNumber: stepData['aadhaarNumber'] as String?,
+        aadhaarNumber: _resolvedAadhaarForPersonalSync(
+          step5: stepData,
+          step2: step2Map,
+          fromSubmission: submissionProvider.submission.personalData?.aadhaarNumber,
+        ),
         mobileNumber: stepData['mobileNumber'] as String?,
         personalEmailId: stepData['personalEmailId'] as String?,
         countryOfResidence: stepData['countryOfResidence'] as String?,
