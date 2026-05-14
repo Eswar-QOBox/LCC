@@ -44,6 +44,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
   bool _isCreatingApplication = false;
   final LoanApplicationService _applicationService = LoanApplicationService();
 
+  /// Copy sits on [MercotraceMarketingBackground] (bright gradient). Theme
+  /// [ColorScheme.onSurface] is tuned for solid scaffold colors — dark-on-blue
+  /// (light mode) and white-on-blue without shadow (dark mode) both read poorly.
+  static final List<Shadow> _marketingTextShadow = [
+    Shadow(
+      color: Colors.black.withValues(alpha: 0.28),
+      blurRadius: 16,
+      offset: const Offset(0, 2),
+    ),
+  ];
+
   bool get _isBusinessProprietor {
     final loanType = (widget.loanType ?? '').toLowerCase();
     final businessLoanType = (widget.businessLoanType ?? '').toLowerCase();
@@ -116,7 +127,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
-                        color: colorScheme.onSurface,
+                        color: Colors.white,
+                        shadows: _marketingTextShadow,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -133,8 +145,10 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                           : 'Apply alone. Follow the steps below.')
                                       : 'Follow these steps for a smooth loan application.',
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                        color: Colors.white.withValues(alpha: 0.92),
                         fontSize: 14,
+                        height: 1.45,
+                        shadows: _marketingTextShadow,
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -142,12 +156,19 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                        color: Colors.white.withValues(alpha: 0.94),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                          color: Colors.white.withValues(alpha: 0.65),
                           width: 1,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 24,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,7 +213,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                       : 'You will be guided through a step-by-step process to submit your documents for verification. Please ensure all documents are clear and valid. At the final step, slide to submit to confirm your application.',
                                   textAlign: TextAlign.justify,
                                   style: theme.textTheme.bodyMedium?.copyWith(
-                                    color: AppTheme.primaryColor.withValues(alpha: 0.8),
+                                    color: AppTheme.textOnLightSurface,
                                     height: 1.5,
                                   ),
                                 ),
@@ -207,12 +228,19 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        color: Colors.white.withValues(alpha: 0.92),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: colorScheme.outline.withValues(alpha: 0.2),
+                          color: colorScheme.outline.withValues(alpha: 0.18),
                           width: 1,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -227,7 +255,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             child: Text(
                               'I voluntarily submit my Aadhaar and other required documents for KYC and loan processing and authorize the Company to verify and use them in accordance with applicable laws.',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
+                                color: AppTheme.textMutedOnLightSurface,
                                 height: 1.45,
                                 fontSize: 13,
                               ),
@@ -249,8 +277,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           children: [
                             Icon(
                               Icons.folder_outlined,
-                              color: colorScheme.onSurfaceVariant,
+                              color: Colors.white.withValues(alpha: 0.95),
                               size: 20,
+                              shadows: _marketingTextShadow,
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -258,6 +287,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 20,
+                                color: Colors.white,
+                                shadows: _marketingTextShadow,
                               ),
                             ),
                           ],
@@ -610,8 +641,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           children: [
                             Icon(
                               Icons.lightbulb_outline,
-                              color: AppTheme.primaryColor,
+                              color: Colors.white.withValues(alpha: 0.95),
                               size: 20,
+                              shadows: _marketingTextShadow,
                             ),
                             const SizedBox(width: 8),
                             Text(
@@ -619,6 +651,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 20,
+                                color: Colors.white,
+                                shadows: _marketingTextShadow,
                               ),
                             ),
                           ],
@@ -675,17 +709,21 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                 child: RichText(
                                   text: TextSpan(
                                     style: theme.textTheme.bodyLarge?.copyWith(
-                                      color: colorScheme.onSurface,
+                                      color: Colors.white.withValues(alpha: 0.95),
+                                      shadows: _marketingTextShadow,
                                     ),
                                     children: [
-                                      TextSpan(
+                                      const TextSpan(
                                         text: 'I accept the ',
                                       ),
                                       TextSpan(
                                         text: 'Terms & Conditions',
                                         style: theme.textTheme.bodyLarge?.copyWith(
-                                          color: AppTheme.primaryColor,
-                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          decoration: TextDecoration.underline,
+                                          decorationColor: Colors.white,
+                                          shadows: _marketingTextShadow,
                                         ),
                                       ),
                                     ],
@@ -1107,7 +1145,6 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
 
   Widget _buildDisclaimerNotice(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
     final headlineStyle = theme.textTheme.bodySmall?.copyWith(
       color: AppTheme.warningColor,
@@ -1116,7 +1153,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
       height: 1.45,
     );
     final bodyStyle = theme.textTheme.bodySmall?.copyWith(
-      color: colorScheme.onSurfaceVariant,
+      color: AppTheme.textMutedOnLightSurface,
       height: 1.5,
       fontSize: 13,
     );
@@ -1124,12 +1161,19 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppTheme.warningColor.withValues(alpha: 0.08),
+        color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppTheme.warningColor.withValues(alpha: 0.35),
+          color: AppTheme.warningColor.withValues(alpha: 0.45),
           width: 1,
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1169,20 +1213,23 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
   }
 
   Widget _buildInstructionItem(BuildContext context, String text) {
-    final colorScheme = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.1),
+            color: Colors.white.withValues(alpha: 0.22),
             shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.35),
+            ),
           ),
           child: Icon(
             Icons.check_circle,
             size: 18,
-            color: colorScheme.primary,
+            color: Colors.white,
+            shadows: _marketingTextShadow,
           ),
         ),
         const SizedBox(width: 12),
@@ -1191,6 +1238,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             text,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               height: 1.5,
+              color: Colors.white.withValues(alpha: 0.95),
+              shadows: _marketingTextShadow,
             ),
             textAlign: TextAlign.left,
           ),
