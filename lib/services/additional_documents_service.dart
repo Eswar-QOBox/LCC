@@ -108,6 +108,38 @@ class AdditionalDocumentsService {
     return getLeadDocuments(leadId);
   }
 
+  /// DELETE /api/lead-documents/:id — used to replace a regenerated summary PDF without duplicates.
+  Future<void> deleteLeadDocument(String documentId) async {
+    final id = documentId.trim();
+    if (id.isEmpty) return;
+    try {
+      await _apiClient.delete('${ApiConfig.leadDocumentsEndpoint}/$id');
+    } on DioException catch (e) {
+      if (kDebugMode) {
+        print('deleteLeadDocument failed: ${e.response?.statusCode} $e');
+      }
+      rethrow;
+    }
+  }
+
+  /// Removes existing rows whose `documentKey` matches [documentKey] (Flutter upload type string).
+  Future<void> removeLeadDocumentsWithDocumentKey(String leadId, String documentKey) async {
+    try {
+      final docs = await getLeadDocuments(leadId);
+      for (final d in docs) {
+        if (leadDocumentTypeMatches(d.documentType, documentKey)) {
+          try {
+            await deleteLeadDocument(d.id);
+          } catch (_) {
+            // Best-effort; continue so a fresh upload can still proceed.
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('removeLeadDocumentsWithDocumentKey: $e');
+    }
+  }
+
   /// Upload an additional document — JHipster POST /api/lead-documents (multipart).
   Future<Map<String, dynamic>> uploadAdditionalDocument({
     required String filePath,

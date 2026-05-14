@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/storage_service.dart';
+import '../services/pdf_generation_service.dart';
 import '../models/document_submission.dart';
 import '../providers/application_provider.dart';
 import '../providers/submission_provider.dart';
@@ -938,8 +939,43 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         },
       );
 
+      if (!context.mounted) {
+        return;
+      }
+
       // Also save to provider for local state
       await provider.submit();
+
+      if (!context.mounted) {
+        return;
+      }
+
+      final pdfSynced = await PdfGenerationService().syncApplicationFormSummaryPdfToLeadOnSubmit(
+        context: context,
+        submissionProvider: provider,
+        applicationProvider: appProvider,
+      );
+
+      if (pdfSynced) {
+        try {
+          final current = appProvider.currentApplication;
+          if (current != null && context.mounted) {
+            final step7 = Map<String, dynamic>.from(current.step7Submission ?? {});
+            step7['summaryPdfLeadSyncedAt'] = DateTime.now().toUtc().toIso8601String();
+            await appProvider.updateApplication(step7Submission: step7);
+          }
+        } catch (e) {
+          debugPrint('Step6: could not persist summaryPdfLeadSyncedAt: $e');
+        }
+      } else if (context.mounted) {
+        final hasLead = (appProvider.currentApplication?.userId ?? '').trim().isNotEmpty;
+        if (hasLead) {
+          PremiumToast.showWarning(
+            context,
+            'Application submitted. The summary PDF could not be attached to your lead (try again from Download PDF when online).',
+          );
+        }
+      }
 
       // Clear draft after successful submission
       await provider.clearDraft();

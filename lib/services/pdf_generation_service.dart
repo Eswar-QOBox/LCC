@@ -21,6 +21,9 @@ import '../utils/api_config.dart';
 import 'additional_documents_service.dart';
 
 class PdfGenerationService {
+  /// Stored as `LeadDocument.documentKey` so bank SPOC emails include this file with other lead attachments.
+  static const String applicationFormSummaryDocumentKey = 'application_form_summary';
+
   /// Generate PDF with all application data
   Future<void> generateApplicationPdf({
     required BuildContext context,
@@ -29,47 +32,98 @@ class PdfGenerationService {
     bool useSampleData = false,
   }) async {
     try {
-      // Best-effort: hydrate missing docs from backend for submitted users
-      // (especially business-loan additional documents which are not stored in application steps).
-      await _hydrateSubmissionForPdfIfNeeded(
+      final bytes = await _buildApplicationPdfBytes(
         context: context,
         submissionProvider: submissionProvider,
         applicationProvider: applicationProvider,
+        useSampleData: useSampleData,
+        allowPlaceholderSampleData: true,
       );
-
-      // Get all submission data
-      DocumentSubmission submission = submissionProvider.submission;
-      
-      // Use sample data if requested or if submission is empty
-      if (useSampleData || submission.personalData == null) {
-        submission = _createSampleSubmission();
+      final fileName = _applicationPdfFileName();
+      if (!useSampleData) {
+        await _syncApplicationFormSummaryToLeadBestEffort(
+          applicationProvider: applicationProvider,
+          bytes: bytes,
+          fileName: fileName,
+        );
       }
-      
-      // Create PDF document
-      final pdf = pw.Document();
-
-      // Load logo
-      final logo = await _loadLogo();
-      
-      // Add title page
-      _addTitlePage(pdf, logo);
-      
-      // Add Personal Data section (always add, using sample if needed)
-      _addPersonalDataSection(pdf, submission.personalData ?? _createSamplePersonalData());
-      
-      // Auth token for loading backend image URLs into the PDF
-      final authToken = await StorageService.instance.getAccessToken();
-      await _addDocumentsSection(pdf, submission, authToken: authToken);
-      
-      // Add Summary section
-      _addSummarySection(pdf, submission);
-      
-      // Save and share PDF
-      await _saveAndSharePdf(context, pdf);
-      
+      if (!context.mounted) return;
+      await _sharePdfBytes(context, bytes, fileName);
     } catch (e) {
       throw Exception('Failed to generate PDF: $e');
     }
+  }
+
+  /// After a successful final submit: build the real application PDF and upload it to the CRM lead
+  /// (same attachment bank routing emails use). Never throws.
+  ///
+  /// Returns `true` if the file was uploaded successfully; `false` if skipped or failed.
+  Future<bool> syncApplicationFormSummaryPdfToLeadOnSubmit({
+    required BuildContext context,
+    required SubmissionProvider submissionProvider,
+    required ApplicationProvider applicationProvider,
+  }) async {
+    try {
+      if (submissionProvider.submission.personalData == null) {
+        if (kDebugMode) {
+          debugPrint('PdfGenerationService: submit-time PDF sync skipped (no personalData).');
+        }
+        return false;
+      }
+      final bytes = await _buildApplicationPdfBytes(
+        context: context,
+        submissionProvider: submissionProvider,
+        applicationProvider: applicationProvider,
+        useSampleData: false,
+        allowPlaceholderSampleData: false,
+      );
+      final fileName = _applicationPdfFileName();
+      return await _syncApplicationFormSummaryToLeadBestEffort(
+        applicationProvider: applicationProvider,
+        bytes: bytes,
+        fileName: fileName,
+      );
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('PdfGenerationService: submit-time PDF sync failed (non-fatal): $e\n$st');
+      }
+      return false;
+    }
+  }
+
+  Future<Uint8List> _buildApplicationPdfBytes({
+    required BuildContext context,
+    required SubmissionProvider submissionProvider,
+    required ApplicationProvider applicationProvider,
+    required bool useSampleData,
+    bool allowPlaceholderSampleData = true,
+  }) async {
+    await _hydrateSubmissionForPdfIfNeeded(
+      context: context,
+      submissionProvider: submissionProvider,
+      applicationProvider: applicationProvider,
+    );
+
+    DocumentSubmission submission = submissionProvider.submission;
+
+    if (useSampleData) {
+      submission = _createSampleSubmission();
+    } else if (submission.personalData == null) {
+      if (allowPlaceholderSampleData) {
+        submission = _createSampleSubmission();
+      } else {
+        throw StateError('Cannot build application PDF without personal data.');
+      }
+    }
+
+    final pdf = pw.Document();
+    final logo = await _loadLogo();
+    _addTitlePage(pdf, logo);
+    _addPersonalDataSection(pdf, submission.personalData ?? _createSamplePersonalData());
+    final authToken = await StorageService.instance.getAccessToken();
+    await _addDocumentsSection(pdf, submission, authToken: authToken);
+    _addSummarySection(pdf, submission);
+    return _pdfToBytesWithRetry(pdf);
   }
 
   /// Best-effort hydration so "What's Included" and PDF generation
@@ -1845,45 +1899,89 @@ class PdfGenerationService {
     );
   }
   
-  /// Save PDF and share it
-  Future<void> _saveAndSharePdf(BuildContext context, pw.Document pdf) async {
+  String _applicationPdfFileName() {
+    final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    return 'loan_application_$timestamp.pdf';
+  }
+
+  Future<Uint8List> _pdfToBytesWithRetry(pw.Document pdf) async {
     try {
-      // Save PDF bytes - handle isolate spawn errors
-      Uint8List bytes;
-      try {
-        // pdf.save() uses isolates internally for performance
-        bytes = await pdf.save();
-      } catch (e) {
-        // Handle isolate spawn errors
-        final errorStr = e.toString().toLowerCase();
-        if (errorStr.contains('isolate') || 
-            errorStr.contains('spawn') || 
-            errorStr.contains('concurrent') ||
-            errorStr.contains('thread') ||
-            errorStr.contains('platform')) {
-          // Isolate spawn failed - this can happen on some platforms
-          // Try once more with a small delay
-          await Future.delayed(const Duration(milliseconds: 100));
-          try {
-            bytes = await pdf.save();
-          } catch (retryError) {
-            throw Exception(
-              'PDF generation failed due to system limitations. '
-              'Please try again or restart the app. '
-              'Error: ${retryError.toString()}'
-            );
-          }
-        } else {
-          // Re-throw if it's not an isolate error
-          throw Exception('Failed to save PDF: $e');
+      return await pdf.save();
+    } catch (e) {
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('isolate') ||
+          errorStr.contains('spawn') ||
+          errorStr.contains('concurrent') ||
+          errorStr.contains('thread') ||
+          errorStr.contains('platform')) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        try {
+          return await pdf.save();
+        } catch (retryError) {
+          throw Exception(
+            'PDF generation failed due to system limitations. '
+            'Please try again or restart the app. '
+            'Error: ${retryError.toString()}',
+          );
         }
       }
-      
-      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final fileName = 'loan_application_$timestamp.pdf';
-      
+      throw Exception('Failed to save PDF: $e');
+    }
+  }
+
+  /// Persists the same PDF bytes the user downloads so `/api/loan-submissions` bank emails attach it with other lead documents.
+  Future<bool> _syncApplicationFormSummaryToLeadBestEffort({
+    required ApplicationProvider applicationProvider,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final rawLeadId = applicationProvider.currentApplication?.userId ?? '';
+    final leadId = rawLeadId.trim();
+    if (leadId.isEmpty) {
+      return false;
+    }
+    try {
+      final svc = AdditionalDocumentsService();
+      await svc.removeLeadDocumentsWithDocumentKey(leadId, applicationFormSummaryDocumentKey);
       if (kIsWeb) {
-        // On web, use share_plus
+        await svc.uploadAdditionalDocument(
+          filePath: '',
+          fileBytes: bytes,
+          fileName: fileName,
+          documentType: applicationFormSummaryDocumentKey,
+          leadId: leadId,
+          displayName: 'Loan application form (complete summary)',
+        );
+      } else {
+        final directory = await getTemporaryDirectory();
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsBytes(bytes, flush: true);
+        try {
+          await svc.uploadAdditionalDocument(
+            filePath: file.path,
+            fileName: fileName,
+            documentType: applicationFormSummaryDocumentKey,
+            leadId: leadId,
+            displayName: 'Loan application form (complete summary)',
+          );
+        } finally {
+          try {
+            if (await file.exists()) await file.delete();
+          } catch (_) {}
+        }
+      }
+      return true;
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('PdfGenerationService: could not sync summary PDF to lead (non-fatal): $e\n$st');
+      }
+      return false;
+    }
+  }
+
+  Future<void> _sharePdfBytes(BuildContext context, Uint8List bytes, String fileName) async {
+    try {
+      if (kIsWeb) {
         try {
           await Share.shareXFiles(
             [XFile.fromData(bytes, mimeType: 'application/pdf', name: fileName)],
@@ -1894,12 +1992,11 @@ class PdfGenerationService {
           throw Exception('Failed to share PDF on web. Error: $e');
         }
       } else {
-        // On mobile/desktop, save to temp directory and share
         try {
           final directory = await getTemporaryDirectory();
           final file = File('${directory.path}/$fileName');
           await file.writeAsBytes(bytes);
-          
+
           await Share.shareXFiles(
             [XFile(file.path)],
             text: 'My Document Submission Data',
@@ -1910,12 +2007,10 @@ class PdfGenerationService {
         }
       }
     } catch (e) {
-      // Provide user-friendly error message
       final errorStr = e.toString().toLowerCase();
       if (errorStr.contains('isolate') || errorStr.contains('spawn')) {
         throw Exception('PDF generation encountered a system error. Please try again or restart the app.');
       }
-      // Re-throw with original error if it's already an Exception
       if (e is Exception) {
         rethrow;
       }
