@@ -85,6 +85,7 @@ class AuthProvider with ChangeNotifier {
       final lead = await _additionalDocumentsService.getLeadByUser(
         _user!.email,
         phone: phone,
+        preferredLeadId: _leadId,
       );
       if (lead != null) {
         final rawId = lead['id'];

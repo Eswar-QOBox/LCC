@@ -103,13 +103,25 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
       
       leadData = await _documentsService.getLeadByUser(
         user.email,
-        phone: phoneNumber,
+        phone: phoneNumber ?? authProvider.user?.login,
+        preferredLeadId: authProvider.leadId,
       );
         var resolvedId = leadData?['id']?.toString();
         if (resolvedId == null || resolvedId.isEmpty) {
           resolvedId = authProvider.leadId;
         }
         _leadId = resolvedId;
+
+        // Always load requirements from the resolved lead id (PATCH saves on this row).
+        if (_leadId != null && _leadId!.isNotEmpty) {
+          try {
+            leadData = await _documentsService.getLead(_leadId!);
+          } catch (e) {
+            if (kDebugMode) {
+              print('Could not refresh lead $_leadId for requirements: $e');
+            }
+          }
+        }
 
         if (kDebugMode) {
           print('Lead ID retrieved: $_leadId (fromLead=${leadData?['id']}, authLead=${authProvider.leadId})');

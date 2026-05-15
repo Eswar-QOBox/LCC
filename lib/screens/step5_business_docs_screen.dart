@@ -120,11 +120,12 @@ class _Step5BusinessDocsScreenState extends State<Step5BusinessDocsScreen> {
 
       final leadData = await _documentsService.getLeadByUser(
         user.email,
-        phone: phoneNumber,
+        phone: phoneNumber ?? authProvider.user?.login,
+        preferredLeadId: authProvider.leadId,
       );
 
       setState(() {
-        _leadId = leadData?['id'] as String?;
+        _leadId = leadData?['id']?.toString() ?? authProvider.leadId;
         _loadingLead = false;
       });
 

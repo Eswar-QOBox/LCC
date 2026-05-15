@@ -8,47 +8,80 @@ class AdditionalDocumentsService {
   final ApiClient _apiClient = ApiClient();
 
   /// Find the lead for the authenticated user by email/phone.
-  /// JHipster GET /api/leads returns a paginated list; filter client-side by email.
+  ///
+  /// Uses server-side JHipster criteria (`email.equals`, `phone.equals`) instead of
+  /// scanning the newest 50 leads globally — otherwise the wrong lead is returned as
+  /// the CRM grows and [additionalDocumentRequirements] never reach the app.
   Future<Map<String, dynamic>?> getLeadByUser(
     String email, {
     String? phone,
+    String? preferredLeadId,
   }) async {
     try {
       final normalizedEmail = email.toLowerCase().trim();
-      final normalizedPhone = phone?.trim();
+      final phoneDigits = _digitsOnly(phone);
+      final preferredId = preferredLeadId?.trim();
 
-      final response = await _apiClient.get(
-        ApiConfig.leadsEndpoint,
-        queryParameters: {'size': '50', 'sort': 'createdAt,desc'},
-      );
-
-      if (response.statusCode == 200) {
-        final list = response.data as List<dynamic>;
-        final phoneDigits = _digitsOnly(normalizedPhone);
-
-        for (final item in list) {
-          if (item is! Map) continue;
-          final lead = Map<String, dynamic>.from(item);
-          final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
-          final leadPhone = (lead['phone'] as String? ?? '').trim();
-
-          if (leadEmail.isNotEmpty && leadEmail == normalizedEmail) return _normalizeLead(lead);
-          if (phoneDigits.isNotEmpty) {
-            final leadDigits = _digitsOnly(leadPhone);
-            if (leadDigits.isNotEmpty &&
-                (leadDigits == phoneDigits || leadDigits.endsWith(phoneDigits) || phoneDigits.endsWith(leadDigits))) {
-              return _normalizeLead(lead);
-            }
+      if (preferredId != null && preferredId.isNotEmpty) {
+        try {
+          final byId = await getLead(preferredId);
+          if (_leadMatchesUser(byId, normalizedEmail, phoneDigits)) {
+            return _normalizeLead(byId);
           }
+        } catch (_) {
+          // Fall through to criteria search.
         }
-      } else if (response.statusCode == 401) {
-        throw Exception('Authentication required. Please log in again.');
-      } else if (response.statusCode == 403) {
-        throw Exception('Access denied.');
       }
 
-      if (kDebugMode) print('No lead found for $normalizedEmail');
-      return null;
+      final candidates = <Map<String, dynamic>>[];
+      final seenIds = <String>{};
+
+      void addCandidates(List<Map<String, dynamic>> rows) {
+        for (final row in rows) {
+          final id = row['id']?.toString() ?? '';
+          if (id.isEmpty || seenIds.contains(id)) continue;
+          if (!_leadMatchesUser(row, normalizedEmail, phoneDigits)) continue;
+          seenIds.add(id);
+          candidates.add(row);
+        }
+      }
+
+      final useEmailFilter =
+          normalizedEmail.isNotEmpty && !normalizedEmail.endsWith('@phone.local');
+      if (useEmailFilter) {
+        addCandidates(
+          await _fetchLeadsByCriteria({'email.equals': normalizedEmail}),
+        );
+      }
+      if (phoneDigits.isNotEmpty) {
+        addCandidates(
+          await _fetchLeadsByCriteria({'phone.equals': phoneDigits}),
+        );
+      }
+
+      if (candidates.isEmpty) {
+        if (kDebugMode) {
+          print('No lead found for email=$normalizedEmail phone=$phoneDigits');
+        }
+        return null;
+      }
+
+      if (preferredId != null && preferredId.isNotEmpty) {
+        for (final lead in candidates) {
+          if (lead['id']?.toString() == preferredId) {
+            return _normalizeLead(lead);
+          }
+        }
+      }
+
+      candidates.sort((a, b) {
+        final aReq = _requirementsCount(a);
+        final bReq = _requirementsCount(b);
+        if (aReq != bReq) return bReq.compareTo(aReq);
+        return _createdAtMillis(b).compareTo(_createdAtMillis(a));
+      });
+
+      return _normalizeLead(candidates.first);
     } on DioException catch (e) {
       final statusCode = e.response?.statusCode;
       if (statusCode == 401) throw Exception('Authentication required. Please log in again.');
@@ -58,6 +91,67 @@ class AdditionalDocumentsService {
       if (e.toString().contains('Access denied') || e.toString().contains('Authentication')) rethrow;
       throw Exception('Failed to get lead information. Please try again later.');
     }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchLeadsByCriteria(
+    Map<String, String> criteria,
+  ) async {
+    final response = await _apiClient.get(
+      ApiConfig.leadsEndpoint,
+      queryParameters: {
+        'size': '20',
+        'sort': 'createdAt,desc',
+        ...criteria,
+      },
+    );
+
+    if (response.statusCode == 401) {
+      throw Exception('Authentication required. Please log in again.');
+    }
+    if (response.statusCode == 403) {
+      throw Exception('Access denied.');
+    }
+    if (response.statusCode != 200) return [];
+
+    final list = response.data as List<dynamic>;
+    return list
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  static bool _leadMatchesUser(
+    Map<String, dynamic> lead,
+    String normalizedEmail,
+    String phoneDigits,
+  ) {
+    final leadEmail = (lead['email'] as String? ?? '').toLowerCase().trim();
+    if (normalizedEmail.isNotEmpty &&
+        !normalizedEmail.endsWith('@phone.local') &&
+        leadEmail.isNotEmpty &&
+        leadEmail == normalizedEmail) {
+      return true;
+    }
+    if (phoneDigits.isEmpty) return false;
+    final leadDigits = _digitsOnly(lead['phone'] as String?);
+    if (leadDigits.isEmpty) return false;
+    return leadDigits == phoneDigits ||
+        leadDigits.endsWith(phoneDigits) ||
+        phoneDigits.endsWith(leadDigits);
+  }
+
+  static int _requirementsCount(Map<String, dynamic> lead) {
+    final raw = lead['additionalDocumentRequirements'] ??
+        lead['additional_documents'] ??
+        lead['additionalDocuments'];
+    if (raw is List) return raw.length;
+    return 0;
+  }
+
+  static int _createdAtMillis(Map<String, dynamic> lead) {
+    final raw = lead['createdAt'];
+    if (raw == null) return 0;
+    return DateTime.tryParse(raw.toString())?.millisecondsSinceEpoch ?? 0;
   }
 
   /// Get lead by ID — JHipster GET /api/leads/{id}.
@@ -192,7 +286,15 @@ class AdditionalDocumentsService {
 
   /// Normalize JHipster lead map so id is always a String (JHipster returns int).
   static Map<String, dynamic> _normalizeLead(Map<String, dynamic> lead) {
-    return {...lead, 'id': lead['id']?.toString() ?? ''};
+    final req = lead['additionalDocumentRequirements'] ??
+        lead['additional_documents'] ??
+        lead['additionalDocuments'];
+    return {
+      ...lead,
+      'id': lead['id']?.toString() ?? '',
+      if (req is List)
+        'additionalDocumentRequirements': List<dynamic>.from(req),
+    };
   }
 
   /// Convert JHipster LeadDocumentDTO shape to the legacy shape UploadedDocument.fromJson expects.
