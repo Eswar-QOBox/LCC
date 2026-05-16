@@ -699,8 +699,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
         final businessLoanType =
             (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
-        final isBusinessLoan = loanType.contains('business') &&
-            (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+        final isBusinessLoan = loanType.contains('business');
 
         await appProvider.updateApplication(
           currentStep: isBusinessLoan ? 7 : 6, // Move to preview step
@@ -763,10 +762,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
         final businessLoanType =
             (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
-        final isBusinessLoan = loanType.contains('business') &&
-            (businessLoanType == 'proprietor' ||
-                businessLoanType == 'partnership' ||
-                businessLoanType == 'pvt_limited');
+        final isBusinessLoan = loanType.contains('business');
         final professionalType =
             (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
         final isProfessionalLoan = loanType.contains('professional') &&
@@ -884,8 +880,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
               (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
           final professionalLoanType =
               (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
-          final isBusinessLoan = loanType.contains('business') &&
-              (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+          final isBusinessLoan = loanType.contains('business');
           final isProfessionalLoan = loanType.contains('professional') &&
               (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
           final isStudentLoan = loanType.contains('student');
@@ -926,8 +921,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
                     final professionalLoanType =
                         (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
-                    final isBusinessLoan = loanType.contains('business') &&
-                        (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+                    final isBusinessLoan = loanType.contains('business');
                     final isProfessionalLoan = loanType.contains('professional') &&
                         (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
                     final isStudentLoan = loanType.contains('student');

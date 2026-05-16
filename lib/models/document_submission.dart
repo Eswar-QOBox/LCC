@@ -120,6 +120,19 @@ class DocumentSubmission {
           personalData!.isComplete;
     }
 
+    // Any other Business Loan: never require salary slips (subtype may be restored later).
+    if (isBusinessLoan) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
     // Professional Loan flow (Doctor/CA): requires professional docs only; no salary slips.
     final isProfessionalLoan = (loanType ?? '').toLowerCase().contains('professional');
     final professionalType = (professionalLoanType ?? '').toLowerCase();

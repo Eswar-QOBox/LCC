@@ -4,6 +4,8 @@ class LoanApplication {
   final String id;
   final String userId;
   final String loanType;
+  /// Proprietor / partnership / pvt_limited — stored in remarks meta for Business Loan.
+  final String? businessLoanType;
   final int currentStep;
   final String status; // draft, in_progress, paused, submitted, approved, rejected
   final String applicationId;
@@ -23,6 +25,7 @@ class LoanApplication {
     required this.id,
     required this.userId,
     required this.loanType,
+    this.businessLoanType,
     required this.currentStep,
     required this.status,
     required this.applicationId,
@@ -39,11 +42,12 @@ class LoanApplication {
     this.submittedAt,
   });
 
-  LoanApplication copyWith({String? loanType}) {
+  LoanApplication copyWith({String? loanType, String? businessLoanType}) {
     return LoanApplication(
       id: id,
       userId: userId,
       loanType: loanType ?? this.loanType,
+      businessLoanType: businessLoanType ?? this.businessLoanType,
       currentStep: currentStep,
       status: status,
       applicationId: applicationId,
@@ -158,6 +162,7 @@ class LoanApplication {
       id: id,
       userId: userId,
       loanType: loanType,
+      businessLoanType: meta['businessLoanType'] as String?,
       currentStep: currentStep,
       status: status,
       applicationId: applicationId,
@@ -186,6 +191,7 @@ class LoanApplication {
       id: json['id'] as String,
       userId: json['userId'] as String? ?? '',
       loanType: _normalizeBackendLoanType(json['loanType'] as String? ?? ''),
+      businessLoanType: json['businessLoanType'] as String?,
       currentStep: json['currentStep'] is int
           ? json['currentStep'] as int
           : int.tryParse(json['currentStep']?.toString() ?? '') ?? 1,
@@ -217,6 +223,8 @@ class LoanApplication {
     return {
       'currentStep': currentStep,
       'status': status,
+      if (businessLoanType != null && businessLoanType!.isNotEmpty)
+        'businessLoanType': businessLoanType,
       if (loanAmount != null) 'loanAmount': loanAmount,
       if (step1Selfie != null) 'step1Selfie': step1Selfie,
       if (step2Aadhaar != null) 'step2Aadhaar': step2Aadhaar,
@@ -233,6 +241,7 @@ class LoanApplication {
       'id': id,
       'userId': userId,
       'loanType': loanType,
+      if (businessLoanType != null) 'businessLoanType': businessLoanType,
       'currentStep': currentStep,
       'status': status,
       'applicationId': applicationId,

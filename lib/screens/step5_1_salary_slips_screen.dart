@@ -30,6 +30,7 @@ import '../widgets/prevent_close_on_back.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../utils/debug_log.dart';
 import '../utils/step4_merge.dart';
+import '../utils/business_loan_flow.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
@@ -55,6 +56,10 @@ class Step5_1SalarySlipsScreen extends StatefulWidget {
 class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   static const int _requiredSlipCount = SalarySlips.requiredSlipCount;
 
+  /// ML Kit often throws `InputImageConverterError` on Android after crop/picker URIs.
+  /// Salary slips still upload to the server; eligibility prefill parses PDFs on the backend.
+  static const bool _enableSalarySlipOcr = false;
+
   final FileUploadService _fileUploadService = FileUploadService();
   final ImagePicker _imagePicker = ImagePicker();
   List<SalarySlipItem> _slipItems = [];
@@ -65,7 +70,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   List<bool> _slipFailures = [];
   List<Uint8List?> _slipBytes = [];
   late final List<DateTime> _requiredMonths;
-  /// OCR must succeed for each slip (on mobile) before proceeding.
+  /// When [_enableSalarySlipOcr] is true, each local slip must pass ML Kit before Continue.
   final Map<int, bool> _ocrCompleteBySlot = {};
   final Map<int, String?> _ocrIssueBySlot = {};
 
@@ -438,11 +443,25 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     return path.startsWith('http') || path.startsWith('/uploads/') || path.startsWith('/api/');
   }
 
+  void _markSalarySlipOcrSkipped(int slotIndex) {
+    if (!mounted) return;
+    setState(() {
+      _ocrCompleteBySlot[slotIndex] = true;
+      _ocrIssueBySlot[slotIndex] = null;
+    });
+  }
+
   /// Run OCR on salary slip (image or PDF first page). Skips on web and for remote/blob paths.
   Future<void> _performDocumentOcrForSlot(int slotIndex, String path, bool isPdf) async {
     if (kIsWeb) return;
     if (_isServerStoredPath(path)) return;
     if (path.startsWith('blob:')) return;
+
+    if (!_enableSalarySlipOcr) {
+      _markSalarySlipOcrSkipped(slotIndex);
+      return;
+    }
+
     try {
       Uint8List? imageBytes;
       if (isPdf && path.toLowerCase().endsWith('.pdf') && OcrPdf.isSupported) {
@@ -454,10 +473,24 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         } catch (e) {
           if (kDebugMode) debugPrint('[SalarySlips] PDF render for OCR failed: $e');
         }
+      } else {
+        imageBytes = await OcrService.readLocalImageBytes(path);
+        if (imageBytes == null) {
+          try {
+            imageBytes = await XFile(path).readAsBytes();
+          } catch (e) {
+            if (kDebugMode) debugPrint('[SalarySlips] readAsBytes failed: $e');
+          }
+        }
       }
-      final result = imageBytes != null
-          ? await OcrService.extractDocumentText(path, imageBytes: imageBytes)
-          : await OcrService.extractDocumentText(path);
+      if (imageBytes == null || imageBytes.isEmpty) {
+        setState(() {
+          _ocrCompleteBySlot[slotIndex] = false;
+          _ocrIssueBySlot[slotIndex] = 'Could not read image file';
+        });
+        return;
+      }
+      final result = await OcrService.extractDocumentText(path, imageBytes: imageBytes);
       if (!mounted) return;
       if (result.success) {
         final text = result.fullText?.trim() ?? '';
@@ -878,8 +911,27 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
               submissionProvider.submission.loanType ??
               '')
           .toLowerCase();
-      if (loanType.contains('business')) {
-        context.go(AppRoutes.step6Preview);
+      final appBusinessType = appProvider.currentApplication?.businessLoanType;
+      if (appBusinessType != null &&
+          appBusinessType.isNotEmpty &&
+          submissionProvider.submission.businessLoanType != appBusinessType) {
+        submissionProvider.setBusinessLoanType(appBusinessType);
+      }
+      if (!BusinessLoanFlow.requiresSalarySlips(
+        loanType: loanType,
+        businessLoanType: submissionProvider.submission.businessLoanType ??
+            appBusinessType,
+        submission: submissionProvider.submission,
+      )) {
+        context.go(
+          BusinessLoanFlow.routeIfBusinessLoanOnSalarySlipsScreen(
+            loanType: loanType,
+            businessLoanType: submissionProvider.submission.businessLoanType ??
+                appBusinessType,
+            submission: submissionProvider.submission,
+            fromPreview: widget.fromPreview,
+          ),
+        );
         return;
       }
       _loadExistingData();
@@ -894,6 +946,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   Future<void> _runOcrForExistingLocalSlips() async {
     if (kIsWeb) return;
     if (!mounted) return;
+    if (!_enableSalarySlipOcr) {
+      setState(() {
+        for (int i = 0; i < _requiredSlipCount && i < _slipItems.length; i++) {
+          if (_slipItems[i].hasFile) {
+            _ocrCompleteBySlot[i] = true;
+            _ocrIssueBySlot[i] = null;
+          }
+        }
+      });
+      return;
+    }
     for (int i = 0; i < _requiredSlipCount && i < _slipItems.length; i++) {
       final item = _slipItems[i];
       if (!item.hasFile) continue;
@@ -1363,8 +1426,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       );
       return;
     }
-    // On mobile: require OCR success for each slip (remote paths treated as already verified).
-    if (!kIsWeb) {
+    // On mobile: optional ML Kit month/name check per slip (disabled — see [_enableSalarySlipOcr]).
+    if (_enableSalarySlipOcr && !kIsWeb) {
       final issues = <String>[];
       for (int i = 0; i < _requiredSlipCount; i++) {
         final item = _slipItems[i];

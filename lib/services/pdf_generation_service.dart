@@ -1013,7 +1013,8 @@ class PdfGenerationService {
             _buildSimpleDocRow('Bank Statement Format', submission.bankStatement?.isPdf == true ? 'PDF' : 'Image'),
             if (isProfessionalLoan) ...[
               _buildSimpleDocRow('Salary Slips', 'Not required (Professional Loan)'),
-            ] else if (!(isBusinessLoan && (isBusinessProprietor || isBusinessPartnership))) ...[
+            ] else if (!(isBusinessLoan &&
+                (isBusinessProprietor || isBusinessPartnership || isBusinessPvtLimited))) ...[
               if (submission.hasCoApplicant) ...[
                 _buildSimpleDocRow(
                   'Co-applicant Aadhaar',
@@ -1199,7 +1200,9 @@ class PdfGenerationService {
                   (submission.coApplicantAadhaar?.backPath != null && submission.coApplicantAadhaar?.backIsPdf == false) ||
                   (submission.coApplicantPan?.frontPath != null && submission.coApplicantPan?.isPdf == false)
                 )) ||
-                (isBusinessLoan && (isBusinessProprietor || isBusinessPartnership) && (
+                (isBusinessLoan &&
+                    (isBusinessProprietor || isBusinessPartnership || isBusinessPvtLimited) &&
+                    (
                   (business?.spouseAadhaar?.frontPath != null && business?.spouseAadhaar?.frontIsPdf == false) ||
                   (business?.spouseAadhaar?.backPath != null && business?.spouseAadhaar?.backIsPdf == false) ||
                   (business?.spousePan?.frontPath != null && business?.spousePan?.isPdf == false) ||

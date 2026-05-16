@@ -27,6 +27,7 @@ import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
 import '../utils/debug_log.dart';
 import '../utils/step4_merge.dart';
+import '../utils/business_loan_flow.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
   const Step4BankStatementScreen({
@@ -969,42 +970,41 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     if (mounted && saved) {
     final appProvider = context.read<ApplicationProvider>();
     final submissionProvider = context.read<SubmissionProvider>();
-    final loanType = (appProvider.currentApplication?.loanType ??
-            submissionProvider.submission.loanType ??
-            '')
-        .toLowerCase();
-      final businessLoanType =
-          (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+      final appLoanType =
+          (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+      final submissionLoanType =
+          (submissionProvider.submission.loanType ?? '').toLowerCase();
+      final loanType = appLoanType.contains('business')
+          ? appLoanType
+          : (submissionLoanType.contains('business') ? submissionLoanType : appLoanType);
+      final businessLoanType = BusinessLoanFlow.normalizeType(
+        submissionProvider.submission.businessLoanType ??
+            appProvider.currentApplication?.businessLoanType,
+      );
 
-      final isBusiness = loanType.contains('business');
-      final isBusinessProprietor = isBusiness && businessLoanType == 'proprietor';
-      final isBusinessPartnership = isBusiness && businessLoanType == 'partnership';
-      final isBusinessPvtLimited = isBusiness && businessLoanType == 'pvt_limited';
       final isProfessional = loanType.contains('professional');
       final professionalType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
       final isProfessionalDoctorOrCa = isProfessional && (professionalType == 'doctor' || professionalType == 'ca');
       final isStudent = loanType.contains('student');
-      if (widget.fromPreview) {
-        context.go(AppRoutes.step6Preview);
-        return;
+      final resolvedBusinessType = BusinessLoanFlow.resolveBusinessLoanType(
+        loanType: loanType,
+        businessLoanType: businessLoanType,
+        submission: submissionProvider.submission,
+      );
+      if (resolvedBusinessType != null &&
+          resolvedBusinessType != submissionProvider.submission.businessLoanType) {
+        submissionProvider.setBusinessLoanType(resolvedBusinessType);
       }
-      if (widget.isCoApplicant) {
-        context.go(AppRoutes.coApplicantSalarySlips);
-        return;
-      }
-      final isPersonalLoan = !isBusiness && !isProfessionalDoctorOrCa && !isStudent;
       context.go(
-        isBusinessProprietor
-            ? AppRoutes.step5BusinessDocs
-            : (isBusinessPartnership || isBusinessPvtLimited
-                ? AppRoutes.partnerCount
-                : isProfessionalDoctorOrCa
-                    ? AppRoutes.step5ProfessionalDocs
-                    : isStudent
-                        ? AppRoutes.step5StudentDocs
-                        : isPersonalLoan
-                            ? AppRoutes.step5_1SalarySlips
-                            : AppRoutes.step5_1SalarySlips),
+        BusinessLoanFlow.routeAfterBankStatement(
+          loanType: loanType,
+          businessLoanType: resolvedBusinessType ?? businessLoanType,
+          submission: submissionProvider.submission,
+          fromPreview: widget.fromPreview,
+          isCoApplicant: widget.isCoApplicant,
+          isProfessionalDoctorOrCa: isProfessionalDoctorOrCa,
+          isStudent: isStudent,
+        ),
       );
     }
   }

@@ -12,6 +12,7 @@ import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
 import '../providers/application_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/submission_provider.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
@@ -349,21 +350,48 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       await appProvider.loadApplication(application.id);
       if (!context.mounted) return;
 
+      final loadedApp = appProvider.currentApplication;
+      if (loadedApp != null) {
+        final submissionProvider = context.read<SubmissionProvider>();
+        submissionProvider.setLoanType(loadedApp.loanType);
+        if (loadedApp.businessLoanType != null &&
+            loadedApp.businessLoanType!.trim().isNotEmpty) {
+          submissionProvider.setBusinessLoanType(loadedApp.businessLoanType);
+        }
+      }
+
       String resolveRouteForDraft(LoanApplication app) {
         // Backend currentStep is constrained to 1..7.
-        // For Business Loan (Proprietor) we map steps 4-7 to our extended UI.
+        // Business Loan uses extended UI; route depends on proprietor vs partnership/Pvt Ltd.
         final isBusiness = (app.loanType).toLowerCase().contains('business');
+        final businessType = (app.businessLoanType ?? '').toLowerCase();
+        final isProprietor = businessType == 'proprietor';
+        final isPartnershipOrPvt =
+            businessType == 'partnership' || businessType == 'pvt_limited';
         if (isBusiness) {
-          switch (app.currentStep) {
-            case 4:
-              return AppRoutes.step4SpouseAadhaar;
-            case 5:
-              return AppRoutes.step5SpousePan;
-            case 6:
-              return AppRoutes.step4BankStatement;
-            case 7:
-              // After bank statement we continue with GST/Labour → MSME → OHP → Personal → Preview.
-              return AppRoutes.step6Preview;
+          if (isProprietor) {
+            switch (app.currentStep) {
+              case 4:
+                return AppRoutes.step4SpouseAadhaar;
+              case 5:
+                return AppRoutes.step5SpousePan;
+              case 6:
+                return AppRoutes.step4BankStatement;
+              case 7:
+                return AppRoutes.step6Preview;
+            }
+          }
+          if (isPartnershipOrPvt) {
+            switch (app.currentStep) {
+              case 4:
+                return AppRoutes.step4BankStatement;
+              case 5:
+                return AppRoutes.partnerCount;
+              case 6:
+                return AppRoutes.step5BusinessDocs;
+              case 7:
+                return AppRoutes.step6Preview;
+            }
           }
         }
         // Student loan: backend step 5 is used after bank save and after academic docs save.

@@ -421,6 +421,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
     // Ensure local draft knows the current loan type (used for completeness rules).
     submissionProvider.setLoanType(application.loanType);
+    if (application.businessLoanType != null &&
+        application.businessLoanType!.trim().isNotEmpty) {
+      submissionProvider.setBusinessLoanType(application.businessLoanType);
+    }
 
 
     // Helper function to build full URL from relative path

@@ -1257,6 +1257,31 @@ class OcrService {
   /// Extract full text from any document image (e.g. professional loan docs).
   /// Uses same ML Kit OCR as Aadhaar/PAN/bank statement. Supports image path or bytes.
   /// For PDFs, render first page to image bytes elsewhere and pass imageBytes.
+  /// Strips `file://` and normalizes paths for [dart:io] reads on Android/iOS.
+  static String normalizeLocalPath(String path) {
+    var p = path.trim();
+    if (p.startsWith('file://')) {
+      p = p.substring(7);
+    }
+    return p;
+  }
+
+  /// Reads image bytes from a local filesystem path (ML Kit often fails on raw URIs).
+  static Future<Uint8List?> readLocalImageBytes(String path) async {
+    if (kIsWeb) return null;
+    try {
+      final p = normalizeLocalPath(path);
+      if (p.isEmpty) return null;
+      final file = io.File(p);
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+    } catch (e) {
+      debugPrint('[OcrService] readLocalImageBytes failed: $e');
+    }
+    return null;
+  }
+
   static Future<DocumentOcrResult> extractDocumentText(
     String imagePath, {
     Uint8List? imageBytes,
@@ -1269,12 +1294,16 @@ class OcrService {
         );
       }
       InputImage inputImage;
-      if (imageBytes != null) {
-        final tempFile = await _createTempFile(imageBytes);
-        inputImage = InputImage.fromFilePath(tempFile.path);
-      } else {
-        inputImage = InputImage.fromFilePath(imagePath);
+      Uint8List? bytes = imageBytes;
+      bytes ??= await readLocalImageBytes(imagePath);
+      if (bytes == null || bytes.isEmpty) {
+        return DocumentOcrResult(
+          success: false,
+          errorMessage: 'Could not read image file for OCR',
+        );
       }
+      final tempFile = await _createTempFile(bytes);
+      inputImage = InputImage.fromFilePath(tempFile.path);
       final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       textRecognizer.close();

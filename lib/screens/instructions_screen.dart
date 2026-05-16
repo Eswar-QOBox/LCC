@@ -55,10 +55,20 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     ),
   ];
 
+  bool get _isBusinessLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    return loanType.contains('business');
+  }
+
   bool get _isBusinessProprietor {
     final loanType = (widget.loanType ?? '').toLowerCase();
     final businessLoanType = (widget.businessLoanType ?? '').toLowerCase();
     return loanType.contains('business') && businessLoanType == 'proprietor';
+  }
+
+  bool get _isBusinessPartnershipOrPvt {
+    final t = (widget.businessLoanType ?? '').toLowerCase();
+    return _isBusinessLoan && (t == 'partnership' || t == 'pvt_limited');
   }
 
   bool get _isProfessionalLoan {
@@ -597,7 +607,28 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             iconColor: AppTheme.secondaryColor,
                           ),
                           const SizedBox(height: 12),
-                        ] else ...[
+                        ] else if (_isBusinessPartnershipOrPvt) ...[
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.groups,
+                            title: 'Partners KYC',
+                            description: 'Aadhaar and PAN for each partner',
+                            iconColor: AppTheme.successColor,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDocumentItem(
+                            context,
+                            icon: Icons.business,
+                            title: widget.businessLoanType == 'pvt_limited'
+                                ? 'Company Documents'
+                                : 'Partnership Documents',
+                            description: widget.businessLoanType == 'pvt_limited'
+                                ? 'Company PAN, MOA, AOA, GST/Labour, ITR'
+                                : 'Company PAN, Partnership deed, GST/Labour, ITR',
+                            iconColor: AppTheme.primaryColor,
+                          ),
+                          const SizedBox(height: 12),
+                        ] else if (!_isBusinessLoan) ...[
                           if (_isPersonalLoan && widget.withCoApplicant) ...[
                             _buildDocumentItem(
                               context,
@@ -840,6 +871,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                     final application =
                                         await _applicationService.createApplication(
                                       loanType: loanType,
+                                      businessLoanType: widget.businessLoanType,
                                       currentStep: 1,
                                       status: 'draft',
                                       customerLeadId: customerLeadId,

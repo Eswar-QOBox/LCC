@@ -92,6 +92,7 @@ class LoanApplicationService {
   /// requires this for `ROLE_USER` creates (`lead` must reference an accessible lead).
   Future<LoanApplication> createApplication({
     required String loanType,
+    String? businessLoanType,
     double? loanAmount,
     int currentStep = 1,
     String status = 'draft',
@@ -106,6 +107,8 @@ class LoanApplicationService {
       final meta = jsonEncode({
         'currentStep': currentStep,
         'status': status,
+        if (businessLoanType != null && businessLoanType.trim().isNotEmpty)
+          'businessLoanType': businessLoanType.trim(),
         if (loanAmount != null) 'loanAmount': loanAmount,
       });
 
@@ -162,6 +165,7 @@ class LoanApplicationService {
   Future<LoanApplication> updateApplication(
     String applicationId, {
     String? loanType,
+    String? businessLoanType,
     double? loanAmount,
     int? currentStep,
     String? status,
@@ -181,6 +185,9 @@ class LoanApplicationService {
       // Merge updates into existing meta
       if (currentStep != null) existingMeta['currentStep'] = currentStep;
       if (status != null) existingMeta['status'] = status;
+      if (businessLoanType != null && businessLoanType.trim().isNotEmpty) {
+        existingMeta['businessLoanType'] = businessLoanType.trim();
+      }
       if (loanAmount != null) existingMeta['loanAmount'] = loanAmount;
       if (step1Selfie != null) existingMeta['step1Selfie'] = step1Selfie;
       if (step2Aadhaar != null) existingMeta['step2Aadhaar'] = step2Aadhaar;
