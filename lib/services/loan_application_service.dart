@@ -202,7 +202,7 @@ class LoanApplicationService {
         'loanType': loanType != null ? _loanTypeForBackend(loanType) : existing.loanType,
         'applicantName': existing.applicationId,
         'status': 'PENDING',
-        'attemptNumber': 1,
+        'attemptNumber': existing.attemptNumber,
         'remarks': jsonEncode(existingMeta),
         'createdAt': existing.createdAt.toUtc().toIso8601String(),
       };

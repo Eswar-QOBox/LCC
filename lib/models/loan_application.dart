@@ -20,6 +20,8 @@ class LoanApplication {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? submittedAt;
+  /// Bank routing attempt (1 = first bank, 2+ after reroute on dashboard).
+  final int attemptNumber;
 
   LoanApplication({
     required this.id,
@@ -40,6 +42,7 @@ class LoanApplication {
     required this.createdAt,
     required this.updatedAt,
     this.submittedAt,
+    this.attemptNumber = 1,
   });
 
   LoanApplication copyWith({String? loanType, String? businessLoanType}) {
@@ -62,6 +65,7 @@ class LoanApplication {
       createdAt: createdAt,
       updatedAt: updatedAt,
       submittedAt: submittedAt,
+      attemptNumber: attemptNumber,
     );
   }
 
@@ -158,6 +162,8 @@ class LoanApplication {
       return DateTime.now();
     }
 
+    final attemptNumber = (json['attemptNumber'] as num?)?.toInt() ?? 1;
+
     return LoanApplication(
       id: id,
       userId: userId,
@@ -177,6 +183,7 @@ class LoanApplication {
       createdAt: parseDate(json['createdAt']),
       updatedAt: parseDate(json['respondedAt'] ?? json['createdAt']),
       submittedAt: status == 'submitted' ? parseDate(json['respondedAt'] ?? json['createdAt']) : null,
+      attemptNumber: attemptNumber,
     );
   }
 
