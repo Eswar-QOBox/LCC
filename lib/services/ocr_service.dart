@@ -1033,7 +1033,12 @@ class OcrService {
     DateTime? statementPeriodEnd,
   }) async {
     try {
+      debugPrint(
+          '[BankStatement OCR] ENTER path=${imagePath.split(RegExp(r'[/\\]')).last} '
+          'hasBytes=${imageBytes != null} ref="${aadhaarNameReference ?? ""}" '
+          'period=${statementPeriodStart != null ? "$statementPeriodStart..$statementPeriodEnd" : "none"}');
       if (kIsWeb) {
+        debugPrint('[BankStatement OCR] FAIL: web not supported');
         return BankStatementOcrResult(
           success: false,
           errorMessage: 'Bank statement OCR not supported on web',
@@ -1042,6 +1047,7 @@ class OcrService {
       InputImage inputImage;
       if (imageBytes != null) {
         final tempFile = await _createTempFile(imageBytes);
+        debugPrint('[BankStatement OCR] temp image: ${tempFile.path}');
         inputImage = InputImage.fromFilePath(tempFile.path);
       } else {
         inputImage = InputImage.fromFilePath(imagePath);
@@ -1054,7 +1060,7 @@ class OcrService {
       final fullText = recognizedText.text;
       debugPrint('=== Bank Statement OCR Full Text ===');
       debugPrint(fullText);
-      debugPrint('=== End Bank Statement OCR ===');
+      debugPrint('=== End Bank Statement OCR (${fullText.length} chars, ${recognizedText.blocks.length} blocks) ===');
 
       final Set<int>? allowedMonthKeys;
       final String textForAnalysis;
@@ -1063,6 +1069,10 @@ class OcrService {
         final end = statementPeriodEnd;
         allowedMonthKeys = _monthKeysForStatementPeriod(start, end);
         textForAnalysis = _filterBankStatementOcrTextByPeriod(fullText, start, end);
+        debugPrint(
+            '[BankStatement OCR] period filter: allowedMonths=$allowedMonthKeys '
+            'fullLines=${fullText.split(RegExp(r'[\r\n]+')).where((l) => l.trim().isNotEmpty).length} '
+            'keptLines=${textForAnalysis.split(RegExp(r'[\r\n]+')).where((l) => l.trim().isNotEmpty).length}');
       } else {
         allowedMonthKeys = null;
         textForAnalysis = fullText;
@@ -1118,15 +1128,20 @@ class OcrService {
 
       String? best;
       int bestScore = -1;
+      final scoredCandidates = <String>[];
       for (final line in lines) {
         if (!looksLikePersonName(line)) continue;
         final s = scoreNameCandidate(line, aadhaarNameReference);
+        if (kDebugMode && scoredCandidates.length < 8) {
+          scoredCandidates.add('"$line" score=$s');
+        }
         if (s > bestScore) {
           bestScore = s;
           best = line;
         }
       }
       if (best == null) {
+        debugPrint('[BankStatement OCR] no line candidate; scanning ${recognizedText.blocks.length} blocks');
         for (final block in recognizedText.blocks) {
           final text = block.text.trim();
           if (text.isEmpty) continue;
@@ -1136,11 +1151,22 @@ class OcrService {
           }
           if (!looksLikePersonName(text)) continue;
           final s = scoreNameCandidate(text, aadhaarNameReference);
+          if (kDebugMode && scoredCandidates.length < 8) {
+            scoredCandidates.add('block:"$text" score=$s');
+          }
           if (s > bestScore) {
             bestScore = s;
             best = text;
           }
         }
+      }
+      if (kDebugMode && scoredCandidates.isNotEmpty) {
+        debugPrint('[BankStatement OCR] name candidates: ${scoredCandidates.join('; ')}');
+      }
+      if (best == null) {
+        debugPrint(
+            '[BankStatement OCR] WARN: no account-holder name candidate '
+            '(lines=${lines.length} ref="${aadhaarNameReference ?? ""}")');
       }
 
       // Check if Aadhaar name words appear in period-relevant statement text only.
@@ -1150,7 +1176,8 @@ class OcrService {
               aadhaarNameReference.trim(), analysisSource);
 
       debugPrint(
-          'Bank Statement OCR - extracted: $best, nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
+          'Bank Statement OCR - extracted: $best (score=$bestScore), '
+          'nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
       if (kDebugMode) {
         debugPrint(
             '[DocValidation] BankStatement OCR summary '
@@ -1164,8 +1191,9 @@ class OcrService {
         fullText: fullText,
         nameMatchesAadhaar: nameMatchesAadhaar,
       );
-    } catch (e) {
-      debugPrint('Bank Statement OCR Error: $e');
+    } catch (e, st) {
+      debugPrint('[BankStatement OCR] Error: $e');
+      debugPrint('[BankStatement OCR] Stack: $st');
       return BankStatementOcrResult(
         success: false,
         errorMessage: 'Failed to extract: ${e.toString()}',
@@ -1310,7 +1338,7 @@ class OcrService {
       final fullText = recognizedText.text;
       debugPrint('=== Document OCR Full Text ===');
       debugPrint(fullText.isEmpty ? '(empty)' : fullText);
-      debugPrint('=== End Document OCR ===');
+      debugPrint('=== End Document OCR (${fullText.length} chars) ===');
       return DocumentOcrResult(
         success: true,
         fullText: fullText.isEmpty ? null : fullText,
