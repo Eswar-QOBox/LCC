@@ -1060,7 +1060,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final professionalType = (submission.professionalLoanType ?? '').toLowerCase();
     final isProfessionalDoctorOrCa = isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca');
     final isStudentLoan = normalizedLoanType.contains('student');
-    final isMortgageLoan = normalizedLoanType.contains('mortgage');
+    final requiresPropertyDetails =
+        normalizedLoanType.contains('mortgage') || normalizedLoanType.contains('home');
 
     final step2Aadhaar = appProvider.currentApplication?.step2Aadhaar;
     final rawFrontRect = step2Aadhaar is Map ? (step2Aadhaar as Map)['frontAadhaarNumberRect'] : null;
@@ -1537,7 +1538,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     : '✗ Missing',
                                 submission.coApplicantFirmDocuments?.isFirmPanUploaded == true,
                               ),
-                            if (isMortgageLoan)
+                            if (requiresPropertyDetails)
                               _buildSummaryRow(
                                 context,
                                 'Property Details',
@@ -2451,7 +2452,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               )
                             : _buildEmptyState(context, 'Not uploaded'),
                       ),
-                      if (isMortgageLoan) ...[
+                      if (requiresPropertyDetails) ...[
                         const SizedBox(height: 20),
                         _buildPremiumSection(
                           context,

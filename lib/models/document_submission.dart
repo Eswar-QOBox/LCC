@@ -170,10 +170,11 @@ class DocumentSubmission {
     }
 
     // Default (personal loan flow): requires salary slips; if co-applicant, their KYC too.
-    // Mortgage Loan additionally requires the property details documents.
-    final isMortgageLoan = (loanType ?? '').toLowerCase().contains('mortgage');
+    // Home Loan and Mortgage Loan additionally require the property details documents.
+    final lt = (loanType ?? '').toLowerCase();
+    final requiresProperty = lt.contains('mortgage') || lt.contains('home');
     final propertyOk =
-        !isMortgageLoan || (propertyDetailsDocuments?.isComplete ?? false);
+        !requiresProperty || (propertyDetailsDocuments?.isComplete ?? false);
     final personalBase = selfiePath != null &&
         aadhaar != null &&
         aadhaar!.isComplete &&
@@ -272,8 +273,9 @@ class DocumentSubmission {
         );
       }
     }
-    final isMortgageLoan = (loanType ?? '').toLowerCase().contains('mortgage');
-    if (isMortgageLoan && !(propertyDetailsDocuments?.isComplete ?? false)) {
+    final lt = (loanType ?? '').toLowerCase();
+    final requiresProperty = lt.contains('mortgage') || lt.contains('home');
+    if (requiresProperty && !(propertyDetailsDocuments?.isComplete ?? false)) {
       missing.add('Property Details (add at least one property document)');
     }
     if (hasCoApplicant) {

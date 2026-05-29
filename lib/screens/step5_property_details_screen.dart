@@ -180,7 +180,7 @@ class _Step5PropertyDetailsScreenState
   }
 
   String _documentTypeFor(PropertyDetailEntry entry) =>
-      'applicant_mortgage_property_${entry.id}';
+      'applicant_property_${entry.id}';
 
   Future<String?> _uploadIfNeeded(PropertyDetailEntry entry) async {
     final path = entry.path;
@@ -224,6 +224,7 @@ class _Step5PropertyDetailsScreenState
         return;
       }
       final blobUrl = createBlobUrl(bytes, mimeType: 'application/pdf');
+      if (!mounted) return;
       setState(() => _pickedBytes[entry.id] = bytes);
       context
           .read<SubmissionProvider>()
@@ -231,6 +232,7 @@ class _Step5PropertyDetailsScreenState
       return;
     }
     if (file.path == null) return;
+    if (!mounted) return;
     context
         .read<SubmissionProvider>()
         .setPropertyDetailPath(entry.id, file.path!, isPdf: true);
@@ -245,12 +247,14 @@ class _Step5PropertyDetailsScreenState
     if (kIsWeb) {
       final bytes = await picked.readAsBytes();
       final blobUrl = createBlobUrl(bytes, mimeType: 'image/jpeg');
+      if (!mounted) return;
       setState(() => _pickedBytes[entry.id] = bytes);
       context
           .read<SubmissionProvider>()
           .setPropertyDetailPath(entry.id, blobUrl, isPdf: false);
       return;
     }
+    if (!mounted) return;
     context
         .read<SubmissionProvider>()
         .setPropertyDetailPath(entry.id, picked.path, isPdf: false);
@@ -437,6 +441,7 @@ class _Step5PropertyDetailsScreenState
     }
     setState(() => _isSaving = true);
     try {
+      final appProvider = context.read<ApplicationProvider>();
       for (final entry in List.of(entries)) {
         if (!entry.isComplete) continue;
         final uploaded = await _uploadIfNeeded(entry);
@@ -448,7 +453,7 @@ class _Step5PropertyDetailsScreenState
           );
         }
       }
-      await context.read<ApplicationProvider>().updateApplication(currentStep: 5);
+      await appProvider.updateApplication(currentStep: 5);
       if (mounted) {
         PremiumToast.showSuccess(context, 'Property details saved.');
         context.go(
@@ -734,7 +739,7 @@ class _Step5PropertyDetailsScreenState
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Required for Mortgage Loan',
+                                    'Property Details Required',
                                     style: theme.textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.w800,
                                     ),

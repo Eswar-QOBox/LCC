@@ -19,19 +19,24 @@ class HomeMortgageLoanFlow {
     return t.contains('home') || t.contains('mortgage') || t.contains('car');
   }
 
-  /// Whether the Mortgage Property Details step still needs to be completed.
+  /// Loan types that include the Property Details step (Home Loan & Mortgage).
+  static bool requiresPropertyDetails(String? loanType) =>
+      isHomeLoan(loanType) || isMortgageLoan(loanType);
+
+  /// Whether the Property Details step still needs to be completed.
   static bool needsPropertyDetails({
     required String? loanType,
     required DocumentSubmission? submission,
   }) {
-    if (!isMortgageLoan(loanType)) return false;
+    if (!requiresPropertyDetails(loanType)) return false;
     return !(submission?.propertyDetailsDocuments?.isComplete ?? false);
   }
 
   /// Route to use once salary slips (and any co-applicant income docs) are done.
   ///
-  /// Mortgage inserts the Property Details step before Personal Data; all other
-  /// loan types fall through to the existing Personal Data / Preview decision.
+  /// Home Loan and Mortgage insert the Property Details step before Personal
+  /// Data; all other loan types fall through to the existing Personal Data /
+  /// Preview decision.
   static String routeAfterIncomeDocs({
     required String? loanType,
     required DocumentSubmission? submission,

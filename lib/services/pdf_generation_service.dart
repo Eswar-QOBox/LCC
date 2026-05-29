@@ -846,10 +846,12 @@ class PdfGenerationService {
       }
     }
 
-    // Mortgage property details (named uploads, images only)
-    final isMortgageLoan = (submission.loanType ?? '').toLowerCase().contains('mortgage');
+    // Home Loan / Mortgage property details (named uploads, images only)
+    final loanTypeLower = (submission.loanType ?? '').toLowerCase();
+    final requiresPropertyDetails =
+        loanTypeLower.contains('mortgage') || loanTypeLower.contains('home');
     final propertyImageEntries = <MapEntry<String, pw.MemoryImage?>>[];
-    if (isMortgageLoan) {
+    if (requiresPropertyDetails) {
       final entries = submission.propertyDetailsDocuments?.completeEntries ?? const [];
       for (final entry in entries) {
         if (entry.isPdf) continue;
@@ -1075,7 +1077,7 @@ class PdfGenerationService {
             ] else ...[
               _buildSimpleDocRow('Salary Slips', 'Not required (Business Loan)'),
             ],
-            if (isMortgageLoan)
+            if (requiresPropertyDetails)
               _buildSimpleDocRow(
                 'Property Details',
                 (submission.propertyDetailsDocuments?.completeEntries.length ?? 0) > 0
@@ -1349,8 +1351,8 @@ class PdfGenerationService {
                 ),
               ],
 
-              // Mortgage property details (named uploads, images only)
-              if (isMortgageLoan && propertyImageEntries.isNotEmpty) ...[
+              // Home Loan / Mortgage property details (named uploads, images only)
+              if (requiresPropertyDetails && propertyImageEntries.isNotEmpty) ...[
                 pw.SizedBox(height: 10),
                 _buildSectionHeader('Property Details'),
                 pw.SizedBox(height: 12),

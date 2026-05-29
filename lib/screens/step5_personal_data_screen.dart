@@ -884,7 +884,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           final isProfessionalLoan = loanType.contains('professional') &&
               (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
           final isStudentLoan = loanType.contains('student');
-          final isMortgageLoan = loanType.contains('mortgage');
+          final requiresProperty =
+              loanType.contains('mortgage') || loanType.contains('home');
           context.go(
             isBusinessLoan
                 ? AppRoutes.step7Ohp
@@ -892,7 +893,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     ? AppRoutes.step5ProfessionalDocs
                     : isStudentLoan
                         ? AppRoutes.step5StudentDocs
-                        : isMortgageLoan
+                        : requiresProperty
                             ? AppRoutes.step5PropertyDetails
                             : AppRoutes.step5_1SalarySlips,
           );
@@ -928,7 +929,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     final isProfessionalLoan = loanType.contains('professional') &&
                         (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
                     final isStudentLoan = loanType.contains('student');
-                    final isMortgageLoan = loanType.contains('mortgage');
+                    final requiresProperty =
+                        loanType.contains('mortgage') || loanType.contains('home');
                     context.go(
                       isBusinessLoan
                           ? AppRoutes.step7Ohp
@@ -936,7 +938,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               ? AppRoutes.step5ProfessionalDocs
                               : isStudentLoan
                                   ? AppRoutes.step5StudentDocs
-                                  : isMortgageLoan
+                                  : requiresProperty
                                       ? AppRoutes.step5PropertyDetails
                                       : AppRoutes.step5_1SalarySlips,
                     );

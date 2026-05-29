@@ -146,9 +146,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                               ? 'Student Loan – Application Guide'
                               : _isMortgageLoan
                                   ? 'Mortgage Loan – Application Guide'
-                                  : _isCarLoanFirmCoApplicant
-                                      ? 'Car Loan – ${_isCarLoanPartnership ? "Partnership Firm" : "PVT LTD"} Co-applicant'
-                                      : 'Application Guide',
+                                  : _isHomeLoan
+                                      ? 'Home Loan – Application Guide'
+                                      : _isCarLoanFirmCoApplicant
+                                          ? 'Car Loan – ${_isCarLoanPartnership ? "Partnership Firm" : "PVT LTD"} Co-applicant'
+                                          : 'Application Guide',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
@@ -162,7 +164,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           ? 'Documents and steps for ${_isProfessionalDoctor ? "Doctor" : "CA"} professional loan.'
                           : _isStudentLoan
                               ? 'Documents and steps for student loan.'
-                              : _isMortgageLoan
+                              : (_isMortgageLoan || _isHomeLoan)
                                   ? (widget.withCoApplicant
                                       ? 'Apply with a co-applicant. Property details are required. Follow the steps below.'
                                       : 'Property details are required. Follow the steps below.')
@@ -667,7 +669,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
-                          if (_isMortgageLoan) ...[
+                          if (_isMortgageLoan || _isHomeLoan) ...[
                             _buildDocumentItem(
                               context,
                               icon: Icons.home_work_outlined,

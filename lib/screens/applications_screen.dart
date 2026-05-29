@@ -402,10 +402,12 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
             (app.step5PersonalData == null || app.step5PersonalData!.isEmpty)) {
           return AppRoutes.step5StudentDocs;
         }
-        // Mortgage loan: Property Details is captured at step 5 before Personal
-        // Data, so resume there until personal data has been saved.
-        final isMortgage = (app.loanType).toLowerCase().contains('mortgage');
-        if (isMortgage &&
+        // Home Loan & Mortgage: Property Details is captured at step 5 before
+        // Personal Data, so resume there until personal data has been saved.
+        final loanTypeLower = (app.loanType).toLowerCase();
+        final requiresProperty =
+            loanTypeLower.contains('mortgage') || loanTypeLower.contains('home');
+        if (requiresProperty &&
             app.currentStep == 5 &&
             (app.step5PersonalData == null || app.step5PersonalData!.isEmpty)) {
           return AppRoutes.step5PropertyDetails;
