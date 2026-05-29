@@ -120,7 +120,10 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
             
             // Content
             Expanded(
-              child: SingleChildScrollView(
+              child: RefreshIndicator(
+                onRefresh: _handleRefreshProfile,
+                child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -792,6 +795,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                             'admin'
                                         ? null
                                         : await auth.waitForLeadId();
+                                    debugPrint(
+                                      'Slide start: login=${auth.user?.login}, '
+                                      'email=${auth.user?.email}, role=${auth.user?.role}, '
+                                      'leadId=$customerLeadId',
+                                    );
                                     if (!mounted) return;
                                     final existingApps =
                                         await _applicationService.getApplications(
@@ -861,8 +869,9 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                                         auth.user?.role != 'admin') {
                                       PremiumToast.showError(
                                         context,
-                                        'Your profile is not linked yet. Pull down to refresh, '
-                                        'or log out and sign in again, then try starting the application.',
+                                        'Your profile isn\'t linked to a loan record yet. Pull down to '
+                                        'refresh. If it keeps happening, contact support so we can link '
+                                        'your account.',
                                       );
                                       return;
                                     }
@@ -923,12 +932,37 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                   ],
                 ),
               ),
+              ),
             ),
           ],
         ),
       ),
     ),
     );
+  }
+
+  /// Pull-to-refresh handler: re-fetch the account and re-attempt CRM lead linkage so the user can
+  /// recover from a transient/late lead resolution without logging out.
+  Future<void> _handleRefreshProfile() async {
+    final auth = context.read<AuthProvider>();
+    try {
+      await auth.getCurrentUser();
+    } catch (_) {
+      // Non-fatal; still attempt lead resolution below.
+    }
+    final linked = await auth.refreshLeadId();
+    if (!mounted) return;
+    if (linked) {
+      PremiumToast.showSuccess(
+        context,
+        'Profile linked. You can start your application now.',
+      );
+    } else {
+      PremiumToast.showInfo(
+        context,
+        'Still not linked. Please contact support to link your account.',
+      );
+    }
   }
 
   void _showInProgressDialog(BuildContext context, LoanApplication application) {

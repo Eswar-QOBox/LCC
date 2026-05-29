@@ -80,8 +80,13 @@ class AuthProvider with ChangeNotifier {
   /// lookup key so documents can be linked to the correct lead record.
   Future<void> _resolveLeadId() async {
     if (_user == null) return;
+    final phone = _user!.login.isNotEmpty ? _user!.login : null;
+    if (kDebugMode) {
+      debugPrint(
+        'Resolving leadId: login=${_user!.login}, email=${_user!.email}, preferred=$_leadId',
+      );
+    }
     try {
-      final phone = _user!.login.isNotEmpty ? _user!.login : null;
       final lead = await _additionalDocumentsService.getLeadByUser(
         _user!.email,
         phone: phone,
@@ -90,11 +95,23 @@ class AuthProvider with ChangeNotifier {
       if (lead != null) {
         final rawId = lead['id'];
         _leadId = rawId != null ? rawId.toString() : null;
+        if (kDebugMode) debugPrint('leadId resolved: $_leadId');
         notifyListeners();
+      } else if (kDebugMode) {
+        debugPrint('leadId not resolved: no CRM lead linked to this account');
       }
-    } catch (_) {
+    } catch (e) {
       // Non-fatal: uploads still work without a leadId (documents just appear unlinked)
+      if (kDebugMode) debugPrint('leadId resolution error: $e');
     }
+  }
+
+  /// Re-attempt CRM lead resolution on demand (e.g. pull-to-refresh). Returns true when a
+  /// non-empty [leadId] is now set.
+  Future<bool> refreshLeadId() async {
+    await _resolveLeadId();
+    final v = _leadId?.trim();
+    return v != null && v.isNotEmpty;
   }
 
   /// Login with email and password
@@ -209,6 +226,9 @@ class AuthProvider with ChangeNotifier {
         return _leadId!.trim();
       }
     }
+    // Last resort: force a fresh resolution attempt. Covers a slow or failed background
+    // resolve right after login so the caller (e.g. "Slide to start") is not blocked by timing.
+    await _resolveLeadId();
     final v = _leadId?.trim();
     return (v == null || v.isEmpty) ? null : v;
   }

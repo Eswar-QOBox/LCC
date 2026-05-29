@@ -33,6 +33,17 @@ class AdditionalDocumentsService {
         }
       }
 
+      // Server-authoritative resolution. Tolerates phone-format differences (country code,
+      // formatting) that the exact `phone.equals`/`email.equals` criteria below cannot. Falls
+      // back gracefully (returns null) on older backends without the endpoint.
+      final mine = await getMyLead();
+      if (mine != null) {
+        if (kDebugMode) {
+          print('Lead resolved via /api/leads/mine: id=${mine['id']}');
+        }
+        return mine;
+      }
+
       final candidates = <Map<String, dynamic>>[];
       final seenIds = <String>{};
 
@@ -93,6 +104,29 @@ class AdditionalDocumentsService {
     }
   }
 
+  /// Resolve the current customer's lead via `GET /api/leads/mine` (server-authoritative).
+  ///
+  /// Returns null when the endpoint is unavailable (older backend) or no lead is linked, so callers
+  /// can fall back to criteria search without surfacing an error.
+  Future<Map<String, dynamic>?> getMyLead() async {
+    try {
+      final response = await _apiClient.get('${ApiConfig.leadsEndpoint}/mine');
+      if (response.statusCode == 200 && response.data is Map) {
+        return _normalizeLead(Map<String, dynamic>.from(response.data as Map));
+      }
+      return null;
+    } on DioException catch (e) {
+      // 404 = no lead linked yet; anything else = older backend or transient. Both fall back.
+      if (kDebugMode) {
+        print('getMyLead: ${e.response?.statusCode} (falling back to criteria search)');
+      }
+      return null;
+    } catch (e) {
+      if (kDebugMode) print('getMyLead error: $e (falling back to criteria search)');
+      return null;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetchLeadsByCriteria(
     Map<String, String> criteria,
   ) async {
@@ -104,6 +138,10 @@ class AdditionalDocumentsService {
         ...criteria,
       },
     );
+    if (kDebugMode) {
+      final list = response.data is List ? (response.data as List).length : 0;
+      print('Lead criteria $criteria -> status=${response.statusCode} count=$list');
+    }
 
     if (response.statusCode == 401) {
       throw Exception('Authentication required. Please log in again.');
