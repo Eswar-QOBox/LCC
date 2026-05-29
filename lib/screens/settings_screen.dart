@@ -935,6 +935,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         loanIcon = Icons.home;
         loanColor = AppTheme.successColor;
         break;
+      case 'Mortgage Loan':
+        loanIcon = Icons.home_work;
+        loanColor = AppTheme.warningColor;
+        break;
       case 'Business Loan':
         loanIcon = Icons.business;
         loanColor = AppTheme.warningColor;

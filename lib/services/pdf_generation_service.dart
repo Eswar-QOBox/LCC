@@ -846,6 +846,22 @@ class PdfGenerationService {
       }
     }
 
+    // Mortgage property details (named uploads, images only)
+    final isMortgageLoan = (submission.loanType ?? '').toLowerCase().contains('mortgage');
+    final propertyImageEntries = <MapEntry<String, pw.MemoryImage?>>[];
+    if (isMortgageLoan) {
+      final entries = submission.propertyDetailsDocuments?.completeEntries ?? const [];
+      for (final entry in entries) {
+        if (entry.isPdf) continue;
+        final name = (entry.propertyName ?? '').trim().isNotEmpty
+            ? entry.propertyName!.trim()
+            : 'Property';
+        propertyImageEntries.add(
+          MapEntry(name, await _loadImageForPdf(entry.path, authToken: authToken)),
+        );
+      }
+    }
+
     // Business-loan docs (proprietor/partnership)
     final spouseAadhaarFrontImage = await _loadImageForPdf(
       business?.spouseAadhaar?.frontPath,
@@ -1059,6 +1075,13 @@ class PdfGenerationService {
             ] else ...[
               _buildSimpleDocRow('Salary Slips', 'Not required (Business Loan)'),
             ],
+            if (isMortgageLoan)
+              _buildSimpleDocRow(
+                'Property Details',
+                (submission.propertyDetailsDocuments?.completeEntries.length ?? 0) > 0
+                    ? '${submission.propertyDetailsDocuments!.completeEntries.length} propert${submission.propertyDetailsDocuments!.completeEntries.length == 1 ? 'y' : 'ies'} uploaded'
+                    : 'Not uploaded',
+              ),
 
             if (isBusinessLoan && isBusinessProprietor) ...[
               pw.SizedBox(height: 10),
@@ -1321,6 +1344,18 @@ class PdfGenerationService {
                     for (int i = 0; i < slipImages.length; i++)
                       MapEntry('Salary Slip ${i + 1}', slipImages[i]),
                   ],
+                  columns: 2,
+                  imageHeight: 110,
+                ),
+              ],
+
+              // Mortgage property details (named uploads, images only)
+              if (isMortgageLoan && propertyImageEntries.isNotEmpty) ...[
+                pw.SizedBox(height: 10),
+                _buildSectionHeader('Property Details'),
+                pw.SizedBox(height: 12),
+                _buildPdfImageGrid(
+                  propertyImageEntries,
                   columns: 2,
                   imageHeight: 110,
                 ),

@@ -82,6 +82,16 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
     return loanType.contains('student');
   }
 
+  bool get _isMortgageLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    return loanType.contains('mortgage');
+  }
+
+  bool get _isHomeLoan {
+    final loanType = (widget.loanType ?? '').toLowerCase();
+    return loanType.contains('home');
+  }
+
   /// Personal loan (includes optional co-applicant / joint application flow).
   bool get _isPersonalLoan {
     final loanType = (widget.loanType ?? '').toLowerCase();
@@ -134,9 +144,11 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           ? 'Professional Loan – Application Guide'
                           : _isStudentLoan
                               ? 'Student Loan – Application Guide'
-                              : _isCarLoanFirmCoApplicant
-                                  ? 'Car Loan – ${_isCarLoanPartnership ? "Partnership Firm" : "PVT LTD"} Co-applicant'
-                                  : 'Application Guide',
+                              : _isMortgageLoan
+                                  ? 'Mortgage Loan – Application Guide'
+                                  : _isCarLoanFirmCoApplicant
+                                      ? 'Car Loan – ${_isCarLoanPartnership ? "Partnership Firm" : "PVT LTD"} Co-applicant'
+                                      : 'Application Guide',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 24,
@@ -150,13 +162,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           ? 'Documents and steps for ${_isProfessionalDoctor ? "Doctor" : "CA"} professional loan.'
                           : _isStudentLoan
                               ? 'Documents and steps for student loan.'
-                              : _isCarLoanFirmCoApplicant
-                                  ? 'Firm documents and ${_isCarLoanPartnership ? "Partners" : "Authorized Person"} KYC required. Follow the steps below.'
-                                  : _isPersonalLoan
-                                      ? (widget.withCoApplicant
-                                          ? 'Apply with a co-applicant (joint loan). Follow the steps below.'
-                                          : 'Apply alone. Follow the steps below.')
-                                      : 'Follow these steps for a smooth loan application.',
+                              : _isMortgageLoan
+                                  ? (widget.withCoApplicant
+                                      ? 'Apply with a co-applicant. Property details are required. Follow the steps below.'
+                                      : 'Property details are required. Follow the steps below.')
+                                  : _isCarLoanFirmCoApplicant
+                                      ? 'Firm documents and ${_isCarLoanPartnership ? "Partners" : "Authorized Person"} KYC required. Follow the steps below.'
+                                      : _isPersonalLoan
+                                          ? (widget.withCoApplicant
+                                              ? 'Apply with a co-applicant (joint loan). Follow the steps below.'
+                                              : 'Apply alone. Follow the steps below.')
+                                          : 'Follow these steps for a smooth loan application.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: Colors.white.withValues(alpha: 0.92),
                         fontSize: 14,
@@ -632,7 +648,8 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           ),
                           const SizedBox(height: 12),
                         ] else if (!_isBusinessLoan) ...[
-                          if (_isPersonalLoan && widget.withCoApplicant) ...[
+                          if ((_isPersonalLoan || _isHomeLoan || _isMortgageLoan) &&
+                              widget.withCoApplicant) ...[
                             _buildDocumentItem(
                               context,
                               icon: Icons.person_add_alt_1,
@@ -650,6 +667,17 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                             iconColor: AppTheme.successColor,
                           ),
                           const SizedBox(height: 12),
+                          if (_isMortgageLoan) ...[
+                            _buildDocumentItem(
+                              context,
+                              icon: Icons.home_work_outlined,
+                              title: 'Property Details',
+                              description:
+                                  'Add one or more properties with a name and document (sale deed, tax receipt, etc.)',
+                              iconColor: AppTheme.warningColor,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
                         ],
                         _buildDocumentItem(
                           context,

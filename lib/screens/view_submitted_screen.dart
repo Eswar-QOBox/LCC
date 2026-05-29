@@ -145,6 +145,7 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
     final normalizedLoanType = appLoanType.toString().toLowerCase();
     final proType = (submission.professionalLoanType ?? '').toLowerCase();
     final isStudentLoan = normalizedLoanType.contains('student');
+    final isMortgageLoan = normalizedLoanType.contains('mortgage');
     final loanTypeDisplay = proType == 'doctor'
         ? 'Professional Loan (Doctor)'
         : proType == 'ca'
@@ -276,6 +277,19 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                         _dataRow('Payslips (3 months)', (submission.studentDocuments!.payslip1?.isComplete == true && submission.studentDocuments!.payslip2?.isComplete == true && submission.studentDocuments!.payslip3?.isComplete == true) ? 'Uploaded' : '—'),
                         _dataRow('ID Card', submission.studentDocuments!.idCard?.isComplete == true ? 'Uploaded' : '—'),
                       ],
+                    ],
+                    if (isMortgageLoan &&
+                        (submission.propertyDetailsDocuments?.completeEntries.isNotEmpty ??
+                            false)) ...[
+                      _sectionTitle('Property Details'),
+                      for (final entry
+                          in submission.propertyDetailsDocuments!.completeEntries)
+                        _dataRow(
+                          (entry.propertyName ?? '').trim().isNotEmpty
+                              ? entry.propertyName!.trim()
+                              : 'Property',
+                          'Uploaded',
+                        ),
                     ],
                     if (isProfessionalLoan && submission.professionalDocuments != null) ...[
                       _sectionTitle(proType == 'doctor' ? 'Doctor Documents' : 'CA Documents'),

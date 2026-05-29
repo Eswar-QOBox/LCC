@@ -435,11 +435,11 @@ class _LoanScreenState extends State<LoanScreen> {
       },
       {
         'icon': Icons.home_work,
-        'title': 'Mortgage',
-        'subtitle': 'Secure your property',
+        'title': AppStrings.loanTypeMortgage,
+        'subtitle': AppStrings.loanTypeMortgageSubtitle,
         'iconColor': AppTheme.warningColor,
         'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.1),
-        'availableSoon': true,
+        'availableSoon': false,
       },
     ];
 
@@ -585,7 +585,9 @@ class _LoanScreenState extends State<LoanScreen> {
                   );
                   return;
                 }
-                if (title == 'Home Loan' || title == 'Car Loan') {
+                if (title == 'Home Loan' ||
+                    title == 'Car Loan' ||
+                    title == AppStrings.loanTypeMortgage) {
                   context.push(
                     '${AppRoutes.coApplicantChoice}?loanType=${Uri.encodeComponent(title)}',
                   );

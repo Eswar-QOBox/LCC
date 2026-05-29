@@ -10,7 +10,7 @@ class ApiConfig {
     'Education Loan',
     'Home Loan',
     'Car Loan',
-    'Mortgage',
+    'Mortgage Loan',
     'Loan Against Property',
     'Emergency Loan',
   ];

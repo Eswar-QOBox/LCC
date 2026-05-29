@@ -31,6 +31,7 @@ import 'screens/professional_loan_type_screen.dart';
 import 'screens/step5_business_docs_screen.dart';
 import 'screens/step5_professional_docs_screen.dart';
 import 'screens/step5_student_docs_screen.dart';
+import 'screens/step5_property_details_screen.dart';
 import 'screens/step4_spouse_aadhaar_screen.dart';
 import 'screens/step5_spouse_pan_screen.dart';
 import 'screens/step6_msme_screen.dart';
@@ -320,6 +321,13 @@ final GoRouter _router = GoRouter(
       builder: (context, state) {
         final fromPreview = state.uri.queryParameters['from'] == 'preview';
         return Step5StudentDocsScreen(fromPreview: fromPreview);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.step5PropertyDetails,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5PropertyDetailsScreen(fromPreview: fromPreview);
       },
     ),
     GoRoute(

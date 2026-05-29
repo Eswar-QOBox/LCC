@@ -314,6 +314,33 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     );
   }
 
+  Widget _buildPropertyDetailsSectionChild(DocumentSubmission submission) {
+    final docs = submission.propertyDetailsDocuments;
+    final completeEntries = docs?.completeEntries ?? const [];
+    if (completeEntries.isEmpty) {
+      return _buildEmptyState(context, 'No property added yet');
+    }
+    final children = <Widget>[];
+    for (final entry in completeEntries) {
+      if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+      children.add(
+        _buildPremiumDocumentPreview(
+          context,
+          entry.path!,
+          (entry.propertyName ?? '').trim().isNotEmpty
+              ? entry.propertyName!.trim()
+              : 'Property',
+          entry.isPdf,
+          height: 220,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -795,6 +822,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         basePath == AppRoutes.step5BusinessDocs ||
         basePath == AppRoutes.step5ProfessionalDocs ||
         basePath == AppRoutes.step5StudentDocs ||
+        basePath == AppRoutes.step5PropertyDetails ||
         basePath == AppRoutes.coApplicantChoice ||
         basePath == AppRoutes.coApplicantAadhaar ||
         basePath == AppRoutes.coApplicantPan ||
@@ -1032,6 +1060,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final professionalType = (submission.professionalLoanType ?? '').toLowerCase();
     final isProfessionalDoctorOrCa = isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca');
     final isStudentLoan = normalizedLoanType.contains('student');
+    final isMortgageLoan = normalizedLoanType.contains('mortgage');
 
     final step2Aadhaar = appProvider.currentApplication?.step2Aadhaar;
     final rawFrontRect = step2Aadhaar is Map ? (step2Aadhaar as Map)['frontAadhaarNumberRect'] : null;
@@ -1507,6 +1536,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     ? '✓ Uploaded'
                                     : '✗ Missing',
                                 submission.coApplicantFirmDocuments?.isFirmPanUploaded == true,
+                              ),
+                            if (isMortgageLoan)
+                              _buildSummaryRow(
+                                context,
+                                'Property Details',
+                                (submission.propertyDetailsDocuments?.isComplete ?? false)
+                                    ? '✓ Uploaded'
+                                    : '✗ Missing',
+                                submission.propertyDetailsDocuments?.isComplete ?? false,
                               ),
                             _buildSummaryRow(
                               context,
@@ -2413,6 +2451,20 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               )
                             : _buildEmptyState(context, 'Not uploaded'),
                       ),
+                      if (isMortgageLoan) ...[
+                        const SizedBox(height: 20),
+                        _buildPremiumSection(
+                          context,
+                          stepNumber: submission.hasCoApplicant ? 9 : 6,
+                          title: 'Property Details',
+                          icon: Icons.home_work_outlined,
+                          isComplete:
+                              submission.propertyDetailsDocuments?.isComplete ?? false,
+                          onEdit: () =>
+                              _editStep(context, AppRoutes.step5PropertyDetails),
+                          child: _buildPropertyDetailsSectionChild(submission),
+                        ),
+                      ],
                       if (submission.hasCoApplicant) ...[
                         const SizedBox(height: 20),
                         _buildPremiumSection(

@@ -884,6 +884,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           final isProfessionalLoan = loanType.contains('professional') &&
               (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
           final isStudentLoan = loanType.contains('student');
+          final isMortgageLoan = loanType.contains('mortgage');
           context.go(
             isBusinessLoan
                 ? AppRoutes.step7Ohp
@@ -891,7 +892,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     ? AppRoutes.step5ProfessionalDocs
                     : isStudentLoan
                         ? AppRoutes.step5StudentDocs
-                        : AppRoutes.step5_1SalarySlips,
+                        : isMortgageLoan
+                            ? AppRoutes.step5PropertyDetails
+                            : AppRoutes.step5_1SalarySlips,
           );
         } catch (e) {
           if (Navigator.canPop(context)) Navigator.pop(context);
@@ -925,6 +928,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     final isProfessionalLoan = loanType.contains('professional') &&
                         (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
                     final isStudentLoan = loanType.contains('student');
+                    final isMortgageLoan = loanType.contains('mortgage');
                     context.go(
                       isBusinessLoan
                           ? AppRoutes.step7Ohp
@@ -932,7 +936,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               ? AppRoutes.step5ProfessionalDocs
                               : isStudentLoan
                                   ? AppRoutes.step5StudentDocs
-                                  : AppRoutes.step5_1SalarySlips,
+                                  : isMortgageLoan
+                                      ? AppRoutes.step5PropertyDetails
+                                      : AppRoutes.step5_1SalarySlips,
                     );
                   } catch (e) {
                     if (Navigator.canPop(context)) {

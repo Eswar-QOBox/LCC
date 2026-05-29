@@ -31,6 +31,7 @@ import '../widgets/premium_progress_indicator.dart';
 import '../utils/debug_log.dart';
 import '../utils/step4_merge.dart';
 import '../utils/business_loan_flow.dart';
+import '../utils/home_mortgage_loan_flow.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
@@ -1455,12 +1456,22 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       final submissionProvider = context.read<SubmissionProvider>();
 
       if (widget.isCoApplicant) {
-        // After co-applicant salary slips: go to firm docs if firm co-applicant, else personal data
+        // After co-applicant salary slips: go to firm docs if firm co-applicant,
+        // else property details (Mortgage) or personal data.
         final firmType = submissionProvider.submission.coApplicantFirmType;
         if (firmType != null) {
           context.go('${AppRoutes.coApplicantFirmDocs}?firmType=$firmType');
         } else {
-          context.go(AppRoutes.step5PersonalData);
+          final coLoanType =
+              context.read<ApplicationProvider>().currentApplication?.loanType;
+          if (HomeMortgageLoanFlow.needsPropertyDetails(
+            loanType: coLoanType,
+            submission: submissionProvider.submission,
+          )) {
+            context.go(AppRoutes.step5PropertyDetails);
+          } else {
+            context.go(AppRoutes.step5PersonalData);
+          }
         }
         return;
       }
@@ -1520,7 +1531,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       if (isProfessionalLoan) {
         context.go(AppRoutes.step6Preview);
       } else {
-        context.go(personalDataComplete ? AppRoutes.step6Preview : AppRoutes.step5PersonalData);
+        context.go(
+          HomeMortgageLoanFlow.routeAfterIncomeDocs(
+            loanType: appProvider.currentApplication?.loanType,
+            submission: submissionProvider.submission,
+            personalDataComplete: personalDataComplete,
+          ),
+        );
       }
     }
   }
@@ -1535,9 +1552,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
     final isProfessionalLoan = loanType.contains('professional') &&
         (professionalType == 'doctor' || professionalType == 'ca');
+    final needsProperty = HomeMortgageLoanFlow.needsPropertyDetails(
+      loanType: appProvider.currentApplication?.loanType,
+      submission: submissionProvider.submission,
+    );
     if (isProfessionalLoan) return 'Continue to Preview';
     if (isStudentLoan && !widget.isCoApplicant) return 'Continue to Student Documents';
-    if (widget.isCoApplicant) return 'Continue to Personal Data';
+    if (widget.isCoApplicant) {
+      return needsProperty
+          ? 'Continue to Property Details'
+          : 'Continue to Personal Data';
+    }
     if (submissionProvider.submission.hasCoApplicant) {
       final coAadhaarComplete =
           submissionProvider.submission.coApplicantAadhaar?.isComplete ?? false;
@@ -1561,6 +1586,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         (step5['mobileNumber'] as String?)?.trim().isNotEmpty == true &&
         (step5['personalEmailId'] as String?)?.trim().isNotEmpty == true &&
         (step5['residenceAddress'] as String?)?.trim().isNotEmpty == true;
+    if (needsProperty) return 'Continue to Property Details';
     final personalDataComplete = fromSubmission || fromBackend;
     return personalDataComplete ? 'Continue to Preview' : 'Continue to Personal Data';
   }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/submission_provider.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../widgets/premium_card.dart';
@@ -23,8 +24,9 @@ class CoApplicantChoiceScreen extends StatelessWidget {
     final withCoApplicantParam =
         GoRouterState.of(context).uri.queryParameters['withCoApplicant'] == 'true';
     final normalizedLoanType = (loanTypeParam ?? '').trim();
-    final isHomeOrCarEntry =
-        normalizedLoanType == 'Home Loan' || normalizedLoanType == 'Car Loan';
+    final isHomeOrCarEntry = normalizedLoanType == 'Home Loan' ||
+        normalizedLoanType == 'Car Loan' ||
+        normalizedLoanType == AppStrings.loanTypeMortgage;
     final hasLoanTypeFromSelection = normalizedLoanType.isNotEmpty;
     final selectedLoanType = isHomeOrCarEntry ? normalizedLoanType : 'Personal Loan';
     final backRoute = hasLoanTypeFromSelection
