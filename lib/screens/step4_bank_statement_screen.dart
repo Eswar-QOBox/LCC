@@ -363,12 +363,23 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         }
         if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
           if (result.nameMatchesAadhaar) {
-            PremiumToast.showSuccess(context, 'Name on statement verified with Aadhaar.');
+            final holder = result.accountHolderName?.trim();
+            PremiumToast.showSuccess(
+              context,
+              holder != null && holder.isNotEmpty
+                  ? 'Name verified: "$holder" matches "$aadhaarName".'
+                  : 'Name on statement verified with "$aadhaarName".',
+            );
           } else {
+            final holder = result.accountHolderName?.trim();
+            final holderPart = (holder != null && holder.isNotEmpty)
+                ? 'We read "$holder", which does not match'
+                : 'We could not find a name matching';
             PremiumToast.showWarning(
               context,
-              'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
-              duration: const Duration(seconds: 4),
+              'Name mismatch. $holderPart the expected name "$aadhaarName". '
+              'Please upload a statement in the account holder\'s name.',
+              duration: const Duration(seconds: 5),
             );
           }
         }
@@ -980,10 +991,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       _bankDebug(
           'BLOCKED at name↔Aadhaar gate: refName="$refName" '
           'extractedHolder="$extractedName" nameMatchesAadhaar=$nameMatches');
+      final holderPart = (extractedName != null && extractedName.trim().isNotEmpty)
+          ? 'The statement appears to be for "${extractedName.trim()}", which does not match'
+          : 'The name on the statement does not match';
       PremiumToast.showError(
         context,
-        'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
-        duration: const Duration(seconds: 4),
+        'Name mismatch. $holderPart the expected name "$refName". '
+        'Please upload a statement in the account holder\'s name.',
+        duration: const Duration(seconds: 5),
       );
       return;
     }
@@ -1051,14 +1066,14 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             return (
               isValid: false,
               errorMessage:
-                  'This PDF is password-protected. Please re-upload and enter the correct password when prompted.',
+                  'File "$label" is password-protected. Please re-upload it and enter the correct password when prompted.',
             );
           }
         }
         return (
           isValid: false,
           errorMessage:
-              'Could not read one of the bank statements. Please upload clearer files.',
+              'Could not read file "$label". The text was not clear enough — please upload a clearer/higher-quality statement.',
         );
       }
       _bankDebug('validate[$i] OCR text length=${text.length}');
@@ -1069,7 +1084,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         return (
           isValid: false,
           errorMessage:
-              'Could not detect account number on one statement. Please upload clearer files from the same account.',
+              'Could not find an account number in "$label". Please upload a clearer statement that shows the account number.',
         );
       }
       _bankDebug('validate[$i] account token=$account');
@@ -1081,7 +1096,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         return (
           isValid: false,
           errorMessage:
-              'Could not detect statement month(s) from one file. Please upload readable statements.',
+              'Could not detect any statement dates in "$label". Please upload a readable statement that shows the transaction dates.',
         );
       }
       _bankDebug('validate[$i] months=$months');
@@ -1095,36 +1110,129 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       return (
         isValid: false,
         errorMessage:
-            'Statements appear to be from different accounts. Please upload statements for a single account only.',
+            'Account number mismatch. The uploaded files belong to ${uniqueAccounts.length} '
+            'different accounts. Please upload statements for one single account only.',
       );
     }
 
+    final sortedDetected = allMonths.toList()..sort();
+
+    // Period check against the REQUIRED window: the last 6 months from today
+    // (calculatedStartDate .. statementEndDate). We tell the user exactly which
+    // months are missing, or that the statement is from the wrong period.
+    final requiredKeys = _requiredWindowMonthKeys();
+    if (requiredKeys.isNotEmpty) {
+      final requiredFromKey = requiredKeys.first;
+      final requiredToKey = requiredKeys.last;
+      final requiredFrom = _formatMonthKey(requiredFromKey);
+      final requiredTo = _formatMonthKey(requiredToKey);
+
+      // Only consider detected months that fall inside the required window;
+      // ignore stray older dates that OCR sometimes picks up (opening balances,
+      // cheque dates, etc.).
+      final inWindow = sortedDetected.where(requiredKeys.contains).toList()
+        ..sort();
+      final missing = requiredKeys.where((k) => !allMonths.contains(k)).toList();
+
+      // Nothing detected falls within the required window -> wrong period.
+      if (inWindow.isEmpty) {
+        final detectedRange = sortedDetected.isEmpty
+            ? 'an unreadable period'
+            : (sortedDetected.length == 1
+                ? _formatMonthKey(sortedDetected.first)
+                : '${_formatMonthKey(sortedDetected.first)} to ${_formatMonthKey(sortedDetected.last)}');
+        _bankDebug(
+            'FAIL: wrong period. detected=$sortedDetected required=$requiredKeys');
+        return (
+          isValid: false,
+          errorMessage:
+              'Wrong statement period. These statements are from $detectedRange, '
+              'but we need the last 6 months: $requiredFrom to $requiredTo (up to today). '
+              'Please upload statements for the correct period.',
+        );
+      }
+
+      final earliestInWindow = inWindow.first;
+      final latestInWindow = inWindow.last;
+
+      // 1) Recency: the statement must reach up to TODAY's month. If the most
+      // recent detected month is older than required, tell the user exactly how
+      // far it reaches vs. what we need.
+      if (latestInWindow < requiredToKey) {
+        _bankDebug(
+            'FAIL: not up to date. latest=$latestInWindow requiredTo=$requiredToKey detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement is not up to date. It only covers up to '
+              '${_formatMonthKey(latestInWindow)}, but we need it up to $requiredTo (today). '
+              'Please upload a statement that includes the most recent months.',
+        );
+      }
+
+      // 2) Depth: the statement must go back ~6 months to the required start.
+      if (earliestInWindow > requiredFromKey) {
+        _bankDebug(
+            'FAIL: not enough history. earliest=$earliestInWindow requiredFrom=$requiredFromKey detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement does not cover the full 6 months. It only goes back to '
+              '${_formatMonthKey(earliestInWindow)}, but we need it from $requiredFrom '
+              '(through $requiredTo, today). Please include the older months.',
+        );
+      }
+
+      // 3) Both ends are covered. Tolerate a single OCR-missed middle month
+      // (the dates are sometimes not picked up cleanly), but reject larger gaps
+      // and name the missing months.
+      if (missing.length > 1) {
+        final missingLabel = missing.map(_formatMonthKey).join(', ');
+        _bankDebug(
+            'FAIL: missing months=$missing (>1) detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement period incomplete. Missing month(s): $missingLabel. '
+              'We need all 6 months from $requiredFrom to $requiredTo (up to today). '
+              'Please add the missing month(s).',
+        );
+      }
+
+      _bankDebug(
+          'PASS: account=$accountTokens covers required window $requiredFrom..$requiredTo '
+          '(inWindow=$inWindow missing=$missing detected=$sortedDetected)');
+      return (isValid: true, errorMessage: null);
+    }
+
+    // Fallback (required dates unavailable): require >= 6 distinct months in a
+    // tight, continuous range.
     if (allMonths.length < 6) {
       _bankDebug('FAIL: only ${allMonths.length} distinct month(s): $allMonths');
       return (
         isValid: false,
         errorMessage:
-            'At least 6 statement months are required. Current upload does not cover full 6 months.',
+            'At least 6 months of statements are required. We only detected '
+            '${allMonths.length} month(s): '
+            '${sortedDetected.map(_formatMonthKey).join(', ')}.',
       );
     }
 
-    final sorted = allMonths.toList()..sort();
-    final minKey = sorted.first;
-    final maxKey = sorted.last;
+    final minKey = sortedDetected.first;
+    final maxKey = sortedDetected.last;
     final span = _monthDiff(minKey, maxKey) + 1;
-
-    // Accept a tight range only. If the spread is too large, user likely mixed periods.
     if (span > 7) {
-      _bankDebug('FAIL: month span=$span (>7) months=$sorted');
+      _bankDebug('FAIL: month span=$span (>7) months=$sortedDetected');
       return (
         isValid: false,
         errorMessage:
-            'Statement months are inconsistent. Please upload documents from one continuous 6-month period.',
+            'Statement months are inconsistent (spanning ${_formatMonthKey(minKey)} '
+            'to ${_formatMonthKey(maxKey)}). Please upload one continuous 6-month period.',
       );
     }
 
     _bankDebug(
-        'PASS: account=$accountTokens months=${sorted.length} distinct span=$span range=$minKey..$maxKey');
+        'PASS: account=$accountTokens months=${sortedDetected.length} distinct span=$span range=$minKey..$maxKey');
     return (isValid: true, errorMessage: null);
   }
 
@@ -1371,6 +1479,42 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final ey = endKey ~/ 100;
     final em = endKey % 100;
     return (ey - sy) * 12 + (em - sm);
+  }
+
+  /// Formats a `year*100 + month` key as e.g. "Dec 2025".
+  String _formatMonthKey(int key) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final y = key ~/ 100;
+    final m = key % 100;
+    if (m < 1 || m > 12) return '$key';
+    return '${months[m - 1]} $y';
+  }
+
+  /// The required statement months: every calendar month from the calculated
+  /// start date (6 months back) through the statement end date (today),
+  /// inclusive, as `year*100 + month` keys. Empty when dates are unavailable.
+  List<int> _requiredWindowMonthKeys() {
+    final start = _calculatedStartDate;
+    final end = _statementEndDate;
+    if (start == null || end == null) return const [];
+    final keys = <int>[];
+    var y = start.year;
+    var m = start.month;
+    final lastKey = end.year * 100 + end.month;
+    for (var i = 0; i < 18; i++) {
+      final key = y * 100 + m;
+      if (key > lastKey) break;
+      keys.add(key);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+    }
+    return keys;
   }
 
   String _formatDateWithYear(DateTime date) {
