@@ -1063,7 +1063,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           ).isNotEmpty)
             _buildSection(
               context,
-              title: 'Spouse Documents',
+              title: 'Co-applicant Documents',
               icon: Icons.people,
               documents: _getSubmittedDocumentsByCategory(
                 DocumentCategory.spouse,
@@ -1120,7 +1120,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
           ).isNotEmpty)
             _buildVerifiedSection(
               context,
-              title: 'Spouse Documents',
+              title: 'Co-applicant Documents',
               icon: Icons.people,
               documents: _getVerifiedDocumentsByCategory(
                 DocumentCategory.spouse,

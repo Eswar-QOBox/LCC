@@ -1642,7 +1642,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             AppHeader(
               title: widget.titleOverride ??
                   (widget.isSpouse
-                      ? 'Spouse PAN'
+                      ? 'Co-applicant PAN'
                       : widget.isCoApplicant
                           ? 'Co-applicant PAN'
                           : (widget.isPartner ? 'Partner PAN' : 'PAN Card')),

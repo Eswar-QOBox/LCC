@@ -2023,12 +2023,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           if (mainLast4 == currentLast4 && mainLast4.length == 4) {
             _showValidationErrorDialog(
               title: widget.isSpouse
-                  ? 'Spouse Aadhaar Invalid'
+                  ? 'Co-applicant Aadhaar Invalid'
                   : widget.isCoApplicant
                       ? 'Co-applicant Aadhaar Invalid'
                       : 'Partner Aadhaar Invalid',
               message: widget.isSpouse
-                  ? 'The spouse Aadhaar number cannot be the same as the main applicant\'s Aadhaar. Please upload the spouse\'s own Aadhaar card.'
+                  ? 'The co-applicant Aadhaar number cannot be the same as the main applicant\'s Aadhaar. Please upload the co-applicant\'s own Aadhaar card.'
                   : widget.isCoApplicant
                       ? 'Co-applicant Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the co-applicant\'s own Aadhaar card.'
                       : 'Partner ${widget.partnerIndex ?? 1} Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the partner\'s own Aadhaar card.',
@@ -2089,7 +2089,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             AppHeader(
               title: widget.titleOverride ??
                   (widget.isSpouse
-                      ? 'Spouse Aadhaar'
+                      ? 'Co-applicant Aadhaar'
                       : widget.isCoApplicant
                           ? 'Co-applicant Aadhaar'
                           : (widget.isPartner ? 'Partner Aadhaar' : 'Aadhaar Card')),

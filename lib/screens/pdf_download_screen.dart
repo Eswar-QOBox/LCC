@@ -383,7 +383,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                             const SizedBox(height: 8),
                             _buildIncludedItem(
                               context,
-                              'Spouse Aadhaar',
+                              'Co-applicant Aadhaar',
                               _useSampleData || isSubmitted ||
                                   submission.businessDocuments?.spouseAadhaar?.isComplete == true,
                               isSample: _useSampleData && !isSubmitted &&
@@ -391,7 +391,7 @@ class _PdfDownloadScreenState extends State<PdfDownloadScreen> {
                             ),
                             _buildIncludedItem(
                               context,
-                              'Spouse PAN',
+                              'Co-applicant PAN',
                               _useSampleData || isSubmitted ||
                                   submission.businessDocuments?.spousePan?.isComplete == true,
                               isSample: _useSampleData && !isSubmitted &&

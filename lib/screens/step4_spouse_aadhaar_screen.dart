@@ -13,7 +13,7 @@ class Step4SpouseAadhaarScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Step2AadhaarScreen(
       isSpouse: true,
-      titleOverride: 'Spouse Aadhaar',
+      titleOverride: 'Co-applicant Aadhaar',
       progressStepOverride: 4,
       totalStepsOverride: 10,
       backRouteOverride: AppRoutes.step3Pan,

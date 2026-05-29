@@ -1347,7 +1347,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           if (isBusinessProprietor) ...[
                             _buildSummaryRow(
                               context,
-                              'Step 5: Spouse Aadhaar',
+                              'Step 5: Co-applicant Aadhaar',
                               submission.businessDocuments?.spouseAadhaar?.isComplete == true
                                   ? '✓ Uploaded'
                                   : '✗ Missing',
@@ -1355,7 +1355,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             ),
                             _buildSummaryRow(
                               context,
-                              'Step 6: Spouse PAN',
+                              'Step 6: Co-applicant PAN',
                               submission.businessDocuments?.spousePan?.isComplete == true
                                   ? '✓ Uploaded'
                                   : '✗ Missing',
@@ -1783,7 +1783,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       _buildPremiumSection(
                         context,
                         stepNumber: 5,
-                        title: 'Spouse Aadhaar',
+                        title: 'Co-applicant Aadhaar',
                         icon: Icons.badge_outlined,
                         isComplete: submission.businessDocuments?.spouseAadhaar?.isComplete ?? false,
                         onEdit: () => _editStep(context, AppRoutes.step4SpouseAadhaar),
@@ -1816,7 +1816,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       _buildPremiumSection(
                         context,
                         stepNumber: 6,
-                        title: 'Spouse PAN',
+                        title: 'Co-applicant PAN',
                         icon: Icons.credit_card_outlined,
                         isComplete: submission.businessDocuments?.spousePan?.isComplete ?? false,
                         onEdit: () => _editStep(context, AppRoutes.step5SpousePan),

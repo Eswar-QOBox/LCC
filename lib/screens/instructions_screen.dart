@@ -375,7 +375,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           _buildDocumentItem(
                             context,
                             icon: Icons.badge_outlined,
-                            title: 'Aadhaar (Spouse)',
+                            title: 'Aadhaar (Co-applicant)',
                             description: 'Front and back sides required',
                             iconColor: AppTheme.successColor,
                           ),
@@ -383,7 +383,7 @@ class _InstructionsScreenState extends State<InstructionsScreen> {
                           _buildDocumentItem(
                             context,
                             icon: Icons.credit_card_outlined,
-                            title: 'PAN (Spouse)',
+                            title: 'PAN (Co-applicant)',
                             description: 'Front side required',
                             iconColor: AppTheme.infoColor,
                           ),

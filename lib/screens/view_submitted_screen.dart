@@ -313,11 +313,11 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     if (isBusinessProprietor) ...[
                       _sectionTitle('Business Documents'),
                       _dataRow(
-                        'Spouse Aadhaar',
+                        'Co-applicant Aadhaar',
                         businessDocs?.spouseAadhaar?.isComplete == true ? 'Uploaded' : '—',
                       ),
                       _dataRow(
-                        'Spouse PAN',
+                        'Co-applicant PAN',
                         businessDocs?.spousePan?.isComplete == true ? 'Uploaded' : '—',
                       ),
                       _dataRow(

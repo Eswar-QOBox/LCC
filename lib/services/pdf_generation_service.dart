@@ -1099,11 +1099,11 @@ class PdfGenerationService {
               ),
               pw.SizedBox(height: 8),
               _buildSimpleDocRow(
-                'Spouse Aadhaar',
+                'Co-applicant Aadhaar',
                 (business?.spouseAadhaar?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
               ),
               _buildSimpleDocRow(
-                'Spouse PAN',
+                'Co-applicant PAN',
                 (business?.spousePan?.isComplete ?? false) ? 'Uploaded' : 'Not uploaded',
               ),
               _buildSimpleDocRow(
@@ -1378,7 +1378,7 @@ class PdfGenerationService {
                           business?.spouseAadhaar?.frontIsPdf == false)
                         pw.Expanded(
                           child: _buildPdfImageWidget(
-                            'Spouse Aadhaar Front',
+                            'Co-applicant Aadhaar Front',
                             spouseAadhaarFrontImage,
                           ),
                         ),
@@ -1391,7 +1391,7 @@ class PdfGenerationService {
                           business?.spouseAadhaar?.backIsPdf == false)
                         pw.Expanded(
                           child: _buildPdfImageWidget(
-                            'Spouse Aadhaar Back',
+                            'Co-applicant Aadhaar Back',
                             spouseAadhaarBackImage,
                           ),
                         ),
@@ -1408,7 +1408,7 @@ class PdfGenerationService {
                   [
                     if (business?.spousePan?.frontPath != null &&
                         business?.spousePan?.isPdf == false)
-                      MapEntry('Spouse PAN', spousePanImage),
+                      MapEntry('Co-applicant PAN', spousePanImage),
                     if (business?.gstRegistration?.path != null &&
                         business?.gstRegistration?.isPdf == false)
                       MapEntry('GST Registration', gstImage),
