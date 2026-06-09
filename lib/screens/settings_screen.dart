@@ -15,6 +15,7 @@ import '../models/loan_application.dart';
 import '../models/document_submission.dart';
 import '../models/user.dart';
 import '../services/loan_application_service.dart';
+import '../services/audio_controller.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -333,6 +334,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                     // Previous Loans Section
                     _buildPreviousLoansSection(context),
+                    const SizedBox(height: 16),
+
+                    // Background music
+                    _buildMusicSection(context),
                     const SizedBox(height: 16),
 
                     // Support
@@ -662,6 +667,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
     }
+  }
+
+  Widget _buildMusicSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final audioController = context.watch<AudioController>();
+    final enabled = audioController.musicEnabled;
+
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  enabled ? Icons.music_note : Icons.music_off,
+                  color: colorScheme.primary,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Background Music',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Play soothing music softly while you use the app',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  enabled ? 'On' : 'Off',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: enabled
+                        ? AppTheme.successColor
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: (value) {
+                  context.read<AudioController>().setMusicEnabled(value);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPreviousLoansSection(BuildContext context) {

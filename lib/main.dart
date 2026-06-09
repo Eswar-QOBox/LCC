@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'providers/submission_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/application_provider.dart';
+import 'services/audio_controller.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_theme_mode.dart';
 import 'utils/app_routes.dart';
@@ -50,8 +51,39 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final AudioController _audioController = AudioController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Background music is purely additive – guard so a failure here can never
+    // block app startup.
+    _audioController.init().whenComplete(() {
+      _handleRouteChanged();
+    });
+    _router.routerDelegate.addListener(_handleRouteChanged);
+  }
+
+  void _handleRouteChanged() {
+    final path =
+        _router.routerDelegate.currentConfiguration.uri.path;
+    _audioController.onRouteChanged(path);
+  }
+
+  @override
+  void dispose() {
+    _router.routerDelegate.removeListener(_handleRouteChanged);
+    _audioController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +99,7 @@ class MyApp extends StatelessWidget {
           },
         ),
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
+        ChangeNotifierProvider<AudioController>.value(value: _audioController),
       ],
       child: ValueListenableBuilder<ThemeMode>(
         valueListenable: appThemeModeNotifier,
