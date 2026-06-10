@@ -20,7 +20,7 @@ enum _Track { none, ambient, loanFlow }
 /// can never crash the app or interfere with navigation, providers or uploads.
 class AudioController with ChangeNotifier, WidgetsBindingObserver {
   AudioController({AudioPlayer? player})
-      : _player = player ?? AudioPlayer(playerId: 'background_music');
+    : _player = player ?? AudioPlayer(playerId: 'background_music');
 
   static const String _musicEnabledKey = 'background_music_enabled';
   static const double _volume = 0.3;
@@ -187,8 +187,7 @@ class AudioController with ChangeNotifier, WidgetsBindingObserver {
   Future<void> _resumeFromBackground() async {
     // If music was disabled or the route changed while backgrounded, let the
     // normal sync logic pick the correct state.
-    final desired =
-        _musicEnabled ? _trackForPath(_currentPath) : _Track.none;
+    final desired = _musicEnabled ? _trackForPath(_currentPath) : _Track.none;
     if (desired == _currentTrack && desired != _Track.none) {
       try {
         await _player.resume();
