@@ -18,6 +18,7 @@ import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
 import 'storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import 'additional_documents_service.dart';
 
 class PdfGenerationService {
@@ -1663,43 +1664,14 @@ class PdfGenerationService {
       String normalizeNetworkUrl(String raw) {
         var path = raw.trim();
         if (path.isEmpty) return path;
-        // Stored as "baseUrl..." sometimes
-        if (path.startsWith('baseUrl')) {
-          path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
-        }
-        // Old localhost saved URLs
-        if (path.startsWith('http://localhost:5000')) {
-          path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-        }
-        // If already absolute URL
-        if (path.startsWith('http://') || path.startsWith('https://')) return path;
-
-        // Normalize missing-leading-slash variants.
-        if (path.startsWith('uploads/') || path.startsWith('api/')) {
-          path = '/$path';
-        }
-        if (!path.startsWith('/')) {
-          // likely local filesystem path; return as-is so File() can try.
+        if (!path.startsWith('/') &&
+            !path.startsWith('http') &&
+            !path.startsWith('uploads/') &&
+            !path.startsWith('api/') &&
+            !path.startsWith('baseUrl')) {
           return raw;
         }
-
-        // Normalize /api/v1/uploads/<category>/... -> /api/v1/uploads/files/<category>/...
-        if (path.startsWith('/api/v1/uploads/') &&
-            !path.startsWith('/api/v1/uploads/files/')) {
-          path = path.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
-        }
-
-        // Normalize /uploads/<category>/... -> /api/v1/uploads/files/<category>/...
-        if (path.startsWith('/uploads/') && !path.contains('/uploads/files/')) {
-          path = path.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-        }
-
-        // Treat /api/... and /api/v1/... as server paths
-        if (path.startsWith('/api/')) {
-          return '${ApiConfig.baseUrl}$path';
-        }
-
-        return raw;
+        return UploadUrlHelper.resolve(path);
       }
 
       final normalized = normalizeNetworkUrl(imagePath);

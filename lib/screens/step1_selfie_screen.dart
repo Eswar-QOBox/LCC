@@ -21,6 +21,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
@@ -306,13 +307,18 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
     try {
       Map<String, dynamic>? uploadResult;
+      final currentApp = appProvider.currentApplication;
+      final existingSelfie = currentApp?.step1Selfie as Map<String, dynamic>?;
+      final existingUpload = existingSelfie?['uploadedFile'] as Map<String, dynamic>?;
 
-      // Check if image is already uploaded (remote URL)
-      if (_imagePath!.startsWith('http')) {
-        final currentApp = appProvider.currentApplication;
-        if (currentApp?.step1Selfie != null) {
-          final stepData = currentApp!.step1Selfie as Map<String, dynamic>;
-          uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final alreadyOnServer = UploadUrlHelper.isNetworkPath(_imagePath!) ||
+          (existingUpload != null &&
+              (existingUpload['fileUrl'] != null || existingUpload['url'] != null));
+
+      if (alreadyOnServer) {
+        uploadResult = existingUpload;
+        if (uploadResult == null && UploadUrlHelper.isNetworkPath(_imagePath!)) {
+          uploadResult = {'fileUrl': _imagePath, 'url': _imagePath};
         }
       } else {
         final imageFile = XFile(_imagePath!);
@@ -414,15 +420,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
         if (relativeUrl.startsWith('http')) {
           effectivePath = relativeUrl;
         } else {
-          // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
-          String apiPath = relativeUrl;
-          if (apiPath.startsWith('/uploads/') &&
-              !apiPath.contains('/uploads/files/')) {
-            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-          } else if (!apiPath.startsWith('/api/')) {
-            apiPath = '/api/v1$apiPath';
-          }
-          effectivePath = '${ApiConfig.baseUrl}$apiPath';
+          effectivePath = UploadUrlHelper.resolve(relativeUrl);
         }
         debugPrint('📷 Selfie Screen: effectivePath = $effectivePath');
       } else {

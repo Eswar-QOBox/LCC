@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 
 /// Platform-agnostic image widget that works on both mobile and web
 class PlatformImage extends StatefulWidget {
@@ -34,59 +35,9 @@ class _PlatformImageState extends State<PlatformImage> {
   bool _isLoadingWeb = false;
   bool _hasWebError = false;
 
-  String _normalizeUrlIfNeeded(String raw) {
-    if (raw.isEmpty) return raw;
-    if (raw.startsWith('blob:') || raw.startsWith('data:image')) return raw;
+  String _normalizeUrlIfNeeded(String raw) => UploadUrlHelper.resolve(raw);
 
-    var path = raw;
-
-    // Normalize "baseUrl..." prefix if stored that way.
-    if (path.startsWith('baseUrl')) {
-      path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
-    }
-
-    // Normalize localhost URLs from older saved data.
-    if (path.startsWith('http://localhost:5000')) {
-      path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-    }
-
-    // If already a full URL, return as-is.
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-
-    // Some saved paths come without leading slash (e.g. "uploads/...", "api/...").
-    if (path.startsWith('uploads/') || path.startsWith('api/')) {
-      path = '/$path';
-    }
-
-    // Convert known upload-relative paths to full API URLs.
-    // Only treat these as network paths (avoid breaking local file paths like /storage/...).
-    if (path.startsWith('/uploads/')) {
-      if (!path.contains('/uploads/files/')) {
-        path = path.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-      }
-      return '${ApiConfig.baseUrl}$path';
-    }
-
-    if (path.startsWith('/api/')) {
-      return '${ApiConfig.baseUrl}$path';
-    }
-
-    return raw;
-  }
-
-  bool _isNetworkPath(String raw) {
-    final p = raw;
-    return p.startsWith('http://') ||
-        p.startsWith('https://') ||
-        p.startsWith('blob:') ||
-        p.startsWith('data:image') ||
-        p.startsWith('/uploads/') ||
-        p.startsWith('/api/') ||
-        p.startsWith('uploads/') ||
-        p.startsWith('api/') ||
-        p.startsWith('baseUrl') ||
-        p.startsWith('http://localhost:5000');
-  }
+  bool _isNetworkPath(String raw) => UploadUrlHelper.isNetworkPath(raw);
 
   @override
   void initState() {

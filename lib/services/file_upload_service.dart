@@ -122,7 +122,11 @@ class FileUploadService {
     final response = await _apiClient.post(
       ApiConfig.leadDocumentsUploadEndpoint,
       data: formData,
-      options: Options(headers: {'Content-Type': 'multipart/form-data'}),
+      options: Options(
+        headers: {'Content-Type': 'multipart/form-data'},
+        sendTimeout: const Duration(seconds: 120),
+        receiveTimeout: const Duration(seconds: 120),
+      ),
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {

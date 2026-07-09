@@ -24,6 +24,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../utils/ocr_pdf.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/prevent_close_on_back.dart';
@@ -454,56 +455,11 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     }
 
 
-    // Helper function to build full URL from relative path
-    // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
     String? buildFullUrl(String? relativePath) {
       if (relativePath == null || relativePath.isEmpty) return null;
       final trimmed = relativePath.trim();
       if (_isDeviceLocalFilesystemPath(trimmed)) return null;
-
-      String path = trimmed;
-      
-      // Fix for "baseUrl" prefix if present
-      if (path.startsWith('baseUrl')) {
-         path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
-      }
-      
-      // Fix for localhost URLs
-      if (path.startsWith('http://localhost:5000')) {
-         path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-      }
-
-      // If it's already a full URL or blob URL, return as-is
-      if (path.startsWith('http') || path.startsWith('blob:')) {
-        return path;
-      }
-      
-      // Normalize paths that come without a leading slash (e.g. "uploads/...", "api/...")
-      if (path.startsWith('uploads/') || path.startsWith('api/')) {
-        path = '/$path';
-      }
-      if (!path.startsWith('/')) {
-        path = '/$path';
-      }
-
-      // Some backends return file URLs like /api/v1/uploads/<category>/<file>
-      // but the actual file-serving route is /api/v1/uploads/files/<category>/<file>.
-      // Normalize that here so previews work (notably Salary Slips).
-      if (path.startsWith('/api/v1/uploads/') &&
-          !path.startsWith('/api/v1/uploads/files/')) {
-        path = path.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
-      }
-
-      // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
-      String apiPath = path;
-      if (apiPath.startsWith('/uploads/') &&
-          !apiPath.contains('/uploads/files/')) {
-        apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-      } else if (!apiPath.startsWith('/api/')) {
-        // Ensure we don't end up with "/api/v1uploads/..." (missing slash)
-        apiPath = apiPath.startsWith('/') ? '/api/v1$apiPath' : '/api/v1/$apiPath';
-      }
-      return '${ApiConfig.baseUrl}$apiPath';
+      return UploadUrlHelper.resolve(trimmed);
     }
 
     // Sync selfie data
@@ -847,34 +803,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     if (path == null || path.isEmpty) return null;
     final trimmed = path.trim();
     if (_isDeviceLocalFilesystemPath(trimmed)) return null;
-    String p = trimmed;
-    if (p.startsWith('baseUrl')) {
-      p = p.replaceFirst('baseUrl', ApiConfig.baseUrl);
-    }
-    if (p.startsWith('http://localhost:5000')) {
-      p = p.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-    }
-    if (p.startsWith('http') || p.startsWith('blob:')) return p;
-
-    // Normalize missing leading slash variants.
-    if (p.startsWith('uploads/') || p.startsWith('api/')) {
-      p = '/$p';
-    }
-    if (!p.startsWith('/')) {
-      p = '/$p';
-    }
-
-    // Normalize /api/v1/uploads/<category>/... -> /api/v1/uploads/files/<category>/...
-    if (p.startsWith('/api/v1/uploads/') && !p.startsWith('/api/v1/uploads/files/')) {
-      p = p.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
-    }
-
-    if (p.startsWith('/uploads/') && !p.contains('/uploads/files/')) {
-      p = p.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-    } else if (!p.startsWith('/api/')) {
-      p = p.startsWith('/') ? '/api/v1$p' : '/api/v1/$p';
-    }
-    return '${ApiConfig.baseUrl}$p';
+    return UploadUrlHelper.resolve(trimmed);
   }
 
   /// Get selfie path from either SubmissionProvider (local) or ApplicationProvider (backend)

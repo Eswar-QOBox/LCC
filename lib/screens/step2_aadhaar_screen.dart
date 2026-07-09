@@ -19,6 +19,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../utils/aadhaar_utils.dart';
 import '../utils/aadhaar_image_masker.dart';
 import 'aadhaar_grid_capture_screen.dart';
@@ -552,21 +553,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       final aadhaarName = stepData['aadhaarName'] as String?;
       final aadhaarFrontRawText = stepData['aadhaarFrontRawText'] as String?;
 
-      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
         if (relativeUrl == null || relativeUrl.isEmpty) return null;
         if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) {
           return relativeUrl;
         }
-        // Convert /uploads/aadhaar/... to /api/v1/uploads/files/aadhaar/...
-        String apiPath = relativeUrl;
-        if (apiPath.startsWith('/uploads/') &&
-            !apiPath.contains('/uploads/files/')) {
-          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-        } else if (!apiPath.startsWith('/api/')) {
-          apiPath = '/api/v1$apiPath';
-        }
-        return '${ApiConfig.baseUrl}$apiPath';
+        return UploadUrlHelper.resolve(relativeUrl);
       }
       
       // Prefer uploaded file URL over local blob path (same as business/bank flow: use backend data, do not re-OCR).
@@ -1739,7 +1731,23 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
       final currentApp = appProvider.currentApplication;
       final existingData = currentApp?.step2Aadhaar;
-      bool isRemote(String? path) => path != null && path.startsWith('http');
+
+      bool shouldSkipUpload(String? path, Map<String, dynamic>? existingUpload) {
+        if (path == null || path.isEmpty) return true;
+        if (_isRemoteOrServerPath(path)) return true;
+        if (existingUpload != null) {
+          final url = existingUpload['fileUrl'] ?? existingUpload['url'];
+          if (url != null && url.toString().trim().isNotEmpty) return true;
+        }
+        return false;
+      }
+
+      String? trimOcrText(String? raw) {
+        if (raw == null) return null;
+        final t = raw.trim();
+        if (t.length <= 1000) return t;
+        return t.substring(0, 1000);
+      }
 
       // When mask toggle is ON and we have the number rects, burn black masks
       // over each digit-group of the first 8 digits into the actual image bytes
@@ -1749,7 +1757,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_frontAadhaarNumberRect);
         if (clampedRects != null) {
           Uint8List? srcBytes = _frontBytes;
-          if (srcBytes == null && !kIsWeb && _frontPath != null && !isRemote(_frontPath)) {
+          if (srcBytes == null && !kIsWeb && _frontPath != null && !shouldSkipUpload(_frontPath, null)) {
             try {
               srcBytes = await XFile(_frontPath!).readAsBytes();
             } catch (_) {}
@@ -1762,8 +1770,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         }
       }
 
-      if (isRemote(_frontPath)) {
+      if (shouldSkipUpload(_frontPath, existingData?['frontUpload'] as Map<String, dynamic>?)) {
         frontUpload = existingData?['frontUpload'] as Map<String, dynamic>?;
+        if (frontUpload == null && _isRemoteOrServerPath(_frontPath)) {
+          frontUpload = {'fileUrl': _frontPath, 'url': _frontPath};
+        }
       } else {
         frontUpload = await _fileUploadService.uploadAadhaar(
           XFile(_frontPath!),
@@ -1780,7 +1791,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_backAadhaarNumberRect);
         if (clampedRects != null) {
           Uint8List? srcBytes = _backBytes;
-          if (srcBytes == null && !kIsWeb && _backPath != null && !isRemote(_backPath)) {
+          if (srcBytes == null && !kIsWeb && _backPath != null && !shouldSkipUpload(_backPath, null)) {
             try {
               srcBytes = await XFile(_backPath!).readAsBytes();
             } catch (_) {}
@@ -1795,8 +1806,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
       if (_frontIsPdf && _backIsPdf && _frontPath == _backPath && frontUpload != null) {
         backUpload = frontUpload;
-      } else if (isRemote(_backPath)) {
+      } else if (shouldSkipUpload(_backPath, existingData?['backUpload'] as Map<String, dynamic>?)) {
         backUpload = existingData?['backUpload'] as Map<String, dynamic>?;
+        if (backUpload == null && _isRemoteOrServerPath(_backPath)) {
+          backUpload = {'fileUrl': _backPath, 'url': _backPath};
+        }
       } else {
         backUpload = await _fileUploadService.uploadAadhaar(
           XFile(_backPath!),
@@ -1824,7 +1838,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontAadhaarNumberRect': _frontAadhaarNumberRect,
           'backAadhaarNumberRect': _backAadhaarNumberRect,
           'aadhaarName': _aadhaarName,
-          'aadhaarFrontRawText': _aadhaarFrontRawText,
+          'aadhaarFrontRawText': trimOcrText(_aadhaarFrontRawText),
           'frontImageMasked': maskedFrontBytes != null,
           'backImageMasked': maskedBackBytes != null,
           'addressDifferentFromAadhaar': _addressDifferentFromAadhaar,

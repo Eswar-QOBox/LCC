@@ -20,6 +20,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import 'pan_horizontal_card_capture_screen.dart';
 import '../utils/local_file_persist.dart';
 import '../utils/ocr_pdf.dart';
@@ -445,18 +446,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       final extractedName = stepData['extractedName'] as String?;
       final extractedFatherName = stepData['extractedFatherName'] as String?;
       
-      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
         if (relativeUrl == null || relativeUrl.isEmpty) return null;
         if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-        // Convert /uploads/pan/... to /api/v1/uploads/files/pan/...
-        String apiPath = relativeUrl;
-        if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-        } else if (!apiPath.startsWith('/api/')) {
-          apiPath = '/api/v1$apiPath';
-        }
-        return '${ApiConfig.baseUrl}$apiPath';
+        return UploadUrlHelper.resolve(relativeUrl);
       }
       
       // Prefer uploaded file URL over local blob path

@@ -13,6 +13,7 @@ import '../providers/auth_provider.dart';
 import '../providers/submission_provider.dart';
 import '../services/additional_documents_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_theme.dart';
 import '../utils/blob_helper.dart';
@@ -64,13 +65,7 @@ class _Step7OhpScreenState extends State<Step7OhpScreen> {
   String? _buildFullUrl(String? relativeUrl) {
     if (relativeUrl == null || relativeUrl.isEmpty) return null;
     if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-    var apiPath = relativeUrl;
-    if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-      apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-    } else if (!apiPath.startsWith('/api/')) {
-      apiPath = '/api/v1$apiPath';
-    }
-    return '${ApiConfig.baseUrl}$apiPath';
+    return UploadUrlHelper.resolve(relativeUrl);
   }
 
   void _openImagePreview(String imagePath) {

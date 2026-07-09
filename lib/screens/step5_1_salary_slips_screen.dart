@@ -25,6 +25,7 @@ import '../services/storage_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
 import '../widgets/premium_progress_indicator.dart';
@@ -1054,13 +1055,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           }
 
           if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-          String apiPath = relativeUrl;
-          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-          } else if (!apiPath.startsWith('/api/')) {
-            apiPath = '/api/v1$apiPath';
-          }
-          return '${ApiConfig.baseUrl}$apiPath';
+          return UploadUrlHelper.resolve(relativeUrl);
         }
         
         // Get access token for authenticated request
