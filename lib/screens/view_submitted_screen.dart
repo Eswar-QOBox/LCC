@@ -145,6 +145,8 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
     final normalizedLoanType = appLoanType.toString().toLowerCase();
     final proType = (submission.professionalLoanType ?? '').toLowerCase();
     final isStudentLoan = normalizedLoanType.contains('student');
+    final requiresPropertyDetails =
+        normalizedLoanType.contains('mortgage') || normalizedLoanType.contains('home');
     final loanTypeDisplay = proType == 'doctor'
         ? 'Professional Loan (Doctor)'
         : proType == 'ca'
@@ -277,6 +279,19 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                         _dataRow('ID Card', submission.studentDocuments!.idCard?.isComplete == true ? 'Uploaded' : '—'),
                       ],
                     ],
+                    if (requiresPropertyDetails &&
+                        (submission.propertyDetailsDocuments?.completeEntries.isNotEmpty ??
+                            false)) ...[
+                      _sectionTitle('Property Details'),
+                      for (final entry
+                          in submission.propertyDetailsDocuments!.completeEntries)
+                        _dataRow(
+                          (entry.propertyName ?? '').trim().isNotEmpty
+                              ? entry.propertyName!.trim()
+                              : 'Property',
+                          'Uploaded',
+                        ),
+                    ],
                     if (isProfessionalLoan && submission.professionalDocuments != null) ...[
                       _sectionTitle(proType == 'doctor' ? 'Doctor Documents' : 'CA Documents'),
                       if (proType == 'doctor') ...[
@@ -298,11 +313,11 @@ class _ViewSubmittedScreenState extends State<ViewSubmittedScreen> {
                     if (isBusinessProprietor) ...[
                       _sectionTitle('Business Documents'),
                       _dataRow(
-                        'Spouse Aadhaar',
+                        'Co-applicant Aadhaar',
                         businessDocs?.spouseAadhaar?.isComplete == true ? 'Uploaded' : '—',
                       ),
                       _dataRow(
-                        'Spouse PAN',
+                        'Co-applicant PAN',
                         businessDocs?.spousePan?.isComplete == true ? 'Uploaded' : '—',
                       ),
                       _dataRow(

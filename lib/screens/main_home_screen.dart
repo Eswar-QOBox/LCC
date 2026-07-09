@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/loan_application.dart';
+import '../providers/auth_provider.dart';
 import '../services/loan_application_service.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
@@ -35,14 +37,20 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _refreshPendingApplications();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshPendingApplications());
   }
 
   Future<void> _refreshPendingApplications() async {
     try {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final applications = await _applicationService.getApplications(
         status: 'all',
         limit: 50,
+        customerLeadId: customerLeadId,
       );
       if (!mounted) return;
       final hasPending = applications.any(_isPendingApplication);
@@ -54,11 +62,12 @@ class _MainHomeScreenState extends State<MainHomeScreen> {
     }
   }
 
+  /// Badge on Applications tab: drafts and flows still being filled — not submitted
+  /// (submitted = under review; user continues from Applications list if needed).
   bool _isPendingApplication(LoanApplication application) {
     return application.isDraft ||
         application.isInProgress ||
-        application.isPaused ||
-        application.isSubmitted;
+        application.isPaused;
   }
 
   @override

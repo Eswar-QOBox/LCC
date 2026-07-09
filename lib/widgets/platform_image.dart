@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 
 /// Platform-agnostic image widget that works on both mobile and web
 class PlatformImage extends StatefulWidget {
@@ -34,59 +35,9 @@ class _PlatformImageState extends State<PlatformImage> {
   bool _isLoadingWeb = false;
   bool _hasWebError = false;
 
-  String _normalizeUrlIfNeeded(String raw) {
-    if (raw.isEmpty) return raw;
-    if (raw.startsWith('blob:') || raw.startsWith('data:image')) return raw;
+  String _normalizeUrlIfNeeded(String raw) => UploadUrlHelper.resolve(raw);
 
-    var path = raw;
-
-    // Normalize "baseUrl..." prefix if stored that way.
-    if (path.startsWith('baseUrl')) {
-      path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
-    }
-
-    // Normalize localhost URLs from older saved data.
-    if (path.startsWith('http://localhost:5000')) {
-      path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-    }
-
-    // If already a full URL, return as-is.
-    if (path.startsWith('http://') || path.startsWith('https://')) return path;
-
-    // Some saved paths come without leading slash (e.g. "uploads/...", "api/...").
-    if (path.startsWith('uploads/') || path.startsWith('api/')) {
-      path = '/$path';
-    }
-
-    // Convert known upload-relative paths to full API URLs.
-    // Only treat these as network paths (avoid breaking local file paths like /storage/...).
-    if (path.startsWith('/uploads/')) {
-      if (!path.contains('/uploads/files/')) {
-        path = path.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-      }
-      return '${ApiConfig.baseUrl}$path';
-    }
-
-    if (path.startsWith('/api/')) {
-      return '${ApiConfig.baseUrl}$path';
-    }
-
-    return raw;
-  }
-
-  bool _isNetworkPath(String raw) {
-    final p = raw;
-    return p.startsWith('http://') ||
-        p.startsWith('https://') ||
-        p.startsWith('blob:') ||
-        p.startsWith('data:image') ||
-        p.startsWith('/uploads/') ||
-        p.startsWith('/api/') ||
-        p.startsWith('uploads/') ||
-        p.startsWith('api/') ||
-        p.startsWith('baseUrl') ||
-        p.startsWith('http://localhost:5000');
-  }
+  bool _isNetworkPath(String raw) => UploadUrlHelper.isNetworkPath(raw);
 
   @override
   void initState() {
@@ -123,6 +74,19 @@ class _PlatformImageState extends State<PlatformImage> {
     return false;
   }
 
+  /// Path for [Image.file] / [File] on IO platforms ([file://] URIs from some pickers).
+  String _localPathForFileImage(String raw) {
+    final t = raw.trim();
+    if (t.toLowerCase().startsWith('file:')) {
+      try {
+        return Uri.parse(t).toFilePath();
+      } catch (_) {
+        return t.replaceFirst(RegExp(r'^file://'), '');
+      }
+    }
+    return t;
+  }
+
 
   Future<void> _fetchWebImageIfNeeded() async {
     final normalized = _normalizeUrlIfNeeded(widget.imagePath);
@@ -150,9 +114,13 @@ class _PlatformImageState extends State<PlatformImage> {
         
         if (response.statusCode == 200) {
           final bytes = response.bodyBytes;
-          
-          // Validate that we received actual image data, not HTML or other content
-          if (_isValidImageData(bytes)) {
+          final contentType =
+              (response.headers['content-type'] ?? '').toLowerCase();
+          final serverSaysImage = contentType.startsWith('image/');
+
+          // Prefer magic-byte check; also trust Content-Type: image/* so HEIC/AVIF/BMP
+          // and other formats the decoder supports are not rejected here.
+          if (_isValidImageData(bytes) || serverSaysImage) {
             if (mounted) {
               setState(() {
                 _webFetchedBytes = response.bodyBytes;
@@ -291,7 +259,7 @@ class _PlatformImageState extends State<PlatformImage> {
         );
       } else {
         return Image.file(
-          File(widget.imagePath),
+          File(_localPathForFileImage(widget.imagePath)),
           fit: effectiveFit,
           width: widget.width,
           height: widget.height,

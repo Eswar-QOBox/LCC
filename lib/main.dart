@@ -5,7 +5,9 @@ import 'package:provider/provider.dart';
 import 'providers/submission_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/application_provider.dart';
+import 'services/audio_controller.dart';
 import 'utils/app_theme.dart';
+import 'utils/app_theme_mode.dart';
 import 'utils/app_routes.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
@@ -30,6 +32,7 @@ import 'screens/professional_loan_type_screen.dart';
 import 'screens/step5_business_docs_screen.dart';
 import 'screens/step5_professional_docs_screen.dart';
 import 'screens/step5_student_docs_screen.dart';
+import 'screens/step5_property_details_screen.dart';
 import 'screens/step4_spouse_aadhaar_screen.dart';
 import 'screens/step5_spouse_pan_screen.dart';
 import 'screens/step6_msme_screen.dart';
@@ -48,8 +51,39 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  final AudioController _audioController = AudioController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Background music is purely additive – guard so a failure here can never
+    // block app startup.
+    _audioController.init().whenComplete(() {
+      _handleRouteChanged();
+    });
+    _router.routerDelegate.addListener(_handleRouteChanged);
+  }
+
+  void _handleRouteChanged() {
+    final path =
+        _router.routerDelegate.currentConfiguration.uri.path;
+    _audioController.onRouteChanged(path);
+  }
+
+  @override
+  void dispose() {
+    _router.routerDelegate.removeListener(_handleRouteChanged);
+    _audioController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,29 +99,35 @@ class MyApp extends StatelessWidget {
           },
         ),
         ChangeNotifierProvider(create: (_) => ApplicationProvider()),
+        ChangeNotifierProvider<AudioController>.value(value: _audioController),
       ],
-      child: MaterialApp.router(
-        title: 'JSEE Solutions',
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.light,
-        routerConfig: _router,
-        debugShowCheckedModeBanner: false,
-        builder: (context, child) {
-          return PopScope(
-            canPop: false,
-            onPopInvokedWithResult: (didPop, result) async {
-              if (didPop) return;
-              final router = GoRouter.of(context);
-              // Use GoRouter's stack so back from e.g. Personal Loan → Instructions returns to home
-              if (router.canPop()) {
-                router.pop();
-              } else {
-                // No route to pop — go to home instead of exiting the app
-                router.go(AppRoutes.home);
-              }
+      child: ValueListenableBuilder<ThemeMode>(
+        valueListenable: appThemeModeNotifier,
+        builder: (context, themeMode, _) {
+          return MaterialApp.router(
+            title: 'JSEE Solutions',
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.darkTheme,
+            themeMode: themeMode,
+            routerConfig: _router,
+            debugShowCheckedModeBanner: false,
+            builder: (context, child) {
+              return PopScope(
+                canPop: false,
+                onPopInvokedWithResult: (didPop, result) async {
+                  if (didPop) return;
+                  final router = GoRouter.of(context);
+                  // Use GoRouter's stack so back from e.g. Personal Loan → Instructions returns to home
+                  if (router.canPop()) {
+                    router.pop();
+                  } else {
+                    // No route to pop — go to home instead of exiting the app
+                    router.go(AppRoutes.home);
+                  }
+                },
+                child: child ?? const SizedBox.shrink(),
+              );
             },
-            child: child ?? const SizedBox.shrink(),
           );
         },
       ),
@@ -314,6 +354,13 @@ final GoRouter _router = GoRouter(
       builder: (context, state) {
         final fromPreview = state.uri.queryParameters['from'] == 'preview';
         return Step5StudentDocsScreen(fromPreview: fromPreview);
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.step5PropertyDetails,
+      builder: (context, state) {
+        final fromPreview = state.uri.queryParameters['from'] == 'preview';
+        return Step5PropertyDetailsScreen(fromPreview: fromPreview);
       },
     ),
     GoRoute(

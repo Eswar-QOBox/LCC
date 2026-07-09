@@ -699,8 +699,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
         final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
         final businessLoanType =
             (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
-        final isBusinessLoan = loanType.contains('business') &&
-            (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+        final isBusinessLoan = loanType.contains('business');
 
         await appProvider.updateApplication(
           currentStep: isBusinessLoan ? 7 : 6, // Move to preview step
@@ -761,6 +760,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
       if (mounted && context.mounted) {
         final submissionProvider = context.read<SubmissionProvider>();
         final loanType = (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+        final businessLoanType =
+            (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+        final isBusinessLoan = loanType.contains('business');
         final professionalType =
             (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
         final isProfessionalLoan = loanType.contains('professional') &&
@@ -780,7 +782,7 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
           return;
         }
         // Professional: Personal Data -> Preview. Student: require academic docs first, then Preview.
-        // Personal loan: Salary Slips (if needed) -> Preview.
+        // Business loan: Preview (no salary slips). Personal loan: Salary Slips (if needed) -> Preview.
         if (isStudentLoan) {
           final studentDocs =
               submissionProvider.submission.studentDocuments;
@@ -791,6 +793,8 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                 ? AppRoutes.step6Preview
                 : AppRoutes.step5StudentDocs,
           );
+        } else if (isBusinessLoan) {
+          context.go(AppRoutes.step6Preview);
         } else if (isProfessionalLoan) {
           context.go(AppRoutes.step6Preview);
         } else {
@@ -876,11 +880,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
               (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
           final professionalLoanType =
               (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
-          final isBusinessLoan = loanType.contains('business') &&
-              (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+          final isBusinessLoan = loanType.contains('business');
           final isProfessionalLoan = loanType.contains('professional') &&
               (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
           final isStudentLoan = loanType.contains('student');
+          final requiresProperty =
+              loanType.contains('mortgage') || loanType.contains('home');
           context.go(
             isBusinessLoan
                 ? AppRoutes.step7Ohp
@@ -888,7 +893,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                     ? AppRoutes.step5ProfessionalDocs
                     : isStudentLoan
                         ? AppRoutes.step5StudentDocs
-                        : AppRoutes.step5_1SalarySlips,
+                        : requiresProperty
+                            ? AppRoutes.step5PropertyDetails
+                            : AppRoutes.step5_1SalarySlips,
           );
         } catch (e) {
           if (Navigator.canPop(context)) Navigator.pop(context);
@@ -918,11 +925,12 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                         (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
                     final professionalLoanType =
                         (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
-                    final isBusinessLoan = loanType.contains('business') &&
-                        (businessLoanType == 'proprietor' || businessLoanType == 'partnership' || businessLoanType == 'pvt_limited');
+                    final isBusinessLoan = loanType.contains('business');
                     final isProfessionalLoan = loanType.contains('professional') &&
                         (professionalLoanType == 'doctor' || professionalLoanType == 'ca');
                     final isStudentLoan = loanType.contains('student');
+                    final requiresProperty =
+                        loanType.contains('mortgage') || loanType.contains('home');
                     context.go(
                       isBusinessLoan
                           ? AppRoutes.step7Ohp
@@ -930,7 +938,9 @@ class _Step5PersonalDataScreenState extends State<Step5PersonalDataScreen> {
                               ? AppRoutes.step5ProfessionalDocs
                               : isStudentLoan
                                   ? AppRoutes.step5StudentDocs
-                                  : AppRoutes.step5_1SalarySlips,
+                                  : requiresProperty
+                                      ? AppRoutes.step5PropertyDetails
+                                      : AppRoutes.step5_1SalarySlips,
                     );
                   } catch (e) {
                     if (Navigator.canPop(context)) {

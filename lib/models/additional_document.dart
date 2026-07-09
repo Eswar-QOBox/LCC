@@ -1,7 +1,25 @@
+import 'package:intl/intl.dart';
+
 enum DocumentCategory {
   applicant,
   spouse,
 }
+
+/// Case-insensitive match for CRM enum strings (e.g. `IDENTITY` vs `identity`) and Flutter keys.
+bool leadDocumentTypeMatches(String a, String b) =>
+    a.toLowerCase().trim() == b.toLowerCase().trim();
+
+/// Remove trailing re-upload markers so we do not chain `… · Reuploaded · Reuploaded`.
+String stripLeadDocumentReuploadSuffix(String name) {
+  var s = name.trim();
+  s = s.replaceFirst(RegExp(r'\s*[·•]\s*Reuploaded\s*$', caseSensitive: false), '');
+  s = s.replaceFirst(RegExp(r'\s*\(Reuploaded\)\s*$', caseSensitive: false), '');
+  s = s.trim();
+  return s.isEmpty ? name.trim() : s;
+}
+
+bool leadDocumentDisplayNameHasReuploadTag(String name) =>
+    name.toLowerCase().contains('reuploaded');
 
 enum DocumentStatus {
   pending,
@@ -97,15 +115,15 @@ class DocumentRequirement {
         'coapplicant_firm_kyc_photo_2': 'Co-applicant KYC Photo 2',
         'coapplicant_firm_kyc_pan': 'Co-applicant KYC PAN',
         'coapplicant_firm_kyc_address_proof': 'Co-applicant KYC Address Proof',
-        // Spouse documents
-        'spouse_aadhaar': 'Spouse Aadhaar Card',
-        'spouse_pan': 'Spouse PAN Card',
-        'spouse_bank_statement': 'Spouse Bank Statement',
-        'spouse_salary_slip': 'Spouse Salary Slip',
-        'spouse_employment_letter': 'Spouse Employment Letter',
-        'spouse_form16': 'Spouse Form 16',
-        'spouse_it_return': 'Spouse IT Return',
-        'spouse_other': 'Spouse Other Document',
+        // Co-applicant documents (business proprietor: spouse / parent / etc.)
+        'spouse_aadhaar': 'Co-applicant Aadhaar Card',
+        'spouse_pan': 'Co-applicant PAN Card',
+        'spouse_bank_statement': 'Co-applicant Bank Statement',
+        'spouse_salary_slip': 'Co-applicant Salary Slip',
+        'spouse_employment_letter': 'Co-applicant Employment Letter',
+        'spouse_form16': 'Co-applicant Form 16',
+        'spouse_it_return': 'Co-applicant IT Return',
+        'spouse_other': 'Co-applicant Other Document',
         // Regular documents (default to applicant)
         'selfies': 'Selfie',
         'selfie': 'Selfie',
@@ -115,6 +133,19 @@ class DocumentRequirement {
         'bank_statement': 'Bank Statement',
         'salary_slips': 'Salary Slip',
         'salary_slip': 'Salary Slip',
+        // CRM “Request additional documents” catalog (must match web slugs)
+        'additional_salary_certificate': 'Salary Certificate',
+        'additional_bank_statement_6m': 'Bank Statement (Last 6 Months)',
+        'additional_trade_license': 'Trade License Copy',
+        'additional_visa_copy': 'Visa Copy',
+        'additional_emirates_id_back': 'Emirates ID (Back)',
+        'additional_passport_copy': 'Passport Copy',
+        'additional_cancelled_cheque': 'Cancelled Cheque',
+        'additional_tenancy_contract': 'Tenancy Contract',
+        'additional_utility_bill': 'Utility Bill (Address Proof)',
+        'additional_employment_letter': 'Employment Letter',
+        'additional_credit_card_statement': 'Credit Card Statement',
+        'additional_existing_loan_statement': 'Existing Loan Statement',
       };
 
       // Determine label
@@ -135,8 +166,9 @@ class DocumentRequirement {
       }
     }
 
-    // Check if uploaded
-    final isUploaded = uploadedDocTypes.contains(id);
+    // Check if uploaded (CRM enums vs Flutter keys may differ only by case)
+    final isUploaded =
+        uploadedDocTypes.any((t) => leadDocumentTypeMatches(t, id));
     final status = isUploaded ? DocumentStatus.uploaded : DocumentStatus.pending;
 
     return DocumentRequirement(
@@ -172,26 +204,52 @@ class UploadedDocument {
 
   factory UploadedDocument.fromJson(Map<String, dynamic> json) {
     return UploadedDocument(
-      id: json['id'] as String? ?? '',
-      documentType: json['folder'] as String? ?? json['category'] as String? ?? '',
-      fileName: json['name'] as String? ?? json['filename'] as String? ?? '',
-      fileSize: json['size'] as String? ?? '0 KB',
-      uploadedAt: json['uploadedAt'] != null
-          ? DateTime.parse(json['uploadedAt'] as String)
-          : DateTime.now(),
-      url: json['url'] as String?,
-      status: _parseStatus(json['status'] as String?),
-      rejectionReason: json['rejectionReason'] as String?,
+      id: _stringField(json['id']),
+      documentType:
+          _stringField(json['folder']).isNotEmpty ? _stringField(json['folder']) : _stringField(json['category']),
+      fileName: _stringField(json['name']).isNotEmpty ? _stringField(json['name']) : _stringField(json['filename']),
+      fileSize: _stringField(json['size']).isNotEmpty ? _stringField(json['size']) : '0 KB',
+      uploadedAt: _parseUploadedAt(json['uploadedAt'] ?? json['created_at']),
+      url: json['url']?.toString(),
+      status: _parseStatus(json['status']?.toString()),
+      rejectionReason: json['rejectionReason']?.toString(),
     );
+  }
+
+  static String _stringField(dynamic v) {
+    if (v == null) return '';
+    if (v is String) return v;
+    return v.toString();
+  }
+
+  /// Backend may store human-readable dates from CRM; ISO from Flutter. Never throw — dropped rows hid rejected state.
+  static DateTime _parseUploadedAt(dynamic raw) {
+    if (raw == null) return DateTime.now();
+    final s = raw.toString().trim();
+    if (s.isEmpty) return DateTime.now();
+    try {
+      return DateTime.parse(s);
+    } catch (_) {
+      for (final pattern in ['MMM d, yyyy', 'MMMM d, yyyy', 'd/MM/yyyy', 'MM/dd/yyyy']) {
+        try {
+          return DateFormat(pattern, 'en_US').parseLoose(s);
+        } catch (_) {}
+      }
+    }
+    return DateTime.now();
   }
 
   static DocumentStatus _parseStatus(String? status) {
     switch (status?.toLowerCase()) {
+      case 'pending':
+        return DocumentStatus.pending;
       case 'verified':
         return DocumentStatus.verified;
       case 'rejected':
         return DocumentStatus.rejected;
       case 'uploaded':
+      case 'uploading':
+        return DocumentStatus.uploading;
       default:
         return DocumentStatus.uploaded;
     }

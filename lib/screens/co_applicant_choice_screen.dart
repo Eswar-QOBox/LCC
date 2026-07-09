@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/submission_provider.dart';
 import '../utils/app_routes.dart';
+import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../widgets/premium_card.dart';
@@ -20,9 +21,12 @@ class CoApplicantChoiceScreen extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final provider = context.watch<SubmissionProvider>();
     final loanTypeParam = GoRouterState.of(context).uri.queryParameters['loanType'];
+    final withCoApplicantParam =
+        GoRouterState.of(context).uri.queryParameters['withCoApplicant'] == 'true';
     final normalizedLoanType = (loanTypeParam ?? '').trim();
-    final isHomeOrCarEntry =
-        normalizedLoanType == 'Home Loan' || normalizedLoanType == 'Car Loan';
+    final isHomeOrCarEntry = normalizedLoanType == 'Home Loan' ||
+        normalizedLoanType == 'Car Loan' ||
+        normalizedLoanType == AppStrings.loanTypeMortgage;
     final hasLoanTypeFromSelection = normalizedLoanType.isNotEmpty;
     final selectedLoanType = isHomeOrCarEntry ? normalizedLoanType : 'Personal Loan';
     final backRoute = hasLoanTypeFromSelection
@@ -32,7 +36,7 @@ class CoApplicantChoiceScreen extends StatelessWidget {
     return PreventCloseOnBack(
       onBack: () => context.go(backRoute),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
           child: Column(
             children: [
@@ -106,7 +110,8 @@ class CoApplicantChoiceScreen extends StatelessWidget {
                               icon: Icons.person,
                               title: 'Single applicant',
                               subtitle: 'I am applying alone',
-                              selected: !provider.submission.hasCoApplicant,
+                              selected:
+                                  !provider.submission.hasCoApplicant && !withCoApplicantParam,
                               onTap: () {
                                 provider.setHasCoApplicant(false);
                                 if (hasLoanTypeFromSelection) {
@@ -124,7 +129,8 @@ class CoApplicantChoiceScreen extends StatelessWidget {
                               icon: Icons.people,
                               title: 'With co-applicant',
                               subtitle: 'Joint application with another person',
-                              selected: provider.submission.hasCoApplicant &&
+                              selected: (provider.submission.hasCoApplicant ||
+                                      withCoApplicantParam) &&
                                   (provider.submission.coApplicantFirmType == null),
                               onTap: () {
                                 provider.setHasCoApplicant(true);

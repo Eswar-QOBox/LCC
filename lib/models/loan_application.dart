@@ -1,10 +1,13 @@
+import 'dart:convert';
+
 class LoanApplication {
   final String id;
   final String userId;
   final String loanType;
+  /// Proprietor / partnership / pvt_limited — stored in remarks meta for Business Loan.
+  final String? businessLoanType;
   final int currentStep;
-  final String
-  status; // draft, in_progress, paused, submitted, approved, rejected
+  final String status; // draft, in_progress, paused, submitted, approved, rejected
   final String applicationId;
   final double? loanAmount;
   final Map<String, dynamic>? step1Selfie;
@@ -17,11 +20,14 @@ class LoanApplication {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? submittedAt;
+  /// Bank routing attempt (1 = first bank, 2+ after reroute on dashboard).
+  final int attemptNumber;
 
   LoanApplication({
     required this.id,
     required this.userId,
     required this.loanType,
+    this.businessLoanType,
     required this.currentStep,
     required this.status,
     required this.applicationId,
@@ -36,14 +42,15 @@ class LoanApplication {
     required this.createdAt,
     required this.updatedAt,
     this.submittedAt,
+    this.attemptNumber = 1,
   });
 
-  /// Copy with a different loanType (e.g. when backend returns Personal Loan for Professional Loan).
-  LoanApplication copyWith({String? loanType}) {
+  LoanApplication copyWith({String? loanType, String? businessLoanType}) {
     return LoanApplication(
       id: id,
       userId: userId,
       loanType: loanType ?? this.loanType,
+      businessLoanType: businessLoanType ?? this.businessLoanType,
       currentStep: currentStep,
       status: status,
       applicationId: applicationId,
@@ -58,6 +65,7 @@ class LoanApplication {
       createdAt: createdAt,
       updatedAt: updatedAt,
       submittedAt: submittedAt,
+      attemptNumber: attemptNumber,
     );
   }
 
@@ -66,20 +74,140 @@ class LoanApplication {
     return raw;
   }
 
+  /// Parse a JHipster LoanSubmissionDTO.
+  /// Step data and app-level status are stored in the 'remarks' field as JSON.
+  factory LoanApplication.fromJhipsterJson(Map<String, dynamic> json) {
+    final id = json['id']?.toString() ?? '';
+
+    // Decode meta from remarks (set by loan_application_service on create/update)
+    Map<String, dynamic> meta = {};
+    final remarksRaw = json['remarks'] as String?;
+    if (remarksRaw != null && remarksRaw.startsWith('{')) {
+      try {
+        meta = jsonDecode(remarksRaw) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+
+    final currentStep = (meta['currentStep'] as num?)?.toInt() ?? 1;
+    final status = (meta['status'] as String?) ?? 'draft';
+    final loanAmount = (meta['loanAmount'] as num?)?.toDouble();
+
+    Map<String, dynamic>? safeMap(dynamic v) =>
+        v is Map ? Map<String, dynamic>.from(v) : null;
+
+    String? readLeadIdFromStep(Map<String, dynamic>? step) {
+      if (step == null) return null;
+      final uploaded = step['uploadedFile'];
+      if (uploaded is Map) {
+        final lead = uploaded['lead'];
+        if (lead is Map && lead['id'] != null) {
+          return lead['id'].toString();
+        }
+      }
+      final lead = step['lead'];
+      if (lead is Map && lead['id'] != null) {
+        return lead['id'].toString();
+      }
+      return null;
+    }
+
+    /// When the list API omits top-level `lead`, CRM lead id may still exist under step uploads.
+    String? inferLeadIdFromRemarksMeta(Map<String, dynamic> meta) {
+      const keys = <String>[
+        'step1Selfie',
+        'step2Aadhaar',
+        'step3Pan',
+        'step4BankStatement',
+        'step5PersonalData',
+        'step6Preview',
+        'step7Submission',
+      ];
+      for (final k in keys) {
+        final v = meta[k];
+        if (v is Map<String, dynamic>) {
+          final lid = readLeadIdFromStep(v);
+          if (lid != null && lid.isNotEmpty) return lid;
+        } else if (v is Map) {
+          final lid = readLeadIdFromStep(Map<String, dynamic>.from(v));
+          if (lid != null && lid.isNotEmpty) return lid;
+        }
+      }
+      return null;
+    }
+
+    final loanType = _normalizeBackendLoanType(
+      json['loanType'] as String? ?? 'Personal Loan',
+    );
+
+    // applicantName is reused as applicationId in our mapping
+    final applicationId = json['applicantName'] as String? ?? id;
+
+    // lead.id is the userId equivalent in JHipster (CRM lead). Backend sometimes returns `lead: null`
+    // on list DTOs; infer from remarks so we can filter client-side to the logged-in customer.
+    final leadMap = json['lead'] as Map<String, dynamic>?;
+    var userId = leadMap?['id']?.toString() ?? '';
+    if (userId.isEmpty) {
+      final inferred = inferLeadIdFromRemarksMeta(meta);
+      if (inferred != null && inferred.isNotEmpty) {
+        userId = inferred;
+      }
+    }
+
+    DateTime parseDate(dynamic v) {
+      if (v is String) {
+        try {
+          return DateTime.parse(v);
+        } catch (_) {}
+      }
+      return DateTime.now();
+    }
+
+    final attemptNumber = (json['attemptNumber'] as num?)?.toInt() ?? 1;
+
+    return LoanApplication(
+      id: id,
+      userId: userId,
+      loanType: loanType,
+      businessLoanType: meta['businessLoanType'] as String?,
+      currentStep: currentStep,
+      status: status,
+      applicationId: applicationId,
+      loanAmount: loanAmount,
+      step1Selfie: safeMap(meta['step1Selfie']),
+      step2Aadhaar: safeMap(meta['step2Aadhaar']),
+      step3Pan: safeMap(meta['step3Pan']),
+      step4BankStatement: safeMap(meta['step4BankStatement']),
+      step5PersonalData: safeMap(meta['step5PersonalData']),
+      step6Preview: safeMap(meta['step6Preview']),
+      step7Submission: safeMap(meta['step7Submission']),
+      createdAt: parseDate(json['createdAt']),
+      updatedAt: parseDate(json['respondedAt'] ?? json['createdAt']),
+      submittedAt: status == 'submitted' ? parseDate(json['respondedAt'] ?? json['createdAt']) : null,
+      attemptNumber: attemptNumber,
+    );
+  }
+
+  /// Parse the old Flask/MongoDB JSON format (kept for backwards compatibility).
   factory LoanApplication.fromJson(Map<String, dynamic> json) {
+    // If this looks like a JHipster response (has 'loanType' but no 'userId' or 'applicationId')
+    if (json.containsKey('loanType') && !json.containsKey('applicationId')) {
+      return LoanApplication.fromJhipsterJson(json);
+    }
+
     return LoanApplication(
       id: json['id'] as String,
-      userId: json['userId'] as String,
-      loanType: _normalizeBackendLoanType(json['loanType'] as String),
+      userId: json['userId'] as String? ?? '',
+      loanType: _normalizeBackendLoanType(json['loanType'] as String? ?? ''),
+      businessLoanType: json['businessLoanType'] as String?,
       currentStep: json['currentStep'] is int
           ? json['currentStep'] as int
-          : int.tryParse(json['currentStep'].toString()) ?? 1,
-      status: json['status'] as String,
-      applicationId: json['applicationId'] as String,
+          : int.tryParse(json['currentStep']?.toString() ?? '') ?? 1,
+      status: json['status'] as String? ?? 'draft',
+      applicationId: json['applicationId'] as String? ?? json['id'] as String,
       loanAmount: json['loanAmount'] != null
           ? (json['loanAmount'] is int
-                ? (json['loanAmount'] as int).toDouble()
-                : json['loanAmount'] as double)
+              ? (json['loanAmount'] as int).toDouble()
+              : json['loanAmount'] as double)
           : null,
       step1Selfie: json['step1Selfie'] as Map<String, dynamic>?,
       step2Aadhaar: json['step2Aadhaar'] as Map<String, dynamic>?,
@@ -96,11 +224,31 @@ class LoanApplication {
     );
   }
 
+  /// Serialise all app-level fields that JHipster doesn't have native columns for.
+  /// This map is JSON-encoded into the 'remarks' field on PUT/POST.
+  Map<String, dynamic> toMetaMap() {
+    return {
+      'currentStep': currentStep,
+      'status': status,
+      if (businessLoanType != null && businessLoanType!.isNotEmpty)
+        'businessLoanType': businessLoanType,
+      if (loanAmount != null) 'loanAmount': loanAmount,
+      if (step1Selfie != null) 'step1Selfie': step1Selfie,
+      if (step2Aadhaar != null) 'step2Aadhaar': step2Aadhaar,
+      if (step3Pan != null) 'step3Pan': step3Pan,
+      if (step4BankStatement != null) 'step4BankStatement': step4BankStatement,
+      if (step5PersonalData != null) 'step5PersonalData': step5PersonalData,
+      if (step6Preview != null) 'step6Preview': step6Preview,
+      if (step7Submission != null) 'step7Submission': step7Submission,
+    };
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
       'userId': userId,
       'loanType': loanType,
+      if (businessLoanType != null) 'businessLoanType': businessLoanType,
       'currentStep': currentStep,
       'status': status,
       'applicationId': applicationId,

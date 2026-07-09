@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' show Rect;
@@ -1033,7 +1033,12 @@ class OcrService {
     DateTime? statementPeriodEnd,
   }) async {
     try {
+      debugPrint(
+          '[BankStatement OCR] ENTER path=${imagePath.split(RegExp(r'[/\\]')).last} '
+          'hasBytes=${imageBytes != null} ref="${aadhaarNameReference ?? ""}" '
+          'period=${statementPeriodStart != null ? "$statementPeriodStart..$statementPeriodEnd" : "none"}');
       if (kIsWeb) {
+        debugPrint('[BankStatement OCR] FAIL: web not supported');
         return BankStatementOcrResult(
           success: false,
           errorMessage: 'Bank statement OCR not supported on web',
@@ -1042,6 +1047,7 @@ class OcrService {
       InputImage inputImage;
       if (imageBytes != null) {
         final tempFile = await _createTempFile(imageBytes);
+        debugPrint('[BankStatement OCR] temp image: ${tempFile.path}');
         inputImage = InputImage.fromFilePath(tempFile.path);
       } else {
         inputImage = InputImage.fromFilePath(imagePath);
@@ -1054,7 +1060,7 @@ class OcrService {
       final fullText = recognizedText.text;
       debugPrint('=== Bank Statement OCR Full Text ===');
       debugPrint(fullText);
-      debugPrint('=== End Bank Statement OCR ===');
+      debugPrint('=== End Bank Statement OCR (${fullText.length} chars, ${recognizedText.blocks.length} blocks) ===');
 
       final Set<int>? allowedMonthKeys;
       final String textForAnalysis;
@@ -1063,6 +1069,10 @@ class OcrService {
         final end = statementPeriodEnd;
         allowedMonthKeys = _monthKeysForStatementPeriod(start, end);
         textForAnalysis = _filterBankStatementOcrTextByPeriod(fullText, start, end);
+        debugPrint(
+            '[BankStatement OCR] period filter: allowedMonths=$allowedMonthKeys '
+            'fullLines=${fullText.split(RegExp(r'[\r\n]+')).where((l) => l.trim().isNotEmpty).length} '
+            'keptLines=${textForAnalysis.split(RegExp(r'[\r\n]+')).where((l) => l.trim().isNotEmpty).length}');
       } else {
         allowedMonthKeys = null;
         textForAnalysis = fullText;
@@ -1118,15 +1128,20 @@ class OcrService {
 
       String? best;
       int bestScore = -1;
+      final scoredCandidates = <String>[];
       for (final line in lines) {
         if (!looksLikePersonName(line)) continue;
         final s = scoreNameCandidate(line, aadhaarNameReference);
+        if (kDebugMode && scoredCandidates.length < 8) {
+          scoredCandidates.add('"$line" score=$s');
+        }
         if (s > bestScore) {
           bestScore = s;
           best = line;
         }
       }
       if (best == null) {
+        debugPrint('[BankStatement OCR] no line candidate; scanning ${recognizedText.blocks.length} blocks');
         for (final block in recognizedText.blocks) {
           final text = block.text.trim();
           if (text.isEmpty) continue;
@@ -1136,11 +1151,22 @@ class OcrService {
           }
           if (!looksLikePersonName(text)) continue;
           final s = scoreNameCandidate(text, aadhaarNameReference);
+          if (kDebugMode && scoredCandidates.length < 8) {
+            scoredCandidates.add('block:"$text" score=$s');
+          }
           if (s > bestScore) {
             bestScore = s;
             best = text;
           }
         }
+      }
+      if (kDebugMode && scoredCandidates.isNotEmpty) {
+        debugPrint('[BankStatement OCR] name candidates: ${scoredCandidates.join('; ')}');
+      }
+      if (best == null) {
+        debugPrint(
+            '[BankStatement OCR] WARN: no account-holder name candidate '
+            '(lines=${lines.length} ref="${aadhaarNameReference ?? ""}")');
       }
 
       // Check if Aadhaar name words appear in period-relevant statement text only.
@@ -1150,20 +1176,53 @@ class OcrService {
               aadhaarNameReference.trim(), analysisSource);
 
       debugPrint(
-          'Bank Statement OCR - extracted: $best, nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
+          'Bank Statement OCR - extracted: $best (score=$bestScore), '
+          'nameMatchesAadhaar: $nameMatchesAadhaar (ref: $aadhaarNameReference)');
+      if (kDebugMode) {
+        debugPrint(
+            '[DocValidation] BankStatement OCR summary '
+            'holder="${best ?? ""}" nameMatchesAadhaar=$nameMatchesAadhaar '
+            'ref="${aadhaarNameReference ?? ""}" '
+            'periodFilter=${statementPeriodStart != null && statementPeriodEnd != null}');
+      }
       return BankStatementOcrResult(
         success: true,
         accountHolderName: best,
         fullText: fullText,
         nameMatchesAadhaar: nameMatchesAadhaar,
       );
-    } catch (e) {
-      debugPrint('Bank Statement OCR Error: $e');
+    } catch (e, st) {
+      debugPrint('[BankStatement OCR] Error: $e');
+      debugPrint('[BankStatement OCR] Stack: $st');
       return BankStatementOcrResult(
         success: false,
         errorMessage: 'Failed to extract: ${e.toString()}',
       );
     }
+  }
+
+  /// Same idea as PAN vs Aadhaar name match: allow **N** vs **NAGIREDDY**,
+  /// truncated OCR tokens, etc. Substring check stays first (cheap + robust).
+  static bool _bankTokenMatchesReferenceWord(String refWord, String bankToken) {
+    if (refWord.isEmpty || bankToken.isEmpty) return false;
+    if (refWord == bankToken) return true;
+    if (bankToken.length == 1 && refWord.startsWith(bankToken)) return true;
+    if (refWord.length == 1 && bankToken.startsWith(refWord)) return true;
+    if (refWord.length >= 3 && bankToken.length >= 3) {
+      if (refWord.startsWith(bankToken) || bankToken.startsWith(refWord)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static List<String> _bankStatementNameTokensUpper(String textUpper) {
+    return textUpper
+        .replaceAll(RegExp(r'[^A-Z]'), ' ')
+        .split(RegExp(r'\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
   }
 
   /// Returns true if words from [aadhaarName] (from Aadhaar card) appear in
@@ -1177,12 +1236,48 @@ class OcrService {
         .toList();
     if (nameWords.isEmpty) return false;
     final textUpper = bankStatementText.toUpperCase();
+    final bankTokens = _bankStatementNameTokensUpper(textUpper);
+
+    if (kDebugMode) {
+      debugPrint(
+          '[DocValidation] Bank↔name check reference="$aadhaarName" '
+          'refWords>=2=${nameWords.join("|")} bankTokens=${bankTokens.join("|")} '
+          'ocrLen=${textUpper.length}');
+    }
+
     for (final word in nameWords) {
       if (word.isEmpty) continue;
-      if (!textUpper.contains(word)) {
-        debugPrint('Bank statement name check: word "$word" not found in text');
+      if (textUpper.contains(word)) {
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] Bank↔name refWord="$word" OK (substring)');
+        }
+        continue;
+      }
+      var matchedToken = false;
+      for (final t in bankTokens) {
+        if (_bankTokenMatchesReferenceWord(word, t)) {
+          matchedToken = true;
+          if (kDebugMode) {
+            debugPrint(
+                '[DocValidation] Bank↔name refWord="$word" OK (token="$t")');
+          }
+          break;
+        }
+      }
+      if (!matchedToken) {
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] Bank↔name refWord="$word" FAIL '
+              '(bankTokens=${bankTokens.join(", ")})');
+        }
+        debugPrint(
+            'Bank statement name check: word "$word" not found in text or tokens');
         return false;
       }
+    }
+    if (kDebugMode) {
+      debugPrint('[DocValidation] Bank↔name: all reference words matched');
     }
     return true;
   }
@@ -1190,6 +1285,31 @@ class OcrService {
   /// Extract full text from any document image (e.g. professional loan docs).
   /// Uses same ML Kit OCR as Aadhaar/PAN/bank statement. Supports image path or bytes.
   /// For PDFs, render first page to image bytes elsewhere and pass imageBytes.
+  /// Strips `file://` and normalizes paths for [dart:io] reads on Android/iOS.
+  static String normalizeLocalPath(String path) {
+    var p = path.trim();
+    if (p.startsWith('file://')) {
+      p = p.substring(7);
+    }
+    return p;
+  }
+
+  /// Reads image bytes from a local filesystem path (ML Kit often fails on raw URIs).
+  static Future<Uint8List?> readLocalImageBytes(String path) async {
+    if (kIsWeb) return null;
+    try {
+      final p = normalizeLocalPath(path);
+      if (p.isEmpty) return null;
+      final file = io.File(p);
+      if (await file.exists()) {
+        return await file.readAsBytes();
+      }
+    } catch (e) {
+      debugPrint('[OcrService] readLocalImageBytes failed: $e');
+    }
+    return null;
+  }
+
   static Future<DocumentOcrResult> extractDocumentText(
     String imagePath, {
     Uint8List? imageBytes,
@@ -1202,19 +1322,23 @@ class OcrService {
         );
       }
       InputImage inputImage;
-      if (imageBytes != null) {
-        final tempFile = await _createTempFile(imageBytes);
-        inputImage = InputImage.fromFilePath(tempFile.path);
-      } else {
-        inputImage = InputImage.fromFilePath(imagePath);
+      Uint8List? bytes = imageBytes;
+      bytes ??= await readLocalImageBytes(imagePath);
+      if (bytes == null || bytes.isEmpty) {
+        return DocumentOcrResult(
+          success: false,
+          errorMessage: 'Could not read image file for OCR',
+        );
       }
+      final tempFile = await _createTempFile(bytes);
+      inputImage = InputImage.fromFilePath(tempFile.path);
       final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
       textRecognizer.close();
       final fullText = recognizedText.text;
       debugPrint('=== Document OCR Full Text ===');
       debugPrint(fullText.isEmpty ? '(empty)' : fullText);
-      debugPrint('=== End Document OCR ===');
+      debugPrint('=== End Document OCR (${fullText.length} chars) ===');
       return DocumentOcrResult(
         success: true,
         fullText: fullText.isEmpty ? null : fullText,

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb, debugPrint;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +19,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../utils/aadhaar_utils.dart';
 import '../utils/aadhaar_image_masker.dart';
 import 'aadhaar_grid_capture_screen.dart';
@@ -552,21 +553,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
       final aadhaarName = stepData['aadhaarName'] as String?;
       final aadhaarFrontRawText = stepData['aadhaarFrontRawText'] as String?;
 
-      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
         if (relativeUrl == null || relativeUrl.isEmpty) return null;
         if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) {
           return relativeUrl;
         }
-        // Convert /uploads/aadhaar/... to /api/v1/uploads/files/aadhaar/...
-        String apiPath = relativeUrl;
-        if (apiPath.startsWith('/uploads/') &&
-            !apiPath.contains('/uploads/files/')) {
-          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-        } else if (!apiPath.startsWith('/api/')) {
-          apiPath = '/api/v1$apiPath';
-        }
-        return '${ApiConfig.baseUrl}$apiPath';
+        return UploadUrlHelper.resolve(relativeUrl);
       }
       
       // Prefer uploaded file URL over local blob path (same as business/bank flow: use backend data, do not re-OCR).
@@ -1063,6 +1055,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
+            if (kDebugMode) {
+              debugPrint(
+                  '[DocValidation] Aadhaar front OCR name="${result.name}" '
+                  'internalValid=${result.isInternallyValid} '
+                  'hasNumber=${result.hasAadhaarNumber} hasDob=${result.hasDateOfBirth}');
+            }
             // Store name for PAN cross-validation
             _aadhaarName = result.name;
             if (widget.isCoApplicant) {
@@ -1337,6 +1335,11 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           }
           if (result.hasName) {
             extractedData.add('Name: ${result.name}');
+            if (kDebugMode) {
+              debugPrint(
+                  '[DocValidation] Aadhaar front OCR (bytes) name="${result.name}" '
+                  'internalValid=${result.isInternallyValid}');
+            }
             _aadhaarName = result.name;
             provider.updatePersonalDataField(fullName: result.name);
           }
@@ -1728,7 +1731,23 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
       final currentApp = appProvider.currentApplication;
       final existingData = currentApp?.step2Aadhaar;
-      bool isRemote(String? path) => path != null && path.startsWith('http');
+
+      bool shouldSkipUpload(String? path, Map<String, dynamic>? existingUpload) {
+        if (path == null || path.isEmpty) return true;
+        if (_isRemoteOrServerPath(path)) return true;
+        if (existingUpload != null) {
+          final url = existingUpload['fileUrl'] ?? existingUpload['url'];
+          if (url != null && url.toString().trim().isNotEmpty) return true;
+        }
+        return false;
+      }
+
+      String? trimOcrText(String? raw) {
+        if (raw == null) return null;
+        final t = raw.trim();
+        if (t.length <= 1000) return t;
+        return t.substring(0, 1000);
+      }
 
       // When mask toggle is ON and we have the number rects, burn black masks
       // over each digit-group of the first 8 digits into the actual image bytes
@@ -1738,7 +1757,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_frontAadhaarNumberRect);
         if (clampedRects != null) {
           Uint8List? srcBytes = _frontBytes;
-          if (srcBytes == null && !kIsWeb && _frontPath != null && !isRemote(_frontPath)) {
+          if (srcBytes == null && !kIsWeb && _frontPath != null && !shouldSkipUpload(_frontPath, null)) {
             try {
               srcBytes = await XFile(_frontPath!).readAsBytes();
             } catch (_) {}
@@ -1751,14 +1770,18 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         }
       }
 
-      if (isRemote(_frontPath)) {
+      if (shouldSkipUpload(_frontPath, existingData?['frontUpload'] as Map<String, dynamic>?)) {
         frontUpload = existingData?['frontUpload'] as Map<String, dynamic>?;
+        if (frontUpload == null && _isRemoteOrServerPath(_frontPath)) {
+          frontUpload = {'fileUrl': _frontPath, 'url': _frontPath};
+        }
       } else {
         frontUpload = await _fileUploadService.uploadAadhaar(
           XFile(_frontPath!),
           side: 'front',
           isPdf: _frontIsPdf,
           maskedBytes: maskedFrontBytes,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 
@@ -1768,7 +1791,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         final clampedRects = AadhaarUtils.clampNumberRectsForOverlay(_backAadhaarNumberRect);
         if (clampedRects != null) {
           Uint8List? srcBytes = _backBytes;
-          if (srcBytes == null && !kIsWeb && _backPath != null && !isRemote(_backPath)) {
+          if (srcBytes == null && !kIsWeb && _backPath != null && !shouldSkipUpload(_backPath, null)) {
             try {
               srcBytes = await XFile(_backPath!).readAsBytes();
             } catch (_) {}
@@ -1783,14 +1806,18 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
 
       if (_frontIsPdf && _backIsPdf && _frontPath == _backPath && frontUpload != null) {
         backUpload = frontUpload;
-      } else if (isRemote(_backPath)) {
+      } else if (shouldSkipUpload(_backPath, existingData?['backUpload'] as Map<String, dynamic>?)) {
         backUpload = existingData?['backUpload'] as Map<String, dynamic>?;
+        if (backUpload == null && _isRemoteOrServerPath(_backPath)) {
+          backUpload = {'fileUrl': _backPath, 'url': _backPath};
+        }
       } else {
         backUpload = await _fileUploadService.uploadAadhaar(
           XFile(_backPath!),
           side: 'back',
           isPdf: _backIsPdf,
           maskedBytes: maskedBackBytes,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 
@@ -1811,7 +1838,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           'frontAadhaarNumberRect': _frontAadhaarNumberRect,
           'backAadhaarNumberRect': _backAadhaarNumberRect,
           'aadhaarName': _aadhaarName,
-          'aadhaarFrontRawText': _aadhaarFrontRawText,
+          'aadhaarFrontRawText': trimOcrText(_aadhaarFrontRawText),
           'frontImageMasked': maskedFrontBytes != null,
           'backImageMasked': maskedBackBytes != null,
           'addressDifferentFromAadhaar': _addressDifferentFromAadhaar,
@@ -1867,10 +1894,10 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: const Color(0xFFEF4444), size: 28),
+              child: Icon(icon, color: AppTheme.errorColor, size: 28),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1901,12 +1928,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFBBF24)),
+                border: Border.all(color: AppTheme.warningColor),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.lightbulb_outline, color: Color(0xFFD97706), size: 20),
+                  const Icon(Icons.lightbulb_outline, color: AppTheme.warningColor, size: 20),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -1914,7 +1941,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       textAlign: TextAlign.left,
                       style: const TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF92400E),
+                        color: AppTheme.warningColor,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -1928,7 +1955,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
+              backgroundColor: AppTheme.errorColor,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2010,12 +2037,12 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           if (mainLast4 == currentLast4 && mainLast4.length == 4) {
             _showValidationErrorDialog(
               title: widget.isSpouse
-                  ? 'Spouse Aadhaar Invalid'
+                  ? 'Co-applicant Aadhaar Invalid'
                   : widget.isCoApplicant
                       ? 'Co-applicant Aadhaar Invalid'
                       : 'Partner Aadhaar Invalid',
               message: widget.isSpouse
-                  ? 'The spouse Aadhaar number cannot be the same as the main applicant\'s Aadhaar. Please upload the spouse\'s own Aadhaar card.'
+                  ? 'The co-applicant Aadhaar number cannot be the same as the main applicant\'s Aadhaar. Please upload the co-applicant\'s own Aadhaar card.'
                   : widget.isCoApplicant
                       ? 'Co-applicant Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the co-applicant\'s own Aadhaar card.'
                       : 'Partner ${widget.partnerIndex ?? 1} Aadhaar cannot be the same as the main applicant\'s Aadhaar. Please upload the partner\'s own Aadhaar card.',
@@ -2068,7 +2095,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
         context.go(back);
       },
       child: Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -2076,7 +2103,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             AppHeader(
               title: widget.titleOverride ??
                   (widget.isSpouse
-                      ? 'Spouse Aadhaar'
+                      ? 'Co-applicant Aadhaar'
                       : widget.isCoApplicant
                           ? 'Co-applicant Aadhaar'
                           : (widget.isPartner ? 'Partner Aadhaar' : 'Aadhaar Card')),
@@ -2206,13 +2233,13 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            const Color(0xFFEFF6FF), // blue-50
-            const Color(0xFFDBEAFE).withValues(alpha: 0.5), // blue-100
+            const Color(0xFFF0F5FF), // blue-50
+            const Color(0xFFDEECFF).withValues(alpha: 0.5), // blue-100
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFFDBEAFE), // blue-100
+          color: const Color(0xFFDEECFF), // blue-100
           width: 1,
         ),
         boxShadow: [
@@ -2235,7 +2262,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 end: Alignment.bottomRight,
                 colors: [
                   AppTheme.primaryColor,
-                  const Color(0xFF0052CC),
+                  AppTheme.secondaryColor,
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
@@ -2263,7 +2290,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: const Color(0xFF1E293B), // slate-800
+                    color: const Color(0xFF172030), // slate-800
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2297,7 +2324,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             style: theme.textTheme.bodySmall?.copyWith(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF475569), // slate-600
+              color: const Color(0xFF576175), // slate-600
             ),
           ),
         ),
@@ -2386,7 +2413,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
-                color: const Color(0xFF1E293B),
+                color: const Color(0xFF172030),
               ),
             ),
             Container(
@@ -2395,8 +2422,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 gradient: _frontPath != null
                     ? LinearGradient(
                         colors: [
-                          const Color(0xFF22C55E), // green-500
-                          const Color(0xFF16A34A), // green-600
+                          AppTheme.successColor, // green-500
+                          AppTheme.successColor, // green-600
                         ],
                       )
                     : null,
@@ -2405,7 +2432,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 boxShadow: _frontPath != null
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                          color: AppTheme.successColor.withValues(alpha: 0.3),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -2512,7 +2539,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
-                color: const Color(0xFF1E293B),
+                color: const Color(0xFF172030),
               ),
             ),
             Container(
@@ -2524,8 +2551,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 gradient: _backPath != null
                     ? LinearGradient(
                         colors: [
-                          const Color(0xFF22C55E), // green-500
-                          const Color(0xFF16A34A), // green-600
+                          AppTheme.successColor, // green-500
+                          AppTheme.successColor, // green-600
                         ],
                       )
                     : null,
@@ -2533,7 +2560,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 boxShadow: _backPath != null
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                          color: AppTheme.successColor.withValues(alpha: 0.3),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -2665,7 +2692,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   'Address different from Aadhaar?',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFF172030),
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -2674,7 +2701,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                       ? 'You will be asked to enter your current/address-proof address in Personal Details.'
                       : 'If your current address is different, turn this on to enter it later.',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: const Color(0xFF64748B),
+                    color: const Color(0xFF576175),
                     height: 1.3,
                   ),
                 ),
@@ -2983,7 +3010,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 end: Alignment.bottomRight,
                 colors: [
                   AppTheme.primaryColor,
-                  const Color(0xFF0052CC), // royal-blue
+                  AppTheme.secondaryColor, // royal-blue
                 ],
               ),
               borderRadius: BorderRadius.circular(16),
@@ -3088,7 +3115,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 fontSize: 16,
-                color: const Color(0xFF1E293B),
+                color: const Color(0xFF172030),
               ),
             ),
             Container(
@@ -3096,14 +3123,14 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF22C55E), // green-500
-                    const Color(0xFF16A34A), // green-600
+                    AppTheme.successColor, // green-500
+                    AppTheme.successColor, // green-600
                   ],
                 ),
                 borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF22C55E).withValues(alpha: 0.3),
+                    color: AppTheme.successColor.withValues(alpha: 0.3),
                     blurRadius: 4,
                     offset: const Offset(0, 2),
                   ),
@@ -3142,8 +3169,8 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFFEFF6FF), // blue-50
-                  const Color(0xFFDBEAFE), // blue-100
+                  const Color(0xFFF0F5FF), // blue-50
+                  const Color(0xFFDEECFF), // blue-100
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
@@ -3188,7 +3215,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   top: 8,
                   right: 8,
                   child: Material(
-                    color: const Color(0xFFEF4444),
+                    color: AppTheme.errorColor,
                     shape: const CircleBorder(),
                     child: InkWell(
                       onTap: () {
@@ -3199,7 +3226,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
+                          color: AppTheme.errorColor,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: Colors.white,
@@ -3267,18 +3294,18 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                const Color(0xFFDC2626).withValues(alpha: 0.1), // red-600
-                const Color(0xFFEF4444).withValues(alpha: 0.05), // red-500
+                AppTheme.errorColor.withValues(alpha: 0.1), // red-600
+                AppTheme.errorColor.withValues(alpha: 0.05), // red-500
               ],
             ),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: const Color(0xFFDC2626).withValues(alpha: 0.3),
+              color: AppTheme.errorColor.withValues(alpha: 0.3),
               width: 2,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFDC2626).withValues(alpha: 0.15),
+                color: AppTheme.errorColor.withValues(alpha: 0.15),
                 blurRadius: 6,
                 offset: const Offset(0, 3),
               ),
@@ -3291,14 +3318,14 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
             children: [
               Icon(
                 Icons.picture_as_pdf,
-                color: const Color(0xFFDC2626), // red-600
+                color: AppTheme.errorColor, // red-600
                 size: 22,
               ),
               const SizedBox(width: 10),
               Text(
                 'Switch to PDF Upload',
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  color: const Color(0xFFDC2626), // red-600
+                  color: AppTheme.errorColor, // red-600
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
                 ),
@@ -3418,7 +3445,7 @@ class _Step2AadhaarScreenState extends State<Step2AadhaarScreen> {
                   end: Alignment.bottomRight,
                   colors: [
                     AppTheme.primaryColor,
-                    const Color(0xFF0052CC), // royal-blue
+                    AppTheme.secondaryColor, // royal-blue
                   ],
                 ),
                 borderRadius: BorderRadius.circular(20),

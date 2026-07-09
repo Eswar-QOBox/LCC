@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -20,6 +20,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import 'pan_horizontal_card_capture_screen.dart';
 import '../utils/local_file_persist.dart';
 import '../utils/ocr_pdf.dart';
@@ -445,18 +446,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
       final extractedName = stepData['extractedName'] as String?;
       final extractedFatherName = stepData['extractedFatherName'] as String?;
       
-      // Helper to build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
       String? buildFullUrl(String? relativeUrl) {
         if (relativeUrl == null || relativeUrl.isEmpty) return null;
         if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-        // Convert /uploads/pan/... to /api/v1/uploads/files/pan/...
-        String apiPath = relativeUrl;
-        if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-          apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-        } else if (!apiPath.startsWith('/api/')) {
-          apiPath = '/api/v1$apiPath';
-        }
-        return '${ApiConfig.baseUrl}$apiPath';
+        return UploadUrlHelper.resolve(relativeUrl);
       }
       
       // Prefer uploaded file URL over local blob path
@@ -652,6 +645,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         uploadResult = await _fileUploadService.uploadPan(
           XFile(_frontPath!),
           isPdf: _isPdf,
+          leadId: context.read<AuthProvider>().leadId,
         );
       }
 
@@ -806,6 +800,13 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
         _extractedName = result.name;
         _extractedFatherName = result.fatherName;
         _internalDocumentValid = result.isInternallyValid;
+
+        if (kDebugMode) {
+          debugPrint(
+              '[DocValidation] PAN OCR pan=${result.panNumber} '
+              'name="${result.name}" father="${result.fatherName}" '
+              'internalValid=${result.isInternallyValid}');
+        }
 
         // Ensure Aadhaar name context is available for later validation (applicant only).
         if (!widget.isSpouse) {
@@ -1374,10 +1375,10 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.1),
+                color: AppTheme.errorColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: const Color(0xFFEF4444), size: 28),
+              child: Icon(icon, color: AppTheme.errorColor, size: 28),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1479,7 +1480,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             style: TextButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
+              backgroundColor: AppTheme.errorColor,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1634,7 +1635,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
             AppHeader(
               title: widget.titleOverride ??
                   (widget.isSpouse
-                      ? 'Spouse PAN'
+                      ? 'Co-applicant PAN'
                       : widget.isCoApplicant
                           ? 'Co-applicant PAN'
                           : (widget.isPartner ? 'Partner PAN' : 'PAN Card')),
@@ -2334,7 +2335,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                   top: 8,
                   right: 8,
                   child: Material(
-                    color: const Color(0xFFEF4444),
+                    color: AppTheme.errorColor,
                     shape: const CircleBorder(),
                     child: InkWell(
                       onTap: () {
@@ -2345,7 +2346,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
                         width: 32,
                         height: 32,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444),
+                          color: AppTheme.errorColor,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: Colors.white,
@@ -2414,7 +2415,7 @@ class _Step3PanScreenState extends State<Step3PanScreen> {
               end: Alignment.bottomRight,
               colors: [
                 const Color(0xFFDC2626).withValues(alpha: 0.1), // red-600
-                const Color(0xFFEF4444).withValues(alpha: 0.05), // red-500
+                AppTheme.errorColor.withValues(alpha: 0.05), // red-500
               ],
             ),
             borderRadius: BorderRadius.circular(20),

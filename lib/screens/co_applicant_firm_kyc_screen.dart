@@ -82,6 +82,11 @@ class _CoApplicantFirmKycScreenState extends State<CoApplicantFirmKycScreen> {
   }
 
   Future<void> _loadLeadId() async {
+    final cachedLeadId = context.read<AuthProvider>().leadId;
+    if (cachedLeadId != null) {
+      if (mounted) setState(() => _leadId = cachedLeadId);
+      return;
+    }
     try {
       final authProvider = context.read<AuthProvider>();
       final user = authProvider.user;
@@ -427,7 +432,7 @@ class _CoApplicantFirmKycScreenState extends State<CoApplicantFirmKycScreen> {
         context.go(backRoute);
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: SafeArea(
           child: Column(
             children: [

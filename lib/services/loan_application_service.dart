@@ -1,144 +1,171 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../models/loan_application.dart';
 import '../services/api_client.dart';
+import '../utils/api_config.dart';
 
 class LoanApplicationService {
   final ApiClient _apiClient = ApiClient();
 
-  /// Get all loan applications for the current user
-  Future<List<LoanApplication>> getApplications({
-    int page = 1,
-    int limit = 20,
-    String? status,
-    String? loanType,
-    String? search,
-  }) async {
-    try {
-      final queryParams = <String, dynamic>{
-        'page': page,
-        'limit': limit,
-      };
-      if (status != null && status.isNotEmpty) {
-        queryParams['status'] = status;
-      }
-      if (loanType != null && loanType.isNotEmpty) {
-        queryParams['loanType'] = loanType;
-      }
-      if (search != null && search.isNotEmpty) {
-        queryParams['search'] = search;
-      }
-
-      final response = await _apiClient.get(
-        '/api/v1/applications',
-        queryParameters: queryParams,
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationsJson =
-              data['data']['applications'] as List<dynamic>;
-          return applicationsJson
-              .map((json) => LoanApplication.fromJson(json as Map<String, dynamic>))
-              .toList();
-        }
-      }
-
-      throw Exception('Failed to fetch applications');
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
-    } catch (e) {
-      throw Exception('Failed to fetch applications: $e');
-    }
-  }
-
-  /// Get a single loan application by ID
-  Future<LoanApplication> getApplication(String applicationId) async {
-    try {
-      final response = await _apiClient.get(
-        '/api/v1/applications/$applicationId',
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationJson = data['data']['application'] as Map<String, dynamic>;
-          return LoanApplication.fromJson(applicationJson);
-        }
-      }
-
-      throw Exception('Failed to fetch application');
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Application not found');
-      }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
-    } catch (e) {
-      throw Exception('Failed to fetch application: $e');
-    }
-  }
-
-  /// Backend currently allows only: Personal Loan, Car Loan, Home Loan, Business Loan, Education Loan.
-  /// Map Professional Loan → Personal Loan so creation succeeds until backend adds Professional Loan.
+  /// JHipster loan-type normalisation (backend only allows its known enum values).
   static String _loanTypeForBackend(String loanType) {
     if (loanType == 'Professional Loan') return 'Personal Loan';
     if (loanType == 'Student Loan') return 'Education Loan';
     return loanType;
   }
 
-  /// Create a new loan application
+  /// Get all loan applications for the current user.
+  /// Maps JHipster GET /api/loan-submissions to a list of LoanApplication models.
+  ///
+  /// When `customerLeadId` is set (CRM lead for this login), results are restricted to
+  /// rows whose inferred lead id matches. This mitigates a backend issue where the list
+  /// endpoint can return other customers' submissions while still authenticated.
+  Future<List<LoanApplication>> getApplications({
+    int page = 1,
+    int limit = 20,
+    String? status,
+    String? loanType,
+    String? search,
+    String? customerLeadId,
+  }) async {
+    try {
+      // JHipster pagination is 0-based
+      final queryParams = <String, dynamic>{
+        'page': page - 1,
+        'size': limit,
+        'sort': 'createdAt,desc',
+      };
+
+      final response = await _apiClient.get(
+        ApiConfig.loanSubmissionsEndpoint,
+        queryParameters: queryParams,
+      );
+
+      if (response.statusCode == 200) {
+        final list = response.data as List<dynamic>;
+        var apps = list
+            .map((json) => LoanApplication.fromJhipsterJson(json as Map<String, dynamic>))
+            .toList();
+        final want = customerLeadId?.trim();
+        if (want != null && want.isNotEmpty) {
+          apps = apps.where((a) => a.userId == want).toList();
+        }
+        return apps;
+      }
+
+      throw Exception('Failed to fetch applications');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      throw Exception('Failed to fetch applications: $e');
+    }
+  }
+
+  /// Get a single loan application by ID.
+  Future<LoanApplication> getApplication(String applicationId) async {
+    try {
+      final response = await _apiClient.get(
+        '${ApiConfig.loanSubmissionsEndpoint}/$applicationId',
+      );
+
+      if (response.statusCode == 200) {
+        return LoanApplication.fromJhipsterJson(
+          response.data as Map<String, dynamic>,
+        );
+      }
+
+      throw Exception('Failed to fetch application');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      if (e.response?.statusCode == 404) throw Exception('Application not found');
+      throw Exception('Network error: ${e.message}');
+    } catch (e) {
+      throw Exception('Failed to fetch application: $e');
+    }
+  }
+
+  /// Create a new loan application.
+  /// Maps Flutter's LoanApplication fields onto JHipster's LoanSubmissionDTO.
+  ///
+  /// [customerLeadId] is the CRM lead id for the logged-in customer. The backend
+  /// requires this for `ROLE_USER` creates (`lead` must reference an accessible lead).
   Future<LoanApplication> createApplication({
     required String loanType,
+    String? businessLoanType,
     double? loanAmount,
     int currentStep = 1,
     String status = 'draft',
+    String? customerLeadId,
+    /// Shown on the web dashboard (`LoanSubmission.applicantName`); avoids blank / numeric-only labels.
+    String? applicantDisplayName,
   }) async {
     try {
       final backendLoanType = _loanTypeForBackend(loanType);
+
+      // Encode app-level metadata in remarks so we can reconstruct it on read.
+      final meta = jsonEncode({
+        'currentStep': currentStep,
+        'status': status,
+        if (businessLoanType != null && businessLoanType.trim().isNotEmpty)
+          'businessLoanType': businessLoanType.trim(),
+        if (loanAmount != null) 'loanAmount': loanAmount,
+      });
+
+      final display = applicantDisplayName?.trim();
+      final data = <String, dynamic>{
+        'loanType': backendLoanType,
+        'applicantName': display != null && display.isNotEmpty ? display : '',
+        'status': 'PENDING',
+        'attemptNumber': 1,
+        'remarks': meta,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+      };
+
+      final leadRaw = customerLeadId?.trim();
+      if (leadRaw != null && leadRaw.isNotEmpty) {
+        final asInt = int.tryParse(leadRaw);
+        if (asInt != null) {
+          data['lead'] = <String, dynamic>{'id': asInt};
+        }
+      }
+
       final response = await _apiClient.post(
-        '/api/v1/applications',
-        data: {
-          'loanType': backendLoanType,
-          if (loanAmount != null) 'loanAmount': loanAmount,
-          'currentStep': currentStep,
-          'status': status,
-        },
+        ApiConfig.loanSubmissionsEndpoint,
+        data: data,
       );
 
       if (response.statusCode == 201) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationJson = data['data']['application'] as Map<String, dynamic>;
-          return LoanApplication.fromJson(applicationJson);
-        }
+        return LoanApplication.fromJhipsterJson(
+          response.data as Map<String, dynamic>,
+        );
       }
 
       throw Exception('Failed to create application');
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 400) {
-        final errorMsg = e.response?.data?['error']?['message'] ?? 'Invalid request';
-        throw Exception(errorMsg);
+      if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      if (e.response?.statusCode == 403) {
+        final body = e.response?.data;
+        final msg = body is Map
+            ? (body['detail'] ?? body['title'] ?? 'Forbidden').toString()
+            : 'Forbidden';
+        throw Exception(msg);
       }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
+      if (e.response?.statusCode == 400) {
+        final msg = e.response?.data?['detail'] ?? e.response?.data?['title'] ?? 'Invalid request';
+        throw Exception(msg);
+      }
+      throw Exception('Network error: ${e.message}');
     } catch (e) {
       throw Exception('Failed to create application: $e');
     }
   }
 
-  /// Update a loan application
+  /// Update a loan application.
   Future<LoanApplication> updateApplication(
     String applicationId, {
     String? loanType,
+    String? businessLoanType,
     double? loanAmount,
     int? currentStep,
     String? status,
@@ -151,136 +178,99 @@ class LoanApplicationService {
     Map<String, dynamic>? step7Submission,
   }) async {
     try {
-      final updateData = <String, dynamic>{};
-      if (loanType != null) updateData['loanType'] = loanType;
-      if (loanAmount != null) updateData['loanAmount'] = loanAmount;
-      if (currentStep != null) updateData['currentStep'] = currentStep;
-      if (status != null) updateData['status'] = status;
-      if (step1Selfie != null) updateData['step1Selfie'] = step1Selfie;
-      if (step2Aadhaar != null) updateData['step2Aadhaar'] = step2Aadhaar;
-      if (step3Pan != null) updateData['step3Pan'] = step3Pan;
-      if (step4BankStatement != null) updateData['step4BankStatement'] = step4BankStatement;
-      if (step5PersonalData != null) updateData['step5PersonalData'] = step5PersonalData;
-      if (step6Preview != null) updateData['step6Preview'] = step6Preview;
-      if (step7Submission != null) updateData['step7Submission'] = step7Submission;
+      // First fetch existing record to preserve unrequested fields
+      final existing = await getApplication(applicationId);
+      final existingMeta = existing.toMetaMap();
+
+      // Merge updates into existing meta
+      if (currentStep != null) existingMeta['currentStep'] = currentStep;
+      if (status != null) existingMeta['status'] = status;
+      if (businessLoanType != null && businessLoanType.trim().isNotEmpty) {
+        existingMeta['businessLoanType'] = businessLoanType.trim();
+      }
+      if (loanAmount != null) existingMeta['loanAmount'] = loanAmount;
+      if (step1Selfie != null) existingMeta['step1Selfie'] = step1Selfie;
+      if (step2Aadhaar != null) existingMeta['step2Aadhaar'] = step2Aadhaar;
+      if (step3Pan != null) existingMeta['step3Pan'] = step3Pan;
+      if (step4BankStatement != null) existingMeta['step4BankStatement'] = step4BankStatement;
+      if (step5PersonalData != null) existingMeta['step5PersonalData'] = step5PersonalData;
+      if (step6Preview != null) existingMeta['step6Preview'] = step6Preview;
+      if (step7Submission != null) existingMeta['step7Submission'] = step7Submission;
+
+      final updateData = <String, dynamic>{
+        'id': int.tryParse(applicationId) ?? applicationId,
+        'loanType': loanType != null ? _loanTypeForBackend(loanType) : existing.loanType,
+        'applicantName': existing.applicationId,
+        'status': 'PENDING',
+        'attemptNumber': existing.attemptNumber,
+        'remarks': jsonEncode(existingMeta),
+        'createdAt': existing.createdAt.toUtc().toIso8601String(),
+      };
+      final existingLead = existing.userId.trim();
+      if (existingLead.isNotEmpty) {
+        final lid = int.tryParse(existingLead);
+        if (lid != null) {
+          updateData['lead'] = <String, dynamic>{'id': lid};
+        }
+      }
 
       final response = await _apiClient.put(
-        '/api/v1/applications/$applicationId',
+        '${ApiConfig.loanSubmissionsEndpoint}/$applicationId',
         data: updateData,
       );
 
       if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationJson = data['data']['application'] as Map<String, dynamic>;
-          return LoanApplication.fromJson(applicationJson);
-        }
+        return LoanApplication.fromJhipsterJson(
+          response.data as Map<String, dynamic>,
+        );
       }
 
       throw Exception('Failed to update application');
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Application not found');
-      } else if (e.response?.statusCode == 400) {
-        final errorMsg = e.response?.data?['error']?['message'] ?? 'Invalid request';
-        throw Exception(errorMsg);
+      if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      if (e.response?.statusCode == 404) throw Exception('Application not found');
+      if (e.response?.statusCode == 403) {
+        final body = e.response?.data;
+        final msg = body is Map
+            ? (body['detail'] ?? body['title'] ?? 'Forbidden').toString()
+            : 'Forbidden';
+        throw Exception(msg);
       }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
+      if (e.response?.statusCode == 400) {
+        final msg = e.response?.data?['detail'] ?? e.response?.data?['title'] ?? 'Invalid request';
+        throw Exception(msg);
+      }
+      throw Exception('Network error: ${e.message}');
     } catch (e) {
       throw Exception('Failed to update application: $e');
     }
   }
 
-  /// Delete a loan application
+  /// Delete a loan application.
   Future<void> deleteApplication(String applicationId) async {
     try {
       final response = await _apiClient.delete(
-        '/api/v1/applications/$applicationId',
+        '${ApiConfig.loanSubmissionsEndpoint}/$applicationId',
       );
-
-      if (response.statusCode != 200) {
+      if (response.statusCode != 204 && response.statusCode != 200) {
         throw Exception('Failed to delete application');
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Application not found');
-      } else if (e.response?.statusCode == 400) {
-        final errorMsg = e.response?.data?['error']?['message'] ?? 'Invalid request';
-        throw Exception(errorMsg);
-      }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
+      if (e.response?.statusCode == 401) throw Exception('Unauthorized. Please login again.');
+      if (e.response?.statusCode == 404) throw Exception('Application not found');
+      throw Exception('Network error: ${e.message}');
     } catch (e) {
       throw Exception('Failed to delete application: $e');
     }
   }
 
-  /// Continue a paused application
+  /// Continue a paused application — update status to in_progress.
   Future<LoanApplication> continueApplication(String applicationId) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/applications/$applicationId/continue',
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationJson = data['data']['application'] as Map<String, dynamic>;
-          return LoanApplication.fromJson(applicationJson);
-        }
-      }
-
-      throw Exception('Failed to continue application');
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Application not found');
-      } else if (e.response?.statusCode == 400) {
-        final errorMsg = e.response?.data?['error']?['message'] ?? 'Invalid request';
-        throw Exception(errorMsg);
-      }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
-    } catch (e) {
-      throw Exception('Failed to continue application: $e');
-    }
+    return updateApplication(applicationId, status: 'in_progress');
   }
 
-  /// Pause an in-progress application
+  /// Pause an in-progress application — update status to paused.
   Future<LoanApplication> pauseApplication(String applicationId) async {
-    try {
-      final response = await _apiClient.post(
-        '/api/v1/applications/$applicationId/pause',
-      );
-
-      if (response.statusCode == 200) {
-        final data = response.data;
-        if (data['success'] == true) {
-          final applicationJson = data['data']['application'] as Map<String, dynamic>;
-          return LoanApplication.fromJson(applicationJson);
-        }
-      }
-
-      throw Exception('Failed to pause application');
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Application not found');
-      } else if (e.response?.statusCode == 400) {
-        final errorMsg = e.response?.data?['error']?['message'] ?? 'Invalid request';
-        throw Exception(errorMsg);
-      }
-      throw Exception(
-          'Network error: ${e.response?.data?['error']?['message'] ?? e.message}');
-    } catch (e) {
-      throw Exception('Failed to pause application: $e');
-    }
+    return updateApplication(applicationId, status: 'paused');
   }
 }

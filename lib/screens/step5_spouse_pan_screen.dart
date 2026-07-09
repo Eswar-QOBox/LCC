@@ -13,7 +13,7 @@ class Step5SpousePanScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Step3PanScreen(
       isSpouse: true,
-      titleOverride: 'Spouse PAN',
+      titleOverride: 'Co-applicant PAN',
       progressStepOverride: 5,
       totalStepsOverride: 10,
       backRouteOverride: AppRoutes.step4SpouseAadhaar,

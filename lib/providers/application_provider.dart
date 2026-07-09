@@ -73,6 +73,7 @@ class ApplicationProvider with ChangeNotifier {
   Future<void> updateApplication({
     int? currentStep,
     String? status,
+    String? businessLoanType,
     Map<String, dynamic>? step1Selfie,
     Map<String, dynamic>? step2Aadhaar,
     Map<String, dynamic>? step3Pan,
@@ -94,6 +95,8 @@ class ApplicationProvider with ChangeNotifier {
         _currentApplication!.id,
         currentStep: currentStep,
         status: status,
+        businessLoanType:
+            businessLoanType ?? _currentApplication!.businessLoanType,
         step1Selfie: step1Selfie,
         step2Aadhaar: step2Aadhaar,
         step3Pan: step3Pan,

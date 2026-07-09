@@ -2,23 +2,29 @@ import 'package:flutter/foundation.dart';
 import '../models/user.dart';
 import '../models/document_submission.dart';
 import '../services/auth_service.dart';
+import '../services/additional_documents_service.dart';
 import '../services/storage_service.dart';
 import '../utils/auth_errors.dart';
 
 class AuthProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
-  
+  final AdditionalDocumentsService _additionalDocumentsService = AdditionalDocumentsService();
+
   User? _user;
   PersonalData? _profilePersonalData;
   bool _isLoading = false;
   String? _errorMessage;
   bool _isAuthenticated = false;
+  String? _leadId;
 
   User? get user => _user;
   PersonalData? get profilePersonalData => _profilePersonalData;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   bool get isAuthenticated => _isAuthenticated;
+  // Resolved once after login — the customer's lead ID in the CRM database.
+  // Used to link uploaded documents to the correct lead.
+  String? get leadId => _leadId;
 
   AuthProvider() {
     _checkAuthStatus();
@@ -69,6 +75,45 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  /// Resolve the CRM lead ID for the current user (best-effort, fire-and-forget).
+  /// The login field is the phone digits for JSEE customers; use it as the phone
+  /// lookup key so documents can be linked to the correct lead record.
+  Future<void> _resolveLeadId() async {
+    if (_user == null) return;
+    final phone = _user!.login.isNotEmpty ? _user!.login : null;
+    if (kDebugMode) {
+      debugPrint(
+        'Resolving leadId: login=${_user!.login}, email=${_user!.email}, preferred=$_leadId',
+      );
+    }
+    try {
+      final lead = await _additionalDocumentsService.getLeadByUser(
+        _user!.email,
+        phone: phone,
+        preferredLeadId: _leadId,
+      );
+      if (lead != null) {
+        final rawId = lead['id'];
+        _leadId = rawId != null ? rawId.toString() : null;
+        if (kDebugMode) debugPrint('leadId resolved: $_leadId');
+        notifyListeners();
+      } else if (kDebugMode) {
+        debugPrint('leadId not resolved: no CRM lead linked to this account');
+      }
+    } catch (e) {
+      // Non-fatal: uploads still work without a leadId (documents just appear unlinked)
+      if (kDebugMode) debugPrint('leadId resolution error: $e');
+    }
+  }
+
+  /// Re-attempt CRM lead resolution on demand (e.g. pull-to-refresh). Returns true when a
+  /// non-empty [leadId] is now set.
+  Future<bool> refreshLeadId() async {
+    await _resolveLeadId();
+    final v = _leadId?.trim();
+    return v != null && v.isNotEmpty;
+  }
+
   /// Login with email and password
   Future<bool> login(String email, String password) async {
     _isLoading = true;
@@ -89,6 +134,9 @@ class AuthProvider with ChangeNotifier {
       } catch (_) {
         // Ignore; keep the user from login response
       }
+
+      // Resolve CRM lead ID in background — does not block login
+      _resolveLeadId();
 
       _isLoading = false;
       notifyListeners();
@@ -118,6 +166,8 @@ class AuthProvider with ChangeNotifier {
       _user = me.user;
       _profilePersonalData = me.personalData;
       _isAuthenticated = true;
+      // Resolve lead ID if not already resolved
+      if (_leadId == null) _resolveLeadId();
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -145,6 +195,7 @@ class AuthProvider with ChangeNotifier {
       _user = null;
       _profilePersonalData = null;
       _isAuthenticated = false;
+      _leadId = null;
       _errorMessage = null;
     } catch (e) {
       _errorMessage = e.toString();
@@ -158,6 +209,28 @@ class AuthProvider with ChangeNotifier {
   void clearError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  /// Waits briefly for CRM `leadId` to be resolved after login, so loan lists can
+  /// filter to the current customer when calling LoanApplicationService.getApplications.
+  Future<String?> waitForLeadId({
+    int attempts = 15,
+    Duration step = const Duration(milliseconds: 200),
+  }) async {
+    if (_leadId != null && _leadId!.trim().isNotEmpty) {
+      return _leadId!.trim();
+    }
+    for (var i = 0; i < attempts; i++) {
+      await Future<void>.delayed(step);
+      if (_leadId != null && _leadId!.trim().isNotEmpty) {
+        return _leadId!.trim();
+      }
+    }
+    // Last resort: force a fresh resolution attempt. Covers a slow or failed background
+    // resolve right after login so the caller (e.g. "Slide to start") is not blocked by timing.
+    await _resolveLeadId();
+    final v = _leadId?.trim();
+    return (v == null || v.isEmpty) ? null : v;
   }
 
   /// Request password reset (forgot password) - accepts email or phone

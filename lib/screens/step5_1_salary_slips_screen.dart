@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/file_upload_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/blob_helper.dart';
@@ -24,11 +25,14 @@ import '../services/storage_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:typed_data';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../utils/debug_log.dart';
 import '../utils/step4_merge.dart';
+import '../utils/business_loan_flow.dart';
+import '../utils/home_mortgage_loan_flow.dart';
 
 // Conditional import for file operations - only on non-web platforms
 import 'dart:io' if (dart.library.html) '../services/file_helper_stub.dart' as io;
@@ -54,6 +58,10 @@ class Step5_1SalarySlipsScreen extends StatefulWidget {
 class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   static const int _requiredSlipCount = SalarySlips.requiredSlipCount;
 
+  /// ML Kit often throws `InputImageConverterError` on Android after crop/picker URIs.
+  /// Salary slips still upload to the server; eligibility prefill parses PDFs on the backend.
+  static const bool _enableSalarySlipOcr = false;
+
   final FileUploadService _fileUploadService = FileUploadService();
   final ImagePicker _imagePicker = ImagePicker();
   List<SalarySlipItem> _slipItems = [];
@@ -64,7 +72,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   List<bool> _slipFailures = [];
   List<Uint8List?> _slipBytes = [];
   late final List<DateTime> _requiredMonths;
-  /// OCR must succeed for each slip (on mobile) before proceeding.
+  /// When [_enableSalarySlipOcr] is true, each local slip must pass ML Kit before Continue.
   final Map<int, bool> _ocrCompleteBySlot = {};
   final Map<int, String?> _ocrIssueBySlot = {};
 
@@ -437,11 +445,25 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
     return path.startsWith('http') || path.startsWith('/uploads/') || path.startsWith('/api/');
   }
 
+  void _markSalarySlipOcrSkipped(int slotIndex) {
+    if (!mounted) return;
+    setState(() {
+      _ocrCompleteBySlot[slotIndex] = true;
+      _ocrIssueBySlot[slotIndex] = null;
+    });
+  }
+
   /// Run OCR on salary slip (image or PDF first page). Skips on web and for remote/blob paths.
   Future<void> _performDocumentOcrForSlot(int slotIndex, String path, bool isPdf) async {
     if (kIsWeb) return;
     if (_isServerStoredPath(path)) return;
     if (path.startsWith('blob:')) return;
+
+    if (!_enableSalarySlipOcr) {
+      _markSalarySlipOcrSkipped(slotIndex);
+      return;
+    }
+
     try {
       Uint8List? imageBytes;
       if (isPdf && path.toLowerCase().endsWith('.pdf') && OcrPdf.isSupported) {
@@ -453,10 +475,24 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         } catch (e) {
           if (kDebugMode) debugPrint('[SalarySlips] PDF render for OCR failed: $e');
         }
+      } else {
+        imageBytes = await OcrService.readLocalImageBytes(path);
+        if (imageBytes == null) {
+          try {
+            imageBytes = await XFile(path).readAsBytes();
+          } catch (e) {
+            if (kDebugMode) debugPrint('[SalarySlips] readAsBytes failed: $e');
+          }
+        }
       }
-      final result = imageBytes != null
-          ? await OcrService.extractDocumentText(path, imageBytes: imageBytes)
-          : await OcrService.extractDocumentText(path);
+      if (imageBytes == null || imageBytes.isEmpty) {
+        setState(() {
+          _ocrCompleteBySlot[slotIndex] = false;
+          _ocrIssueBySlot[slotIndex] = 'Could not read image file';
+        });
+        return;
+      }
+      final result = await OcrService.extractDocumentText(path, imageBytes: imageBytes);
       if (!mounted) return;
       if (result.success) {
         final text = result.fullText?.trim() ?? '';
@@ -870,6 +906,36 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
     // Load existing data from backend and sync with provider
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final appProvider = context.read<ApplicationProvider>();
+      final submissionProvider = context.read<SubmissionProvider>();
+      final loanType = (appProvider.currentApplication?.loanType ??
+              submissionProvider.submission.loanType ??
+              '')
+          .toLowerCase();
+      final appBusinessType = appProvider.currentApplication?.businessLoanType;
+      if (appBusinessType != null &&
+          appBusinessType.isNotEmpty &&
+          submissionProvider.submission.businessLoanType != appBusinessType) {
+        submissionProvider.setBusinessLoanType(appBusinessType);
+      }
+      if (!BusinessLoanFlow.requiresSalarySlips(
+        loanType: loanType,
+        businessLoanType: submissionProvider.submission.businessLoanType ??
+            appBusinessType,
+        submission: submissionProvider.submission,
+      )) {
+        context.go(
+          BusinessLoanFlow.routeIfBusinessLoanOnSalarySlipsScreen(
+            loanType: loanType,
+            businessLoanType: submissionProvider.submission.businessLoanType ??
+                appBusinessType,
+            submission: submissionProvider.submission,
+            fromPreview: widget.fromPreview,
+          ),
+        );
+        return;
+      }
       _loadExistingData();
       // Sync with provider after draft loads (in case it loads after initState)
       _syncWithProvider();
@@ -882,6 +948,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
   Future<void> _runOcrForExistingLocalSlips() async {
     if (kIsWeb) return;
     if (!mounted) return;
+    if (!_enableSalarySlipOcr) {
+      setState(() {
+        for (int i = 0; i < _requiredSlipCount && i < _slipItems.length; i++) {
+          if (_slipItems[i].hasFile) {
+            _ocrCompleteBySlot[i] = true;
+            _ocrIssueBySlot[i] = null;
+          }
+        }
+      });
+      return;
+    }
     for (int i = 0; i < _requiredSlipCount && i < _slipItems.length; i++) {
       final item = _slipItems[i];
       if (!item.hasFile) continue;
@@ -978,13 +1055,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
           }
 
           if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-          String apiPath = relativeUrl;
-          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-          } else if (!apiPath.startsWith('/api/')) {
-            apiPath = '/api/v1$apiPath';
-          }
-          return '${ApiConfig.baseUrl}$apiPath';
+          return UploadUrlHelper.resolve(relativeUrl);
         }
         
         // Get access token for authenticated request
@@ -1150,7 +1221,10 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
 
       if (localItems.isNotEmpty) {
         final files = localItems.map((item) => XFile(item.path)).toList();
-        final newUploadResults = await _fileUploadService.uploadSalarySlips(files);
+        final newUploadResults = await _fileUploadService.uploadSalarySlips(
+          files,
+          leadId: context.read<AuthProvider>().leadId,
+        );
         finalUploadedFiles.addAll(newUploadResults);
       }
 
@@ -1348,8 +1422,8 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       );
       return;
     }
-    // On mobile: require OCR success for each slip (remote paths treated as already verified).
-    if (!kIsWeb) {
+    // On mobile: optional ML Kit month/name check per slip (disabled — see [_enableSalarySlipOcr]).
+    if (_enableSalarySlipOcr && !kIsWeb) {
       final issues = <String>[];
       for (int i = 0; i < _requiredSlipCount; i++) {
         final item = _slipItems[i];
@@ -1377,12 +1451,22 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       final submissionProvider = context.read<SubmissionProvider>();
 
       if (widget.isCoApplicant) {
-        // After co-applicant salary slips: go to firm docs if firm co-applicant, else personal data
+        // After co-applicant salary slips: go to firm docs if firm co-applicant,
+        // else property details (Mortgage) or personal data.
         final firmType = submissionProvider.submission.coApplicantFirmType;
         if (firmType != null) {
           context.go('${AppRoutes.coApplicantFirmDocs}?firmType=$firmType');
         } else {
-          context.go(AppRoutes.step5PersonalData);
+          final coLoanType =
+              context.read<ApplicationProvider>().currentApplication?.loanType;
+          if (HomeMortgageLoanFlow.needsPropertyDetails(
+            loanType: coLoanType,
+            submission: submissionProvider.submission,
+          )) {
+            context.go(AppRoutes.step5PropertyDetails);
+          } else {
+            context.go(AppRoutes.step5PersonalData);
+          }
         }
         return;
       }
@@ -1442,7 +1526,13 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
       if (isProfessionalLoan) {
         context.go(AppRoutes.step6Preview);
       } else {
-        context.go(personalDataComplete ? AppRoutes.step6Preview : AppRoutes.step5PersonalData);
+        context.go(
+          HomeMortgageLoanFlow.routeAfterIncomeDocs(
+            loanType: appProvider.currentApplication?.loanType,
+            submission: submissionProvider.submission,
+            personalDataComplete: personalDataComplete,
+          ),
+        );
       }
     }
   }
@@ -1457,9 +1547,17 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
     final isProfessionalLoan = loanType.contains('professional') &&
         (professionalType == 'doctor' || professionalType == 'ca');
+    final needsProperty = HomeMortgageLoanFlow.needsPropertyDetails(
+      loanType: appProvider.currentApplication?.loanType,
+      submission: submissionProvider.submission,
+    );
     if (isProfessionalLoan) return 'Continue to Preview';
     if (isStudentLoan && !widget.isCoApplicant) return 'Continue to Student Documents';
-    if (widget.isCoApplicant) return 'Continue to Personal Data';
+    if (widget.isCoApplicant) {
+      return needsProperty
+          ? 'Continue to Property Details'
+          : 'Continue to Personal Data';
+    }
     if (submissionProvider.submission.hasCoApplicant) {
       final coAadhaarComplete =
           submissionProvider.submission.coApplicantAadhaar?.isComplete ?? false;
@@ -1483,6 +1581,7 @@ class _Step5_1SalarySlipsScreenState extends State<Step5_1SalarySlipsScreen> {
         (step5['mobileNumber'] as String?)?.trim().isNotEmpty == true &&
         (step5['personalEmailId'] as String?)?.trim().isNotEmpty == true &&
         (step5['residenceAddress'] as String?)?.trim().isNotEmpty == true;
+    if (needsProperty) return 'Continue to Property Details';
     final personalDataComplete = fromSubmission || fromBackend;
     return personalDataComplete ? 'Continue to Preview' : 'Continue to Personal Data';
   }

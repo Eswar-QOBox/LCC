@@ -17,6 +17,8 @@ class DocumentSubmission {
   BusinessDocuments? businessDocuments;
   ProfessionalDocuments? professionalDocuments;
   StudentDocuments? studentDocuments;
+  /// Mortgage Loan property documents (one or more named uploads).
+  PropertyDetailsDocuments? propertyDetailsDocuments;
   PersonalData? personalData;
   SalarySlips? salarySlips;
   /// Co-applicant salary slips (joint personal loan only).
@@ -50,6 +52,7 @@ class DocumentSubmission {
     this.businessDocuments,
     this.professionalDocuments,
     this.studentDocuments,
+    this.propertyDetailsDocuments,
     this.personalData,
     this.salarySlips,
     this.coApplicantSalarySlips,
@@ -120,6 +123,19 @@ class DocumentSubmission {
           personalData!.isComplete;
     }
 
+    // Any other Business Loan: never require salary slips (subtype may be restored later).
+    if (isBusinessLoan) {
+      return selfiePath != null &&
+          aadhaar != null &&
+          aadhaar!.isComplete &&
+          pan != null &&
+          pan!.isComplete &&
+          bankStatement != null &&
+          bankStatement!.isComplete &&
+          personalData != null &&
+          personalData!.isComplete;
+    }
+
     // Professional Loan flow (Doctor/CA): requires professional docs only; no salary slips.
     final isProfessionalLoan = (loanType ?? '').toLowerCase().contains('professional');
     final professionalType = (professionalLoanType ?? '').toLowerCase();
@@ -154,6 +170,11 @@ class DocumentSubmission {
     }
 
     // Default (personal loan flow): requires salary slips; if co-applicant, their KYC too.
+    // Home Loan and Mortgage Loan additionally require the property details documents.
+    final lt = (loanType ?? '').toLowerCase();
+    final requiresProperty = lt.contains('mortgage') || lt.contains('home');
+    final propertyOk =
+        !requiresProperty || (propertyDetailsDocuments?.isComplete ?? false);
     final personalBase = selfiePath != null &&
         aadhaar != null &&
         aadhaar!.isComplete &&
@@ -165,8 +186,9 @@ class DocumentSubmission {
         personalData!.isComplete &&
         salarySlips != null &&
         salarySlips!.isComplete;
-    if (!hasCoApplicant) return personalBase;
+    if (!hasCoApplicant) return personalBase && propertyOk;
     return personalBase &&
+        propertyOk &&
         isCoApplicantKycComplete &&
         coApplicantBankStatement != null &&
         coApplicantBankStatement!.isComplete &&
@@ -250,6 +272,11 @@ class DocumentSubmission {
           'Salary Slips (${salarySlips == null ? "not uploaded" : "$count/${SalarySlips.requiredSlipCount}"})',
         );
       }
+    }
+    final lt = (loanType ?? '').toLowerCase();
+    final requiresProperty = lt.contains('mortgage') || lt.contains('home');
+    if (requiresProperty && !(propertyDetailsDocuments?.isComplete ?? false)) {
+      missing.add('Property Details (add at least one property document)');
     }
     if (hasCoApplicant) {
       if (!isCoApplicantKycComplete) {
@@ -652,6 +679,76 @@ class StudentDocuments {
         (payslip2?.isComplete ?? false) &&
         (payslip3?.isComplete ?? false) &&
         (idCard?.isComplete ?? false);
+  }
+}
+
+/// A single Mortgage property entry: a user-given name plus one uploaded document.
+class PropertyDetailEntry {
+  /// Stable id used for the upload document type key and resume matching.
+  final String id;
+  String? propertyName;
+  String? path;
+  bool isPdf;
+
+  PropertyDetailEntry({
+    required this.id,
+    this.propertyName,
+    this.path,
+    this.isPdf = false,
+  });
+
+  bool get isComplete =>
+      (propertyName ?? '').trim().isNotEmpty &&
+      path != null &&
+      path!.trim().isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'propertyName': propertyName,
+        'path': path,
+        'isPdf': isPdf,
+      };
+
+  static PropertyDetailEntry fromJson(Map<String, dynamic> json) =>
+      PropertyDetailEntry(
+        id: (json['id'] ?? DateTime.now().microsecondsSinceEpoch.toString())
+            .toString(),
+        propertyName: json['propertyName'] as String?,
+        path: json['path'] as String?,
+        isPdf: json['isPdf'] as bool? ?? false,
+      );
+}
+
+/// Mortgage Loan property documents: one or more named property uploads.
+class PropertyDetailsDocuments {
+  List<PropertyDetailEntry> entries;
+
+  PropertyDetailsDocuments({List<PropertyDetailEntry>? entries})
+      : entries = entries ?? <PropertyDetailEntry>[];
+
+  /// At least one entry with both a name and an uploaded file.
+  bool get isComplete => entries.any((e) => e.isComplete);
+
+  /// Only the fully-filled entries (name + file).
+  List<PropertyDetailEntry> get completeEntries =>
+      entries.where((e) => e.isComplete).toList();
+
+  Map<String, dynamic> toJson() => {
+        'entries': entries.map((e) => e.toJson()).toList(),
+      };
+
+  static PropertyDetailsDocuments? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final rawEntries = json['entries'];
+    final list = <PropertyDetailEntry>[];
+    if (rawEntries is List) {
+      for (final e in rawEntries) {
+        if (e is Map) {
+          list.add(PropertyDetailEntry.fromJson(Map<String, dynamic>.from(e)));
+        }
+      }
+    }
+    return PropertyDetailsDocuments(entries: list);
   }
 }
 

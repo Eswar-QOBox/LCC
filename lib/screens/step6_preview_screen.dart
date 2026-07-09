@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/storage_service.dart';
+import '../services/pdf_generation_service.dart';
 import '../models/document_submission.dart';
 import '../providers/application_provider.dart';
 import '../providers/submission_provider.dart';
@@ -23,6 +24,7 @@ import '../widgets/premium_card.dart';
 import '../widgets/premium_toast.dart';
 import '../widgets/slide_to_confirm.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../utils/ocr_pdf.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/prevent_close_on_back.dart';
@@ -58,6 +60,29 @@ class Step6PreviewScreen extends StatefulWidget {
 }
 
 class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
+  /// JHipster lead-document payloads use [fileUrl]; older clients used [url].
+  String? _remotePathFromUploadMap(Map<String, dynamic>? m) {
+    if (m == null) return null;
+    final v = m['url'] ?? m['fileUrl'];
+    if (v == null) return null;
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  /// Never turn device cache paths into fake API URLs (e.g. /data/... -> /api/v1/data/...).
+  bool _isDeviceLocalFilesystemPath(String p) {
+    if (p.startsWith('http://') ||
+        p.startsWith('https://') ||
+        p.startsWith('blob:')) {
+      return false;
+    }
+    if (p.startsWith('/data/')) return true;
+    if (p.startsWith('/storage/')) return true;
+    if (p.startsWith('/private/var/')) return true;
+    if (p.startsWith('/var/mobile/')) return true;
+    return false;
+  }
+
   String? _authToken;
   bool _isLoadingAuth = true;
   
@@ -68,7 +93,54 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   /// Aadhaar number on card image is always masked in preview (no toggle to reveal).
   static const bool _maskAadhaarNumberInPreview = true;
 
-  void _openImagePreview(String imagePath) {
+  bool _isRemoteDocumentPath(String path) {
+    final p = path.trim().toLowerCase();
+    return p.startsWith('http://') || p.startsWith('https://');
+  }
+
+  /// Backend GET / refresh may omit `aadhaarNumber` in step 5 meta (PII); step 2 stores
+  /// masked `frontAadhaarNumber` / `backAadhaarNumber`. Prefer step 5 when present.
+  String? _resolvedAadhaarForPersonalSync({
+    required Map<String, dynamic> step5,
+    required Map<String, dynamic>? step2,
+    required String? fromSubmission,
+  }) {
+    String? pick(dynamic v) {
+      if (v == null) return null;
+      final s = v is String ? v : v.toString();
+      final t = s.trim();
+      return t.isEmpty ? null : t;
+    }
+
+    final fromStep5 =
+        pick(step5['aadhaarNumber']) ?? pick(step5['aadharNumber']);
+    if (fromStep5 != null) return fromStep5;
+
+    if (step2 != null) {
+      final fromStep2 =
+          pick(step2['frontAadhaarNumber']) ?? pick(step2['backAadhaarNumber']);
+      if (fromStep2 != null) return fromStep2;
+    }
+
+    return pick(fromSubmission);
+  }
+
+  /// Remote upload URLs require a bearer token. [Image.network] is invoked without
+  /// headers while [_isLoadingAuth] is still true (during `refreshApplication`), which
+  /// yields 401 and "Image not available" even though the file exists on the server.
+  Future<void> _waitForAuthIfRemote(String path) async {
+    if (!_isRemoteDocumentPath(path)) return;
+    const step = Duration(milliseconds: 50);
+    const cap = Duration(seconds: 90);
+    final sw = Stopwatch()..start();
+    while (mounted && _isLoadingAuth && sw.elapsed < cap) {
+      await Future<void>.delayed(step);
+    }
+  }
+
+  Future<void> _openImagePreview(String imagePath) async {
+    await _waitForAuthIfRemote(imagePath);
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -243,6 +315,33 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     );
   }
 
+  Widget _buildPropertyDetailsSectionChild(DocumentSubmission submission) {
+    final docs = submission.propertyDetailsDocuments;
+    final completeEntries = docs?.completeEntries ?? const [];
+    if (completeEntries.isEmpty) {
+      return _buildEmptyState(context, 'No property added yet');
+    }
+    final children = <Widget>[];
+    for (final entry in completeEntries) {
+      if (children.isNotEmpty) children.add(const SizedBox(height: 12));
+      children.add(
+        _buildPremiumDocumentPreview(
+          context,
+          entry.path!,
+          (entry.propertyName ?? '').trim().isNotEmpty
+              ? entry.propertyName!.trim()
+              : 'Property',
+          entry.isPdf,
+          height: 220,
+        ),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -350,56 +449,17 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
 
     // Ensure local draft knows the current loan type (used for completeness rules).
     submissionProvider.setLoanType(application.loanType);
+    if (application.businessLoanType != null &&
+        application.businessLoanType!.trim().isNotEmpty) {
+      submissionProvider.setBusinessLoanType(application.businessLoanType);
+    }
 
 
-    // Helper function to build full URL from relative path
-    // Transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
     String? buildFullUrl(String? relativePath) {
       if (relativePath == null || relativePath.isEmpty) return null;
-      
-      String path = relativePath;
-      
-      // Fix for "baseUrl" prefix if present
-      if (path.startsWith('baseUrl')) {
-         path = path.replaceFirst('baseUrl', ApiConfig.baseUrl);
-      }
-      
-      // Fix for localhost URLs
-      if (path.startsWith('http://localhost:5000')) {
-         path = path.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-      }
-
-      // If it's already a full URL or blob URL, return as-is
-      if (path.startsWith('http') || path.startsWith('blob:')) {
-        return path;
-      }
-      
-      // Normalize paths that come without a leading slash (e.g. "uploads/...", "api/...")
-      if (path.startsWith('uploads/') || path.startsWith('api/')) {
-        path = '/$path';
-      }
-      if (!path.startsWith('/')) {
-        path = '/$path';
-      }
-
-      // Some backends return file URLs like /api/v1/uploads/<category>/<file>
-      // but the actual file-serving route is /api/v1/uploads/files/<category>/<file>.
-      // Normalize that here so previews work (notably Salary Slips).
-      if (path.startsWith('/api/v1/uploads/') &&
-          !path.startsWith('/api/v1/uploads/files/')) {
-        path = path.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
-      }
-
-      // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
-      String apiPath = path;
-      if (apiPath.startsWith('/uploads/') &&
-          !apiPath.contains('/uploads/files/')) {
-        apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-      } else if (!apiPath.startsWith('/api/')) {
-        // Ensure we don't end up with "/api/v1uploads/..." (missing slash)
-        apiPath = apiPath.startsWith('/') ? '/api/v1$apiPath' : '/api/v1/$apiPath';
-      }
-      return '${ApiConfig.baseUrl}$apiPath';
+      final trimmed = relativePath.trim();
+      if (_isDeviceLocalFilesystemPath(trimmed)) return null;
+      return UploadUrlHelper.resolve(trimmed);
     }
 
     // Sync selfie data
@@ -410,8 +470,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           final imagePath = stepData['imagePath'] as String?;
           final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
           // Prefer uploaded file URL over local path (local paths don't survive refresh on web)
-          final relativeUrl = uploadedFile?['url'] as String?;
-          final effectivePath = buildFullUrl(relativeUrl) ?? buildFullUrl(imagePath);
+          final relativeUrl = _remotePathFromUploadMap(uploadedFile);
+          final effectivePath = buildFullUrl(relativeUrl) ??
+              buildFullUrl(imagePath) ??
+              imagePath;
           if (effectivePath != null && effectivePath.isNotEmpty) {
             submissionProvider.setSelfie(effectivePath);
           }
@@ -439,9 +501,13 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       
       // Prefer uploaded file URLs
       final effectiveFront =
-          buildFullUrl(frontUpload?['url'] as String?) ?? buildFullUrl(frontPath);
+          buildFullUrl(_remotePathFromUploadMap(frontUpload)) ??
+              buildFullUrl(frontPath) ??
+              frontPath;
       final effectiveBack =
-          buildFullUrl(backUpload?['url'] as String?) ?? buildFullUrl(backPath);
+          buildFullUrl(_remotePathFromUploadMap(backUpload)) ??
+              buildFullUrl(backPath) ??
+              backPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setAadhaarFront(effectiveFront, isPdf: frontIsPdf);
       }
@@ -477,7 +543,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       // PAN uses 'uploadedFile' not 'frontUpload'
       final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
       final effectiveFront =
-          buildFullUrl(uploadedFile?['url'] as String?) ?? buildFullUrl(frontPath);
+          buildFullUrl(_remotePathFromUploadMap(uploadedFile)) ??
+              buildFullUrl(frontPath) ??
+              frontPath;
       if (effectiveFront != null && effectiveFront.isNotEmpty) {
         submissionProvider.setPanFront(effectiveFront, isPdf: isPdf);
       }
@@ -495,7 +563,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (uploadedPages != null && uploadedPages.isNotEmpty) {
         for (var upload in uploadedPages) {
           if (upload is Map<String, dynamic>) {
-            final url = buildFullUrl(upload['url'] as String?);
+            final url = buildFullUrl(_remotePathFromUploadMap(upload));
             if (url != null && url.isNotEmpty) {
               effectivePages.add(url);
             }
@@ -538,7 +606,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
       if (uploadedSalarySlips != null && uploadedSalarySlips.isNotEmpty) {
         for (var upload in uploadedSalarySlips) {
           if (upload is Map<String, dynamic>) {
-            final raw = (upload['url'] as String?) ?? (upload['path'] as String?);
+            final raw = _remotePathFromUploadMap(upload) ??
+                (upload['path'] as String?);
             final url = buildFullUrl(raw);
             if (url != null && url.isNotEmpty) {
               effectiveSalarySlips.add(url);
@@ -586,7 +655,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         if (coUploaded != null && coUploaded.isNotEmpty) {
           for (final upload in coUploaded) {
             if (upload is Map<String, dynamic>) {
-              final url = buildFullUrl(upload['url'] as String?);
+              final url = buildFullUrl(_remotePathFromUploadMap(upload));
               if (url != null && url.isNotEmpty) {
                 effectiveCoPages.add(url);
               }
@@ -636,13 +705,20 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     // Sync Personal Data
     if (application.step5PersonalData != null) {
       final stepData = application.step5PersonalData as Map<String, dynamic>;
+      final step2Map = application.step2Aadhaar is Map<String, dynamic>
+          ? application.step2Aadhaar as Map<String, dynamic>
+          : null;
       final personalData = PersonalData(
         nameAsPerAadhaar: stepData['nameAsPerAadhaar'] as String?,
         dateOfBirth: stepData['dateOfBirth'] != null
             ? DateTime.tryParse(stepData['dateOfBirth'] as String)
             : null,
         panNo: stepData['panNo'] as String?,
-        aadhaarNumber: stepData['aadhaarNumber'] as String?,
+        aadhaarNumber: _resolvedAadhaarForPersonalSync(
+          step5: stepData,
+          step2: step2Map,
+          fromSubmission: submissionProvider.submission.personalData?.aadhaarNumber,
+        ),
         mobileNumber: stepData['mobileNumber'] as String?,
         personalEmailId: stepData['personalEmailId'] as String?,
         countryOfResidence: stepData['countryOfResidence'] as String?,
@@ -702,6 +778,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         basePath == AppRoutes.step5BusinessDocs ||
         basePath == AppRoutes.step5ProfessionalDocs ||
         basePath == AppRoutes.step5StudentDocs ||
+        basePath == AppRoutes.step5PropertyDetails ||
         basePath == AppRoutes.coApplicantChoice ||
         basePath == AppRoutes.coApplicantAadhaar ||
         basePath == AppRoutes.coApplicantPan ||
@@ -724,34 +801,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
   /// Build full URL from relative path (same logic as _loadExistingData)
   String? _buildFullUrlForSelfie(String? path) {
     if (path == null || path.isEmpty) return null;
-    String p = path;
-    if (p.startsWith('baseUrl')) {
-      p = p.replaceFirst('baseUrl', ApiConfig.baseUrl);
-    }
-    if (p.startsWith('http://localhost:5000')) {
-      p = p.replaceFirst('http://localhost:5000', ApiConfig.baseUrl);
-    }
-    if (p.startsWith('http') || p.startsWith('blob:')) return p;
-
-    // Normalize missing leading slash variants.
-    if (p.startsWith('uploads/') || p.startsWith('api/')) {
-      p = '/$p';
-    }
-    if (!p.startsWith('/')) {
-      p = '/$p';
-    }
-
-    // Normalize /api/v1/uploads/<category>/... -> /api/v1/uploads/files/<category>/...
-    if (p.startsWith('/api/v1/uploads/') && !p.startsWith('/api/v1/uploads/files/')) {
-      p = p.replaceFirst('/api/v1/uploads/', '/api/v1/uploads/files/');
-    }
-
-    if (p.startsWith('/uploads/') && !p.contains('/uploads/files/')) {
-      p = p.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-    } else if (!p.startsWith('/api/')) {
-      p = p.startsWith('/') ? '/api/v1$p' : '/api/v1/$p';
-    }
-    return '${ApiConfig.baseUrl}$p';
+    final trimmed = path.trim();
+    if (_isDeviceLocalFilesystemPath(trimmed)) return null;
+    return UploadUrlHelper.resolve(trimmed);
   }
 
   /// Get selfie path from either SubmissionProvider (local) or ApplicationProvider (backend)
@@ -781,8 +833,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           final stepData = application.step1Selfie as Map<String, dynamic>;
           final imagePath = stepData['imagePath'] as String?;
           final uploadedFile = stepData['uploadedFile'] as Map<String, dynamic>?;
-          final relativeUrl = uploadedFile?['url'] as String?;
-          final effectivePath = _buildFullUrlForSelfie(relativeUrl) ?? _buildFullUrlForSelfie(imagePath);
+          final relativeUrl = _remotePathFromUploadMap(uploadedFile);
+          final effectivePath = _buildFullUrlForSelfie(relativeUrl) ??
+              _buildFullUrlForSelfie(imagePath) ??
+              imagePath;
           if (kDebugMode && effectivePath != null) {
             print('_getSelfiePath: effectivePath = $effectivePath');
           }
@@ -846,8 +900,43 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
         },
       );
 
+      if (!context.mounted) {
+        return;
+      }
+
       // Also save to provider for local state
       await provider.submit();
+
+      if (!context.mounted) {
+        return;
+      }
+
+      final pdfSynced = await PdfGenerationService().syncApplicationFormSummaryPdfToLeadOnSubmit(
+        context: context,
+        submissionProvider: provider,
+        applicationProvider: appProvider,
+      );
+
+      if (pdfSynced) {
+        try {
+          final current = appProvider.currentApplication;
+          if (current != null && context.mounted) {
+            final step7 = Map<String, dynamic>.from(current.step7Submission ?? {});
+            step7['summaryPdfLeadSyncedAt'] = DateTime.now().toUtc().toIso8601String();
+            await appProvider.updateApplication(step7Submission: step7);
+          }
+        } catch (e) {
+          debugPrint('Step6: could not persist summaryPdfLeadSyncedAt: $e');
+        }
+      } else if (context.mounted) {
+        final hasLead = (appProvider.currentApplication?.userId ?? '').trim().isNotEmpty;
+        if (hasLead) {
+          PremiumToast.showWarning(
+            context,
+            'Application submitted. The summary PDF could not be attached to your lead (try again from Download PDF when online).',
+          );
+        }
+      }
 
       // Clear draft after successful submission
       await provider.clearDraft();
@@ -900,6 +989,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     final professionalType = (submission.professionalLoanType ?? '').toLowerCase();
     final isProfessionalDoctorOrCa = isProfessionalLoan && (professionalType == 'doctor' || professionalType == 'ca');
     final isStudentLoan = normalizedLoanType.contains('student');
+    final requiresPropertyDetails =
+        normalizedLoanType.contains('mortgage') || normalizedLoanType.contains('home');
 
     final step2Aadhaar = appProvider.currentApplication?.step2Aadhaar;
     final rawFrontRect = step2Aadhaar is Map ? (step2Aadhaar as Map)['frontAadhaarNumberRect'] : null;
@@ -1185,7 +1276,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                           if (isBusinessProprietor) ...[
                             _buildSummaryRow(
                               context,
-                              'Step 5: Spouse Aadhaar',
+                              'Step 5: Co-applicant Aadhaar',
                               submission.businessDocuments?.spouseAadhaar?.isComplete == true
                                   ? '✓ Uploaded'
                                   : '✗ Missing',
@@ -1193,7 +1284,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                             ),
                             _buildSummaryRow(
                               context,
-                              'Step 6: Spouse PAN',
+                              'Step 6: Co-applicant PAN',
                               submission.businessDocuments?.spousePan?.isComplete == true
                                   ? '✓ Uploaded'
                                   : '✗ Missing',
@@ -1376,6 +1467,15 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                     : '✗ Missing',
                                 submission.coApplicantFirmDocuments?.isFirmPanUploaded == true,
                               ),
+                            if (requiresPropertyDetails)
+                              _buildSummaryRow(
+                                context,
+                                'Property Details',
+                                (submission.propertyDetailsDocuments?.isComplete ?? false)
+                                    ? '✓ Uploaded'
+                                    : '✗ Missing',
+                                submission.propertyDetailsDocuments?.isComplete ?? false,
+                              ),
                             _buildSummaryRow(
                               context,
                               submission.hasCoApplicant
@@ -1437,7 +1537,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                                       child: Material(
                                         color: Colors.transparent,
                                         child: InkWell(
-                                          onTap: () => _openImagePreview(selfiePath),
+                                          onTap: (_isRemoteDocumentPath(selfiePath) &&
+                                                  _isLoadingAuth)
+                                              ? null
+                                              : () => _openImagePreview(selfiePath),
                                           child: PlatformImage(
                                             imagePath: selfiePath,
                                             fit: BoxFit.cover,
@@ -1609,7 +1712,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       _buildPremiumSection(
                         context,
                         stepNumber: 5,
-                        title: 'Spouse Aadhaar',
+                        title: 'Co-applicant Aadhaar',
                         icon: Icons.badge_outlined,
                         isComplete: submission.businessDocuments?.spouseAadhaar?.isComplete ?? false,
                         onEdit: () => _editStep(context, AppRoutes.step4SpouseAadhaar),
@@ -1642,7 +1745,7 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                       _buildPremiumSection(
                         context,
                         stepNumber: 6,
-                        title: 'Spouse PAN',
+                        title: 'Co-applicant PAN',
                         icon: Icons.credit_card_outlined,
                         isComplete: submission.businessDocuments?.spousePan?.isComplete ?? false,
                         onEdit: () => _editStep(context, AppRoutes.step5SpousePan),
@@ -2089,6 +2192,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                         child: _buildStudentLoanDocumentsSectionChild(submission),
                       ),
                       const SizedBox(height: 20),
+                    ] else if (isBusinessLoan) ...[
+                      // Proprietor / partnership / Pvt Ltd use branches above.
+                      // Any other Business Loan routing must not fall through to salary slips.
                     ] else ...[
                       if (submission.hasCoApplicant) ...[
                         _buildPremiumSection(
@@ -2275,6 +2381,20 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                               )
                             : _buildEmptyState(context, 'Not uploaded'),
                       ),
+                      if (requiresPropertyDetails) ...[
+                        const SizedBox(height: 20),
+                        _buildPremiumSection(
+                          context,
+                          stepNumber: submission.hasCoApplicant ? 9 : 6,
+                          title: 'Property Details',
+                          icon: Icons.home_work_outlined,
+                          isComplete:
+                              submission.propertyDetailsDocuments?.isComplete ?? false,
+                          onEdit: () =>
+                              _editStep(context, AppRoutes.step5PropertyDetails),
+                          child: _buildPropertyDetailsSectionChild(submission),
+                        ),
+                      ],
                       if (submission.hasCoApplicant) ...[
                         const SizedBox(height: 20),
                         _buildPremiumSection(
@@ -2436,6 +2556,9 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     const SizedBox(height: 40),
                     // Dynamic button: Close if submitted, Submit if not submitted
                     if (!isSubmitted) ...[
+                      // Final disclaimer shown just before submission
+                      _buildSubmissionDisclaimer(context),
+                      const SizedBox(height: 20),
                       // Not submitted - show Submit button
                       SlideToConfirm(
                         label: submission.isComplete
@@ -2686,14 +2809,16 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
           child: InkWell(
             onTap: showAsPdf
                 ? null
-                : () => _openDocumentPreview(
-                      context,
-                      path: path,
-                      label: label,
-                      showAsPdf: showAsPdf,
-                      maskImage: maskImage,
-                      numberRects: clampedRects,
-                    ),
+                : (_isRemoteDocumentPath(path) && _isLoadingAuth)
+                    ? null
+                    : () => _openDocumentPreview(
+                          context,
+                          path: path,
+                          label: label,
+                          showAsPdf: showAsPdf,
+                          maskImage: maskImage,
+                          numberRects: clampedRects,
+                        ),
             child: LayoutBuilder(
               builder: (_, constraints) {
                 final w = constraints.maxWidth;
@@ -2854,6 +2979,8 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     bool maskImage = false,
     List<Map<String, double>>? numberRects,
   }) async {
+    await _waitForAuthIfRemote(path);
+    if (!context.mounted) return;
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
@@ -3000,6 +3127,70 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
             style: TextStyle(
               color: Colors.grey.shade600,
               fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Final disclaimer shown directly above the "Slide to Submit" control on
+  /// the preview screen. Reminds the user that JSEE Solutions is only a
+  /// facilitator and that they are responsible for the authenticity of the
+  /// documents they submit.
+  Widget _buildSubmissionDisclaimer(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final titleStyle = theme.textTheme.titleSmall?.copyWith(
+      color: AppTheme.warningColor,
+      fontWeight: FontWeight.w700,
+      fontSize: 14,
+    );
+    final bodyStyle = theme.textTheme.bodySmall?.copyWith(
+      color: colorScheme.onSurfaceVariant,
+      height: 1.5,
+      fontSize: 13,
+    );
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.warningColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppTheme.warningColor.withValues(alpha: 0.35),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            color: AppTheme.warningColor,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Before You Submit', style: titleStyle),
+                const SizedBox(height: 6),
+                Text(
+                  'JSEE Solutions acts only as a facilitator and is not responsible for loan approval/rejection decisions made by banks or NBFCs.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.start,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'You are responsible for providing correct and genuine documents. JSEE Solutions is not responsible for any issues arising from incorrect or fake documents.',
+                  style: bodyStyle,
+                  textAlign: TextAlign.start,
+                ),
+              ],
             ),
           ),
         ],
@@ -3553,16 +3744,22 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(
-            step,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w500,
+          Expanded(
+            child: Text(
+              step,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 3,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: isComplete
                   ? AppTheme.successColor.withValues(alpha: 0.1)
@@ -3576,7 +3773,10 @@ class _Step6PreviewScreenState extends State<Step6PreviewScreen> {
                     ? AppTheme.successColor
                     : Colors.grey.shade700,
                 fontWeight: FontWeight.w600,
+                fontSize: 11,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

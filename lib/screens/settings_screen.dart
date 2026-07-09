@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +15,7 @@ import '../models/loan_application.dart';
 import '../models/document_submission.dart';
 import '../models/user.dart';
 import '../services/loan_application_service.dart';
+import '../services/audio_controller.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -69,7 +71,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadPreviousLoans();
-    _loadDeveloperMode();
+    if (kDebugMode) {
+      _loadDeveloperMode();
+    }
   }
 
   Future<void> _loadDeveloperMode() async {
@@ -84,9 +88,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     try {
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final apps = await _applicationService.getApplications(
         status: 'all',
         limit: 50,
+        customerLeadId: customerLeadId,
       );
       
       // Filter only submitted and approved loans (excluding drafts)
@@ -258,71 +267,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Developer mode – allow multiple applications
-                    PremiumCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.developer_mode,
-                                  color: colorScheme.primary,
-                                  size: 22,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                'Developer mode',
-                                style: theme.textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Allow multiple submissions in progress at once',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _developerMode ? 'On' : 'Off',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: _developerMode
-                                        ? AppTheme.successColor
-                                        : colorScheme.onSurfaceVariant,
+                    // Developer mode – debug builds only (hidden in release).
+                    if (kDebugMode) ...[
+                      PremiumCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    Icons.developer_mode,
+                                    color: colorScheme.primary,
+                                    size: 22,
                                   ),
                                 ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  'Developer mode',
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Allow multiple submissions in progress at once',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
                               ),
-                              Switch(
-                                value: _developerMode,
-                                onChanged: (value) async {
-                                  await setDeveloperModeEnabled(value);
-                                  if (mounted) setState(() => _developerMode = value);
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _developerMode ? 'On' : 'Off',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: _developerMode
+                                          ? AppTheme.successColor
+                                          : colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                                Switch(
+                                  value: _developerMode,
+                                  onChanged: (value) async {
+                                    await setDeveloperModeEnabled(value);
+                                    if (mounted) setState(() => _developerMode = value);
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
+                    ],
 
                     // Previous Loans Section
                     _buildPreviousLoansSection(context),
+                    const SizedBox(height: 16),
+
+                    // Background music
+                    _buildMusicSection(context),
                     const SizedBox(height: 16),
 
                     // Support
@@ -654,6 +669,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Widget _buildMusicSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final audioController = context.watch<AudioController>();
+    final enabled = audioController.musicEnabled;
+
+    return PremiumCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  enabled ? Icons.music_note : Icons.music_off,
+                  color: colorScheme.primary,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Background Music',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Play soothing music softly while you use the app',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  enabled ? 'On' : 'Off',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: enabled
+                        ? AppTheme.successColor
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Switch(
+                value: enabled,
+                onChanged: (value) {
+                  context.read<AudioController>().setMusicEnabled(value);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPreviousLoansSection(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -925,13 +1007,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         loanIcon = Icons.home;
         loanColor = AppTheme.successColor;
         break;
+      case 'Mortgage Loan':
+        loanIcon = Icons.home_work;
+        loanColor = AppTheme.warningColor;
+        break;
       case 'Business Loan':
         loanIcon = Icons.business;
         loanColor = AppTheme.warningColor;
         break;
       case 'Professional Loan':
         loanIcon = Icons.work_outline;
-        loanColor = const Color(0xFF0EA5E9);
+        loanColor = AppTheme.infoColor;
         break;
       case 'Education Loan':
         loanIcon = Icons.school;

@@ -219,6 +219,52 @@ class SubmissionProvider with ChangeNotifier {
     unawaited(saveDraft());
   }
 
+  // Mortgage property details (one or more named uploads)
+  PropertyDetailEntry addPropertyDetailEntry() {
+    _submission.propertyDetailsDocuments ??= PropertyDetailsDocuments();
+    final entry = PropertyDetailEntry(
+      id: 'prop_${DateTime.now().microsecondsSinceEpoch}',
+    );
+    _submission.propertyDetailsDocuments!.entries.add(entry);
+    notifyListeners();
+    unawaited(saveDraft());
+    return entry;
+  }
+
+  void updatePropertyName(String id, String name) {
+    final docs = _submission.propertyDetailsDocuments;
+    if (docs == null) return;
+    final idx = docs.entries.indexWhere((e) => e.id == id);
+    if (idx == -1) return;
+    docs.entries[idx].propertyName = name;
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void setPropertyDetailPath(String id, String path, {bool isPdf = false}) {
+    _submission.propertyDetailsDocuments ??= PropertyDetailsDocuments();
+    final docs = _submission.propertyDetailsDocuments!;
+    final idx = docs.entries.indexWhere((e) => e.id == id);
+    if (idx == -1) {
+      docs.entries.add(
+        PropertyDetailEntry(id: id, path: path, isPdf: isPdf),
+      );
+    } else {
+      docs.entries[idx].path = path;
+      docs.entries[idx].isPdf = isPdf;
+    }
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
+  void removePropertyDetailEntry(String id) {
+    final docs = _submission.propertyDetailsDocuments;
+    if (docs == null) return;
+    docs.entries.removeWhere((e) => e.id == id);
+    notifyListeners();
+    unawaited(saveDraft());
+  }
+
   // Business docs
   void setSpouseAadhaarFront(String path, {bool isPdf = false}) {
     _submission.businessDocuments ??= BusinessDocuments();
@@ -1601,6 +1647,8 @@ class SubmissionProvider with ChangeNotifier {
                   : null,
             }
           : null,
+      'propertyDetailsDocuments':
+          submission.propertyDetailsDocuments?.toJson(),
       'personalData': submission.personalData != null
           ? {
               'nameAsPerAadhaar': submission.personalData!.nameAsPerAadhaar,
@@ -1889,6 +1937,14 @@ class SubmissionProvider with ChangeNotifier {
         payslip2: parseUploadedDoc(s['payslip2']),
         payslip3: parseUploadedDoc(s['payslip3']),
         idCard: parseUploadedDoc(s['idCard']),
+      );
+    }
+
+    if (json['propertyDetailsDocuments'] != null) {
+      submission.propertyDetailsDocuments = PropertyDetailsDocuments.fromJson(
+        Map<String, dynamic>.from(
+          json['propertyDetailsDocuments'] as Map,
+        ),
       );
     }
 

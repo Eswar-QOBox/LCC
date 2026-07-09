@@ -13,6 +13,7 @@ class AppRoutes {
   static const String professionalLoanType = '/professional-loan-type';
   static const String step5ProfessionalDocs = '/step5-professional-docs';
   static const String step5StudentDocs = '/step5-student-docs';
+  static const String step5PropertyDetails = '/step5-property-details';
 
   // Document Steps
   static const String step1Selfie = '/step1-selfie';

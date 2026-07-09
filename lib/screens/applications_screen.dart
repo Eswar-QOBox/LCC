@@ -11,6 +11,8 @@ import '../utils/developer_mode.dart';
 import '../models/loan_application.dart';
 import '../services/loan_application_service.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
+import '../providers/submission_provider.dart';
 import '../widgets/premium_card.dart';
 import '../widgets/premium_button.dart';
 import '../widgets/premium_toast.dart';
@@ -56,9 +58,15 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     });
 
     try {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final apps = await _applicationService.getApplications(
         status: 'all',
         limit: 100,
+        customerLeadId: customerLeadId,
       );
       // Backend normalizes Professional Loan → Personal Loan; restore display type
       // so routing works. (Education Loan → Student Loan is handled in fromJson.)
@@ -98,7 +106,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -108,7 +116,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
             // Tabs Section
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: colorScheme.surface,
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24),
                   topRight: Radius.circular(24),
@@ -232,7 +240,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
           end: Alignment.bottomRight,
           colors: [
             AppTheme.primaryColor,
-            const Color(0xFF0052CC), // royal-blue
+            AppTheme.secondaryColor, // royal-blue
           ],
         ),
         borderRadius: const BorderRadius.only(
@@ -342,21 +350,48 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       await appProvider.loadApplication(application.id);
       if (!context.mounted) return;
 
+      final loadedApp = appProvider.currentApplication;
+      if (loadedApp != null) {
+        final submissionProvider = context.read<SubmissionProvider>();
+        submissionProvider.setLoanType(loadedApp.loanType);
+        if (loadedApp.businessLoanType != null &&
+            loadedApp.businessLoanType!.trim().isNotEmpty) {
+          submissionProvider.setBusinessLoanType(loadedApp.businessLoanType);
+        }
+      }
+
       String resolveRouteForDraft(LoanApplication app) {
         // Backend currentStep is constrained to 1..7.
-        // For Business Loan (Proprietor) we map steps 4-7 to our extended UI.
+        // Business Loan uses extended UI; route depends on proprietor vs partnership/Pvt Ltd.
         final isBusiness = (app.loanType).toLowerCase().contains('business');
+        final businessType = (app.businessLoanType ?? '').toLowerCase();
+        final isProprietor = businessType == 'proprietor';
+        final isPartnershipOrPvt =
+            businessType == 'partnership' || businessType == 'pvt_limited';
         if (isBusiness) {
-          switch (app.currentStep) {
-            case 4:
-              return AppRoutes.step4SpouseAadhaar;
-            case 5:
-              return AppRoutes.step5SpousePan;
-            case 6:
-              return AppRoutes.step4BankStatement;
-            case 7:
-              // After bank statement we continue with GST/Labour → MSME → OHP → Personal → Preview.
-              return AppRoutes.step6Preview;
+          if (isProprietor) {
+            switch (app.currentStep) {
+              case 4:
+                return AppRoutes.step4SpouseAadhaar;
+              case 5:
+                return AppRoutes.step5SpousePan;
+              case 6:
+                return AppRoutes.step4BankStatement;
+              case 7:
+                return AppRoutes.step6Preview;
+            }
+          }
+          if (isPartnershipOrPvt) {
+            switch (app.currentStep) {
+              case 4:
+                return AppRoutes.step4BankStatement;
+              case 5:
+                return AppRoutes.partnerCount;
+              case 6:
+                return AppRoutes.step5BusinessDocs;
+              case 7:
+                return AppRoutes.step6Preview;
+            }
           }
         }
         // Student loan: backend step 5 is used after bank save and after academic docs save.
@@ -366,6 +401,16 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
             app.currentStep == 5 &&
             (app.step5PersonalData == null || app.step5PersonalData!.isEmpty)) {
           return AppRoutes.step5StudentDocs;
+        }
+        // Home Loan & Mortgage: Property Details is captured at step 5 before
+        // Personal Data, so resume there until personal data has been saved.
+        final loanTypeLower = (app.loanType).toLowerCase();
+        final requiresProperty =
+            loanTypeLower.contains('mortgage') || loanTypeLower.contains('home');
+        if (requiresProperty &&
+            app.currentStep == 5 &&
+            (app.step5PersonalData == null || app.step5PersonalData!.isEmpty)) {
+          return AppRoutes.step5PropertyDetails;
         }
         return AppRoutes.getStepRoute(app.currentStep);
       }
@@ -419,11 +464,11 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         break;
       case AppStrings.loanTypeProfessional:
         loanIcon = Icons.work_outline;
-        loanColor = const Color(0xFF0EA5E9);
+        loanColor = AppTheme.infoColor;
         break;
       case 'Student Loan':
         loanIcon = Icons.school;
-        loanColor = const Color(0xFFF59E0B);
+        loanColor = AppTheme.warningColor;
         break;
       case AppStrings.loanTypeEducation:
         loanIcon = Icons.school;
@@ -431,15 +476,15 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
         break;
       case AppStrings.loanTypeMortgage:
         loanIcon = Icons.home_work;
-        loanColor = const Color(0xFF7C3AED);
+        loanColor = AppTheme.secondaryColor;
         break;
       case AppStrings.loanTypeProperty:
         loanIcon = Icons.business_center;
-        loanColor = const Color(0xFF14B8A6);
+        loanColor = AppTheme.successColor;
         break;
       case AppStrings.loanTypeEmergency:
         loanIcon = Icons.emergency;
-        loanColor = const Color(0xFFDC2626);
+        loanColor = AppTheme.errorColor;
         break;
       default:
         loanIcon = Icons.account_balance_wallet;

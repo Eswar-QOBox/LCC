@@ -126,6 +126,11 @@ class _Step5StudentDocsScreenState extends State<Step5StudentDocsScreen> {
   }
 
   Future<void> _loadLeadId() async {
+    final cachedLeadId = context.read<AuthProvider>().leadId;
+    if (cachedLeadId != null) {
+      setState(() { _leadId = cachedLeadId; _loadingLead = false; });
+      return;
+    }
     setState(() {
       _loadingLead = true;
       _error = null;

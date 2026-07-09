@@ -1,12 +1,15 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/loan_application.dart';
+import '../providers/auth_provider.dart';
 import '../services/loan_application_service.dart';
 import '../utils/app_routes.dart';
 import '../utils/app_strings.dart';
 import '../utils/app_theme.dart';
+import '../widgets/brand_glass_header.dart';
 import '../widgets/premium_toast.dart';
 
 class LoanScreen extends StatefulWidget {
@@ -27,22 +30,29 @@ class _LoanScreenState extends State<LoanScreen> {
   bool _hasApplicationInProgress = false;
   final LoanApplicationService _applicationService = LoanApplicationService();
 
+  /// Only drafts / active flows — not `submitted` (those are "Under review", not "continue filling").
   static bool _isContinueable(LoanApplication a) {
-    return a.isDraft || a.isInProgress || a.isPaused || a.isSubmitted;
+    return a.isDraft || a.isInProgress || a.isPaused;
   }
 
   @override
   void initState() {
     super.initState();
     _carouselController = PageController();
-    _checkApplicationInProgress();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkApplicationInProgress());
   }
 
   Future<void> _checkApplicationInProgress() async {
     try {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final customerLeadId =
+          auth.user?.role == 'admin' ? null : await auth.waitForLeadId();
+      if (!mounted) return;
       final applications = await _applicationService.getApplications(
         status: 'all',
         limit: 50,
+        customerLeadId: customerLeadId,
       );
       if (!mounted) return;
       final hasInProgress = applications.any(_isContinueable);
@@ -61,7 +71,7 @@ class _LoanScreenState extends State<LoanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -104,114 +114,46 @@ class _LoanScreenState extends State<LoanScreen> {
   }
 
   Widget _buildHeader(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    return BrandGlassHeader(trailing: _buildNotificationButton(context));
+  }
+
+  Widget _buildNotificationButton(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
-        color: colorScheme.surface.withValues(alpha: 0.6),
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outline.withValues(alpha: 0.1),
-            width: 1,
-          ),
-        ),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        shape: BoxShape.circle,
       ),
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Logo and Title
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.primaryColor.withValues(alpha: 0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Image.asset(
-                        'assets/JSEE_icon.jpg',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'JSEE Solutions',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                      Text(
-                        'ELIGIBILITY VERIFICATION',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          letterSpacing: 1.2,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              
-              // Notification Button
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  shape: BoxShape.circle,
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Center(
-                      child: Icon(
-                        Icons.notifications_outlined,
-                        color: colorScheme.onSurfaceVariant,
-                        size: 22,
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: AppTheme.errorColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: colorScheme.surface,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: Icon(
+              Icons.notifications_outlined,
+              color: colorScheme.onSurfaceVariant,
+              size: 22,
+            ),
           ),
-        ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: AppTheme.errorColor,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: colorScheme.surface,
+                  width: 2,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -271,36 +213,36 @@ class _LoanScreenState extends State<LoanScreen> {
         'title': 'No Paperwork Hassle',
         'subtitle': 'Completely digital and paperless verification',
         'gradient': [
-          Color(0xFF002B5B),
-          Color(0xFF003B8E),
-          Color(0xFF0052CC),
+          Color(0xFF0F2460),
+          Color(0xFF234AB8),
+          Color(0xFF5C8DFF),
         ],
       },
       {
         'title': 'Multi-Document Support',
         'subtitle': 'Upload identity, address & income proof easily',
         'gradient': [
-          Color(0xFF1A4D2E),
-          Color(0xFF2D7A3D),
-          Color(0xFF3FA55F),
+          Color(0xFF0B3D20),
+          Color(0xFF145C34),
+          Color(0xFF24C278),
         ],
       },
       {
         'title': '24/7 Submission',
         'subtitle': 'Submit documents anytime, anywhere.',
         'gradient': [
-          Color(0xFF4A148C),
-          Color(0xFF6A1B9A),
-          Color(0xFF8E24AA),
+          Color(0xFF1A0A60),
+          Color(0xFF3520A8),
+          Color(0xFF8161FF),
         ],
       },
       {
         'title': 'Quick Verification',
         'subtitle': 'AI-powered document verification in minutes.',
         'gradient': [
-          Color(0xFF0D47A1),
-          Color(0xFF1565C0),
-          Color(0xFF1976D2),
+          Color(0xFF0A1850),
+          Color(0xFF1A448E),
+          Color(0xFF1AA2E6),
         ],
       },
     ];
@@ -452,35 +394,27 @@ class _LoanScreenState extends State<LoanScreen> {
         'availableSoon': false,
       },
       {
-        'icon': Icons.person_add_alt_1,
-        'title': 'Loan with Co-applicant',
-        'subtitle': 'Joint application',
-        'iconColor': const Color(0xFF14B8A6),
-        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
-        'availableSoon': false,
-      },
-      {
         'icon': Icons.business,
         'title': 'Business Loan',
         'subtitle': 'Grow your business',
-        'iconColor': const Color(0xFF7C3AED),
-        'iconBgColor': const Color(0xFF7C3AED).withValues(alpha: 0.1),
+        'iconColor': AppTheme.secondaryColor,
+        'iconBgColor': AppTheme.secondaryColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.work_outline,
         'title': 'Professional Loan',
         'subtitle': 'For professionals',
-        'iconColor': const Color(0xFF0EA5E9),
-        'iconBgColor': const Color(0xFF0EA5E9).withValues(alpha: 0.1),
+        'iconColor': AppTheme.infoColor,
+        'iconBgColor': AppTheme.infoColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.school,
         'title': 'Student Loan',
         'subtitle': 'Fund your education',
-        'iconColor': const Color(0xFFF59E0B),
-        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.1),
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
@@ -495,17 +429,17 @@ class _LoanScreenState extends State<LoanScreen> {
         'icon': Icons.directions_car,
         'title': 'Car Loan',
         'subtitle': 'Finance your vehicle',
-        'iconColor': const Color(0xFF14B8A6),
-        'iconBgColor': const Color(0xFF14B8A6).withValues(alpha: 0.1),
+        'iconColor': AppTheme.successColor,
+        'iconBgColor': AppTheme.successColor.withValues(alpha: 0.1),
         'availableSoon': false,
       },
       {
         'icon': Icons.home_work,
-        'title': 'Mortgage',
-        'subtitle': 'Secure your property',
-        'iconColor': const Color(0xFFEC4899),
-        'iconBgColor': const Color(0xFFEC4899).withValues(alpha: 0.1),
-        'availableSoon': true,
+        'title': AppStrings.loanTypeMortgage,
+        'subtitle': AppStrings.loanTypeMortgageSubtitle,
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.1),
+        'availableSoon': false,
       },
     ];
 
@@ -645,14 +579,15 @@ class _LoanScreenState extends State<LoanScreen> {
                   context.push('${AppRoutes.instructions}?loanType=${Uri.encodeComponent(title)}');
                   return;
                 }
-                // Loan with Co-applicant: collect co-applicant docs after bank statement
-                if (title == 'Loan with Co-applicant') {
+                if (title == 'Personal Loan') {
                   context.push(
-                    '${AppRoutes.instructions}?loanType=${Uri.encodeComponent('Personal Loan')}&withCoApplicant=true',
+                    '${AppRoutes.coApplicantChoice}?loanType=${Uri.encodeComponent(title)}',
                   );
                   return;
                 }
-                if (title == 'Home Loan' || title == 'Car Loan') {
+                if (title == 'Home Loan' ||
+                    title == 'Car Loan' ||
+                    title == AppStrings.loanTypeMortgage) {
                   context.push(
                     '${AppRoutes.coApplicantChoice}?loanType=${Uri.encodeComponent(title)}',
                   );
@@ -748,8 +683,8 @@ class _LoanScreenState extends State<LoanScreen> {
         'icon': Icons.speed,
         'title': 'Quick submission',
         'subtitle': 'Submission status within 24 hours.',
-        'iconColor': const Color(0xFFF59E0B),
-        'iconBgColor': const Color(0xFFF59E0B).withValues(alpha: 0.15),
+        'iconColor': AppTheme.warningColor,
+        'iconBgColor': AppTheme.warningColor.withValues(alpha: 0.15),
       },
     ];
 

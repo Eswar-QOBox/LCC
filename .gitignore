@@ -25,6 +25,9 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# Cursor IDE local settings
+.cursor/
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
@@ -45,3 +48,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Generated graph analysis artifacts
+graphify-out/

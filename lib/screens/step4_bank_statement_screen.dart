@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/submission_provider.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import '../services/file_upload_service.dart';
 import '../services/ocr_service.dart';
 import '../utils/app_routes.dart';
@@ -21,11 +22,13 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
 import '../utils/debug_log.dart';
 import '../utils/step4_merge.dart';
+import '../utils/business_loan_flow.dart';
 
 class Step4BankStatementScreen extends StatefulWidget {
   const Step4BankStatementScreen({
@@ -281,19 +284,50 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   /// Run OCR on bank statement to extract account holder name.
   /// Skips if pages are from backend. Uses Aadhaar name as approx reference.
   /// For password-protected PDFs, uses pdfrx-based renderer that supports decryption.
+  void _bankDebug(String message) {
+    debugPrint('[BankStatement] $message');
+  }
+
   Future<void> _runBankStatementOcrIfNeeded() async {
     final firstLocal = _pages.where((p) => !_isFromBackend(p)).firstOrNull;
-    if (firstLocal == null) return;
-    if (kIsWeb || firstLocal.startsWith('blob:')) return;
+    if (firstLocal == null) {
+      _bankDebug('OCR skipped: no local page (all backend or empty)');
+      return;
+    }
+    if (kIsWeb || firstLocal.startsWith('blob:')) {
+      _bankDebug(
+          'OCR skipped: unsupported platform/path (kIsWeb=$kIsWeb blob=${firstLocal.startsWith('blob:')})');
+      return;
+    }
     final provider = context.read<SubmissionProvider>();
     final aadhaarName = _referenceNameForOcr(provider);
+    _bankDebug(
+        'OCR START path=${firstLocal.split(RegExp(r'[/\\]')).last} '
+        'isCoApplicant=${widget.isCoApplicant} isPdf=$_isPdf '
+        'hasPassword=${_pdfPassword != null && _pdfPassword!.isNotEmpty} '
+        'refName="${aadhaarName ?? ""}"');
+    if (kDebugMode) {
+      debugPrint(
+          '[DocValidation] Bank step START refName="$aadhaarName" '
+          'isCoApplicant=${widget.isCoApplicant} isPdf=$_isPdf');
+    }
     try {
       Uint8List? imageBytes;
       if (_isPdf && firstLocal.toLowerCase().endsWith('.pdf')) {
         imageBytes = await _renderPdfPageForOcr(firstLocal, pageIndex: 0);
+        _bankDebug(
+            'PDF page-0 render: ${imageBytes == null ? "FAILED (null bytes)" : "${imageBytes.length} bytes"}');
+      } else {
+        _bankDebug('OCR input: image path (no PDF render)');
       }
       final periodStart = _calculatedStartDate;
       final periodEnd = _statementEndDate;
+      if (kDebugMode) {
+        debugPrint(
+            '[DocValidation] Bank OCR period start=$periodStart end=$periodEnd '
+            'pdfBytes=${imageBytes != null}');
+      }
+      _bankDebug('Calling extractBankStatementName period=$periodStart..$periodEnd');
       final result = imageBytes != null
           ? await OcrService.extractBankStatementName(
               firstLocal,
@@ -308,6 +342,11 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               statementPeriodStart: periodStart,
               statementPeriodEnd: periodEnd,
             );
+      if (!result.success) {
+        _bankDebug(
+            'OCR FAILED: ${result.errorMessage ?? "unknown"} (success=${result.success})');
+        return;
+      }
       if (mounted && result.success) {
         if (widget.isCoApplicant) {
           provider.setCoApplicantBankStatementExtractedAccountHolderName(result.accountHolderName);
@@ -317,22 +356,40 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           provider.setBankStatementNameMatchesAadhaar(result.nameMatchesAadhaar);
         }
         if (kDebugMode) {
-          debugPrint('[BankStatement] OCR extracted: ${result.accountHolderName}, nameMatchesAadhaar: ${result.nameMatchesAadhaar}');
+          debugPrint(
+              '[DocValidation] Bank step DONE holder="${result.accountHolderName}" '
+              'nameMatchesAadhaar=${result.nameMatchesAadhaar} ref="$aadhaarName"');
+          debugPrint(
+              '[BankStatement] OCR extracted: ${result.accountHolderName}, nameMatchesAadhaar: ${result.nameMatchesAadhaar}');
         }
         if (aadhaarName != null && aadhaarName.trim().isNotEmpty) {
           if (result.nameMatchesAadhaar) {
-            PremiumToast.showSuccess(context, 'Name on statement verified with Aadhaar.');
+            final holder = result.accountHolderName?.trim();
+            PremiumToast.showSuccess(
+              context,
+              holder != null && holder.isNotEmpty
+                  ? 'Name verified: "$holder" matches "$aadhaarName".'
+                  : 'Name on statement verified with "$aadhaarName".',
+            );
           } else {
+            final holder = result.accountHolderName?.trim();
+            final holderPart = (holder != null && holder.isNotEmpty)
+                ? 'We read "$holder", which does not match'
+                : 'We could not find a name matching';
             PremiumToast.showWarning(
               context,
-              'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
-              duration: const Duration(seconds: 4),
+              'Name mismatch. $holderPart the expected name "$aadhaarName". '
+              'Please upload a statement in the account holder\'s name.',
+              duration: const Duration(seconds: 5),
             );
           }
         }
+      } else if (!mounted) {
+        _bankDebug('OCR success but widget unmounted — state not saved');
       }
-    } catch (e) {
-      if (kDebugMode) debugPrint('[BankStatement] OCR failed: $e');
+    } catch (e, st) {
+      _bankDebug('OCR exception: $e');
+      _bankDebug('OCR stack: $st');
     }
   }
 
@@ -341,25 +398,37 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
   /// Otherwise tries the fast native renderer first, falling back to pdfrx on failure.
   Future<Uint8List?> _renderPdfPageForOcr(String pdfPath, {required int pageIndex}) async {
     final hasPassword = _pdfPassword != null && _pdfPassword!.isNotEmpty;
+    final shortPath = pdfPath.split(RegExp(r'[/\\]')).last;
+    _bankDebug(
+        'renderPdf page=$pageIndex file=$shortPath hasPassword=$hasPassword nativeSupported=${OcrPdf.isSupported}');
 
     // Fast path: native renderer (no password support).
     if (!hasPassword && OcrPdf.isSupported) {
       try {
         final count = await OcrPdf.getPageCount(pdfPath);
+        _bankDebug('Native PDF pageCount=$count (need index>$pageIndex)');
         if (count > pageIndex) {
-          return await OcrPdf.renderPageToJpegBytes(pdfPath, pageIndex: pageIndex);
+          final bytes = await OcrPdf.renderPageToJpegBytes(pdfPath, pageIndex: pageIndex);
+          _bankDebug('Native render OK: ${bytes.length} bytes');
+          return bytes;
         }
-      } catch (e) {
-        if (kDebugMode) debugPrint('[BankStatement] Native PDF render failed, trying pdfrx: $e');
+        _bankDebug('Native render skipped: pageCount=$count <= pageIndex=$pageIndex');
+      } catch (e, st) {
+        _bankDebug('Native PDF render failed, trying pdfrx: $e');
+        if (kDebugMode) debugPrint('[BankStatement] Native stack: $st');
       }
     }
 
     // Fallback / password path: pdfrx-based renderer.
-    return OcrPdf.renderPageWithPassword(
+    _bankDebug('Trying pdfrx render (password path or native fallback)');
+    final pdfrxBytes = await OcrPdf.renderPageWithPassword(
       pdfPath,
       pageIndex: pageIndex,
       password: _pdfPassword,
     );
+    _bankDebug(
+        'pdfrx render: ${pdfrxBytes == null ? "FAILED (null)" : "${pdfrxBytes.length} bytes"}');
+    return pdfrxBytes;
   }
 
   @override
@@ -406,13 +475,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           }
 
           if (relativeUrl.startsWith('http') || relativeUrl.startsWith('blob:')) return relativeUrl;
-          String apiPath = relativeUrl;
-          if (apiPath.startsWith('/uploads/') && !apiPath.contains('/uploads/files/')) {
-            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-          } else if (!apiPath.startsWith('/api/')) {
-            apiPath = '/api/v1$apiPath';
-          }
-          return '${ApiConfig.baseUrl}$apiPath';
+          return UploadUrlHelper.resolve(relativeUrl);
         }
 
         // Get access token for authenticated request
@@ -568,53 +631,21 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       return;
     }
 
-    // Calculate 6 months back, always starting from the 1st of that month
-    // This ensures the date range is >= 6 months and < 7 months
-    // Example: If user gives July 5, calculate to January 1 (6 months back, 1st of month)
-    //          Range: Jan 1 to Jul 5 = 6 months and 4 days (>= 6 months, < 7 months)
-    // Example: If user gives July 25, calculate to January 1 (6 months back, 1st of month)
-    //          Range: Jan 1 to Jul 25 = 6 months and 24 days (>= 6 months, < 7 months)
+    // Requirement: last 6 statement months including the current month.
+    // For example, if end date is 28-May-2026, accepted window starts from
+    // 01-Dec-2025 (Dec, Jan, Feb, Mar, Apr, May).
+    //
+    // So we go back 5 calendar months and fix start day to the 1st.
     final endDate = _statementEndDate!;
-    
-    // Subtract 6 months and set to 1st of that month
-    DateTime startDate;
-    if (endDate.month > 6) {
-      // Same year, just subtract 6 months
-      startDate = DateTime(
-        endDate.year,
-        endDate.month - 6,
-        1, // Always use 1st of the month
-      );
-    } else {
-      // Previous year, add 6 months to get to previous year
-      startDate = DateTime(
-        endDate.year - 1,
-        endDate.month + 6,
-        1, // Always use 1st of the month
-      );
+
+    var startYear = endDate.year;
+    var startMonth = endDate.month - 5;
+    if (startMonth <= 0) {
+      startMonth += 12;
+      startYear -= 1;
     }
-    
-    // Verify the range is >= 6 months and < 7 months
-    final monthsDifference = (endDate.year - startDate.year) * 12 + (endDate.month - startDate.month);
-    if (monthsDifference < 6 || monthsDifference >= 7) {
-      // Adjust if needed to ensure >= 6 and < 7 months
-      if (monthsDifference < 6) {
-        // Need to go back one more month
-        if (startDate.month == 1) {
-          startDate = DateTime(startDate.year - 1, 12, 1);
-        } else {
-          startDate = DateTime(startDate.year, startDate.month - 1, 1);
-        }
-      } else if (monthsDifference >= 7) {
-        // Need to go forward one month
-        if (startDate.month == 12) {
-          startDate = DateTime(startDate.year + 1, 1, 1);
-        } else {
-          startDate = DateTime(startDate.year, startDate.month + 1, 1);
-        }
-      }
-    }
-    
+    final startDate = DateTime(startYear, startMonth, 1);
+
     setState(() {
       _calculatedStartDate = startDate;
     });
@@ -658,7 +689,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 [];
           }
           for (final upload in existingUploads) {
-            final url = upload['url'] as String?;
+            final url = upload['url'] as String? ?? upload['fileUrl'] as String?;
             if (url != null &&
                 remoteUrls.any((r) => r.contains(url) || url.contains(r)) &&
                 !finalUploadedFiles.any((f) => f['url'] == url)) {
@@ -670,7 +701,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
 
       if (localPaths.isNotEmpty) {
         final files = localPaths.map((path) => XFile(path)).toList();
-        final newUploadResults = await _fileUploadService.uploadBankStatements(files);
+        final newUploadResults = await _fileUploadService.uploadBankStatements(
+          files,
+          leadId: context.read<AuthProvider>().leadId,
+        );
         finalUploadedFiles.addAll(newUploadResults);
       }
 
@@ -915,9 +949,12 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     // readable for OCR here.
     final localPages = _pages.where((p) => !_isFromBackend(p)).toList();
     if (!kIsWeb && localPages.isNotEmpty) {
+      _bankDebug('Running consistency validation on ${localPages.length} local file(s)');
       final validation = await _validateBankStatementConsistency(localPages);
       if (!mounted) return;
       if (!validation.isValid) {
+        _bankDebug(
+            'BLOCKED at consistency validation: ${validation.errorMessage ?? "unknown"}');
         PremiumToast.showError(
           context,
           validation.errorMessage ??
@@ -926,6 +963,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
         );
         return;
       }
+      _bankDebug('Consistency validation passed');
+    } else {
+      _bankDebug(
+          'Skipping consistency validation (kIsWeb=$kIsWeb localPages=${localPages.length})');
     }
 
     if (!mounted) return;
@@ -935,14 +976,24 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final nameMatches = widget.isCoApplicant
         ? provider.submission.coApplicantBankStatement?.nameMatchesAadhaar
         : provider.submission.bankStatement?.nameMatchesAadhaar;
+    final extractedName = widget.isCoApplicant
+        ? provider.submission.coApplicantBankStatement?.extractedAccountHolderName
+        : provider.submission.bankStatement?.extractedAccountHolderName;
     if (hasLocalPages &&
         refName != null &&
         refName.isNotEmpty &&
         nameMatches == false) {
+      _bankDebug(
+          'BLOCKED at name↔Aadhaar gate: refName="$refName" '
+          'extractedHolder="$extractedName" nameMatchesAadhaar=$nameMatches');
+      final holderPart = (extractedName != null && extractedName.trim().isNotEmpty)
+          ? 'The statement appears to be for "${extractedName.trim()}", which does not match'
+          : 'The name on the statement does not match';
       PremiumToast.showError(
         context,
-        'Name on bank statement could not be verified with Aadhaar name. Please upload a statement in the account holder\'s name.',
-        duration: const Duration(seconds: 4),
+        'Name mismatch. $holderPart the expected name "$refName". '
+        'Please upload a statement in the account holder\'s name.',
+        duration: const Duration(seconds: 5),
       );
       return;
     }
@@ -951,42 +1002,41 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     if (mounted && saved) {
     final appProvider = context.read<ApplicationProvider>();
     final submissionProvider = context.read<SubmissionProvider>();
-    final loanType = (appProvider.currentApplication?.loanType ??
-            submissionProvider.submission.loanType ??
-            '')
-        .toLowerCase();
-      final businessLoanType =
-          (submissionProvider.submission.businessLoanType ?? '').toLowerCase();
+      final appLoanType =
+          (appProvider.currentApplication?.loanType ?? '').toLowerCase();
+      final submissionLoanType =
+          (submissionProvider.submission.loanType ?? '').toLowerCase();
+      final loanType = appLoanType.contains('business')
+          ? appLoanType
+          : (submissionLoanType.contains('business') ? submissionLoanType : appLoanType);
+      final businessLoanType = BusinessLoanFlow.normalizeType(
+        submissionProvider.submission.businessLoanType ??
+            appProvider.currentApplication?.businessLoanType,
+      );
 
-      final isBusiness = loanType.contains('business');
-      final isBusinessProprietor = isBusiness && businessLoanType == 'proprietor';
-      final isBusinessPartnership = isBusiness && businessLoanType == 'partnership';
-      final isBusinessPvtLimited = isBusiness && businessLoanType == 'pvt_limited';
       final isProfessional = loanType.contains('professional');
       final professionalType = (submissionProvider.submission.professionalLoanType ?? '').toLowerCase();
       final isProfessionalDoctorOrCa = isProfessional && (professionalType == 'doctor' || professionalType == 'ca');
       final isStudent = loanType.contains('student');
-      if (widget.fromPreview) {
-        context.go(AppRoutes.step6Preview);
-        return;
+      final resolvedBusinessType = BusinessLoanFlow.resolveBusinessLoanType(
+        loanType: loanType,
+        businessLoanType: businessLoanType,
+        submission: submissionProvider.submission,
+      );
+      if (resolvedBusinessType != null &&
+          resolvedBusinessType != submissionProvider.submission.businessLoanType) {
+        submissionProvider.setBusinessLoanType(resolvedBusinessType);
       }
-      if (widget.isCoApplicant) {
-        context.go(AppRoutes.coApplicantSalarySlips);
-        return;
-      }
-      final isPersonalLoan = !isBusiness && !isProfessionalDoctorOrCa && !isStudent;
       context.go(
-        isBusinessProprietor
-            ? AppRoutes.step5BusinessDocs
-            : (isBusinessPartnership || isBusinessPvtLimited
-                ? AppRoutes.partnerCount
-                : isProfessionalDoctorOrCa
-                    ? AppRoutes.step5ProfessionalDocs
-                    : isStudent
-                        ? AppRoutes.step5StudentDocs
-                        : isPersonalLoan
-                            ? AppRoutes.step5_1SalarySlips
-                            : AppRoutes.step5_1SalarySlips),
+        BusinessLoanFlow.routeAfterBankStatement(
+          loanType: loanType,
+          businessLoanType: resolvedBusinessType ?? businessLoanType,
+          submission: submissionProvider.submission,
+          fromPreview: widget.fromPreview,
+          isCoApplicant: widget.isCoApplicant,
+          isProfessionalDoctorOrCa: isProfessionalDoctorOrCa,
+          isStudent: isStudent,
+        ),
       );
     }
   }
@@ -997,83 +1047,192 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     final accountTokens = <String>[];
     final allMonths = <int>{};
 
-    for (final path in localPages) {
+    for (var i = 0; i < localPages.length; i++) {
+      final path = localPages[i];
+      final label = path.split(RegExp(r'[/\\]')).last;
+      _bankDebug('validate[$i] extract text from $label');
       final text = await _extractStatementText(path);
       if (text == null || text.trim().isEmpty) {
+        _bankDebug('validate[$i] FAIL: empty OCR text');
         if (_isPdfPath(path)) {
           final encrypted = await _isPdfEncrypted(path, null);
+          _bankDebug('validate[$i] PDF encrypted=$encrypted hasPassword=${_pdfPassword != null}');
           if (encrypted) {
             return (
               isValid: false,
               errorMessage:
-                  'This PDF is password-protected. Please re-upload and enter the correct password when prompted.',
+                  'File "$label" is password-protected. Please re-upload it and enter the correct password when prompted.',
             );
           }
         }
         return (
           isValid: false,
           errorMessage:
-              'Could not read one of the bank statements. Please upload clearer files.',
+              'Could not read file "$label". The text was not clear enough — please upload a clearer/higher-quality statement.',
         );
       }
+      _bankDebug('validate[$i] OCR text length=${text.length}');
 
       final account = _extractAccountToken(text);
       if (account == null || account.isEmpty) {
+        _bankDebug('validate[$i] FAIL: account number not detected');
         return (
           isValid: false,
           errorMessage:
-              'Could not detect account number on one statement. Please upload clearer files from the same account.',
+              'Could not find an account number in "$label". Please upload a clearer statement that shows the account number.',
         );
       }
+      _bankDebug('validate[$i] account token=$account');
       accountTokens.add(account);
 
       final months = _extractMonthKeysFromText(text);
       if (months.isEmpty) {
+        _bankDebug('validate[$i] FAIL: no statement months detected');
         return (
           isValid: false,
           errorMessage:
-              'Could not detect statement month(s) from one file. Please upload readable statements.',
+              'Could not detect any statement dates in "$label". Please upload a readable statement that shows the transaction dates.',
         );
       }
+      _bankDebug('validate[$i] months=$months');
       allMonths.addAll(months);
     }
 
     // All statements must belong to the same account (masked forms normalize to same token).
     final uniqueAccounts = accountTokens.toSet();
     if (uniqueAccounts.length > 1) {
+      _bankDebug('FAIL: multiple accounts $uniqueAccounts');
       return (
         isValid: false,
         errorMessage:
-            'Statements appear to be from different accounts. Please upload statements for a single account only.',
+            'Account number mismatch. The uploaded files belong to ${uniqueAccounts.length} '
+            'different accounts. Please upload statements for one single account only.',
       );
     }
 
+    final sortedDetected = allMonths.toList()..sort();
+
+    // Period check against the REQUIRED window: the last 6 months from today
+    // (calculatedStartDate .. statementEndDate). We tell the user exactly which
+    // months are missing, or that the statement is from the wrong period.
+    final requiredKeys = _requiredWindowMonthKeys();
+    if (requiredKeys.isNotEmpty) {
+      final requiredFromKey = requiredKeys.first;
+      final requiredToKey = requiredKeys.last;
+      final requiredFrom = _formatMonthKey(requiredFromKey);
+      final requiredTo = _formatMonthKey(requiredToKey);
+
+      // Only consider detected months that fall inside the required window;
+      // ignore stray older dates that OCR sometimes picks up (opening balances,
+      // cheque dates, etc.).
+      final inWindow = sortedDetected.where(requiredKeys.contains).toList()
+        ..sort();
+      final missing = requiredKeys.where((k) => !allMonths.contains(k)).toList();
+
+      // Nothing detected falls within the required window -> wrong period.
+      if (inWindow.isEmpty) {
+        final detectedRange = sortedDetected.isEmpty
+            ? 'an unreadable period'
+            : (sortedDetected.length == 1
+                ? _formatMonthKey(sortedDetected.first)
+                : '${_formatMonthKey(sortedDetected.first)} to ${_formatMonthKey(sortedDetected.last)}');
+        _bankDebug(
+            'FAIL: wrong period. detected=$sortedDetected required=$requiredKeys');
+        return (
+          isValid: false,
+          errorMessage:
+              'Wrong statement period. These statements are from $detectedRange, '
+              'but we need the last 6 months: $requiredFrom to $requiredTo (up to today). '
+              'Please upload statements for the correct period.',
+        );
+      }
+
+      final earliestInWindow = inWindow.first;
+      final latestInWindow = inWindow.last;
+
+      // 1) Recency: the statement must reach up to TODAY's month. If the most
+      // recent detected month is older than required, tell the user exactly how
+      // far it reaches vs. what we need.
+      if (latestInWindow < requiredToKey) {
+        _bankDebug(
+            'FAIL: not up to date. latest=$latestInWindow requiredTo=$requiredToKey detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement is not up to date. It only covers up to '
+              '${_formatMonthKey(latestInWindow)}, but we need it up to $requiredTo (today). '
+              'Please upload a statement that includes the most recent months.',
+        );
+      }
+
+      // 2) Depth: the statement must go back ~6 months to the required start.
+      if (earliestInWindow > requiredFromKey) {
+        _bankDebug(
+            'FAIL: not enough history. earliest=$earliestInWindow requiredFrom=$requiredFromKey detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement does not cover the full 6 months. It only goes back to '
+              '${_formatMonthKey(earliestInWindow)}, but we need it from $requiredFrom '
+              '(through $requiredTo, today). Please include the older months.',
+        );
+      }
+
+      // 3) Both ends are covered. Tolerate a single OCR-missed middle month
+      // (the dates are sometimes not picked up cleanly), but reject larger gaps
+      // and name the missing months.
+      if (missing.length > 1) {
+        final missingLabel = missing.map(_formatMonthKey).join(', ');
+        _bankDebug(
+            'FAIL: missing months=$missing (>1) detected=$sortedDetected');
+        return (
+          isValid: false,
+          errorMessage:
+              'Statement period incomplete. Missing month(s): $missingLabel. '
+              'We need all 6 months from $requiredFrom to $requiredTo (up to today). '
+              'Please add the missing month(s).',
+        );
+      }
+
+      _bankDebug(
+          'PASS: account=$accountTokens covers required window $requiredFrom..$requiredTo '
+          '(inWindow=$inWindow missing=$missing detected=$sortedDetected)');
+      return (isValid: true, errorMessage: null);
+    }
+
+    // Fallback (required dates unavailable): require >= 6 distinct months in a
+    // tight, continuous range.
     if (allMonths.length < 6) {
+      _bankDebug('FAIL: only ${allMonths.length} distinct month(s): $allMonths');
       return (
         isValid: false,
         errorMessage:
-            'At least 6 statement months are required. Current upload does not cover full 6 months.',
+            'At least 6 months of statements are required. We only detected '
+            '${allMonths.length} month(s): '
+            '${sortedDetected.map(_formatMonthKey).join(', ')}.',
       );
     }
 
-    final sorted = allMonths.toList()..sort();
-    final minKey = sorted.first;
-    final maxKey = sorted.last;
+    final minKey = sortedDetected.first;
+    final maxKey = sortedDetected.last;
     final span = _monthDiff(minKey, maxKey) + 1;
-
-    // Accept a tight range only. If the spread is too large, user likely mixed periods.
     if (span > 7) {
+      _bankDebug('FAIL: month span=$span (>7) months=$sortedDetected');
       return (
         isValid: false,
         errorMessage:
-            'Statement months are inconsistent. Please upload documents from one continuous 6-month period.',
+            'Statement months are inconsistent (spanning ${_formatMonthKey(minKey)} '
+            'to ${_formatMonthKey(maxKey)}). Please upload one continuous 6-month period.',
       );
     }
 
+    _bankDebug(
+        'PASS: account=$accountTokens months=${sortedDetected.length} distinct span=$span range=$minKey..$maxKey');
     return (isValid: true, errorMessage: null);
   }
 
   Future<String?> _extractStatementText(String path) async {
+    final label = path.split(RegExp(r'[/\\]')).last;
     try {
       if (_isPdfPath(path)) {
         final hasPassword = _pdfPassword != null && _pdfPassword!.isNotEmpty;
@@ -1087,54 +1246,181 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             count = await OcrPdf.getPageCountWithPassword(path, password: _pdfPassword);
           }
         }
-        if (count <= 0) return null;
+        _bankDebug('extractText PDF $label pageCount=$count hasPassword=$hasPassword');
+        if (count <= 0) {
+          _bankDebug('extractText PDF $label FAIL: pageCount<=0');
+          return null;
+        }
 
         // Read up to first 6 pages to capture month range + account details.
         final pagesToRead = count > 6 ? 6 : count;
         final parts = <String>[];
         for (int i = 0; i < pagesToRead; i++) {
           final imgBytes = await _renderPdfPageForOcr(path, pageIndex: i);
-          if (imgBytes == null) continue;
+          if (imgBytes == null) {
+            _bankDebug('extractText PDF $label page $i: render returned null');
+            continue;
+          }
           final result = await OcrService.extractDocumentText(
             path,
             imageBytes: imgBytes,
           );
           if (result.success && (result.fullText ?? '').trim().isNotEmpty) {
             parts.add(result.fullText!.trim());
+            _bankDebug(
+                'extractText PDF $label page $i: OCR OK len=${result.fullText!.length}');
+          } else {
+            _bankDebug(
+                'extractText PDF $label page $i: OCR empty/fail success=${result.success} '
+                'err=${result.errorMessage ?? ""}');
           }
         }
-        return parts.join('\n');
+        final joined = parts.join('\n');
+        _bankDebug(
+            'extractText PDF $label done: ${parts.length}/$pagesToRead pages, totalLen=${joined.length}');
+        return joined.isEmpty ? null : joined;
       }
 
+      _bankDebug('extractText image $label');
       final result = await OcrService.extractDocumentText(path);
-      if (!result.success) return null;
+      if (!result.success) {
+        _bankDebug(
+            'extractText image $label FAIL: ${result.errorMessage ?? "unknown"}');
+        return null;
+      }
+      _bankDebug('extractText image $label OK len=${result.fullText?.length ?? 0}');
       return result.fullText;
-    } catch (_) {
+    } catch (e, st) {
+      _bankDebug('extractText $label exception: $e');
+      if (kDebugMode) debugPrint('[BankStatement] extractText stack: $st');
       return null;
     }
   }
 
   bool _isPdfPath(String path) => path.toLowerCase().endsWith('.pdf');
 
+  /// OCR often breaks account numbers with spaces (e.g. "35 123 4567 8901") or puts
+  /// the number on the line after "Account No". Allow internal whitespace in the capture.
   String? _extractAccountToken(String text) {
     final upper = text.toUpperCase();
+
+    String? normalizeAccountRaw(String? raw) {
+      if (raw == null) return null;
+      final normalized = raw.replaceAll(RegExp(r'[^0-9X\*]'), '');
+      if (normalized.length >= 6 && normalized.length <= 22) return normalized;
+      return null;
+    }
+
+    // After label: spaced digit runs (6–22 digit-class chars when non-digits stripped).
+    const spacedDigits = r'([0-9X\*](?:\s*[0-9X\*]){5,21})';
+
     final patterns = <RegExp>[
+      // Prefer explicit "ACCOUNT NO" / "ACCOUNT NUMBER" (avoids "STATEMENT OF ACCOUNT").
       RegExp(
-        r'(?:A\/?C(?:COUNT)?(?:\s*(?:NO|NUMBER))?|ACCOUNT(?:\s*(?:NO|NUMBER))?)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        r'ACCOUNT\s*(?:NO|NUMBER|N0|#)\s*[.:\-]?\s*' + spacedDigits,
         caseSensitive: false,
       ),
       RegExp(
-        r'(?:ACCT|ACCOUNT)\s*[:\-]?\s*([0-9X\*]{6,20})',
+        r'(?:A\/?C(?:COUNT)?)\s*(?:NO|NUMBER|N0|#)?\s*[.:\-]?\s*' + spacedDigits,
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'(?:ACCT|ACC\.?)\s*(?:NO|NUMBER|N0)?\s*[.:\-]?\s*' + spacedDigits,
         caseSensitive: false,
       ),
     ];
 
     for (final re in patterns) {
       final m = re.firstMatch(upper);
-      final raw = m?.group(1);
+      final n = normalizeAccountRaw(m?.group(1));
+      if (n != null) return n;
+    }
+
+    // SBI-style OCR: labels ("Account No") sit in one column; the real number appears many
+    // lines later as ": 11534674370", often after a shorter ": 517001" (PIN). A single
+    // non-greedy bridge to the *first* colon+digits therefore latches the wrong field and
+    // never reaches the account — scan a wide window after each label and take the last
+    // colon segment that normalizes to >= 9 digits.
+    const accountScanWindow = 8000;
+    final colonDigits = RegExp(r':\s*([0-9X\*](?:\s*[0-9X\*]){5,21})');
+    String? lastAccountLikeInWindow(String window) {
+      RegExpMatch? last;
+      for (final cm in colonDigits.allMatches(window)) {
+        final n = normalizeAccountRaw(cm.group(1));
+        if (n != null && n.length >= 9) last = cm;
+      }
+      if (last == null) return null;
+      return normalizeAccountRaw(last.group(1));
+    }
+
+    final accountNoLabelRe = RegExp(
+      r'ACCOUNT\s*(?:NO|NUMBER|N0|#)',
+      caseSensitive: false,
+    );
+    for (final labelM in accountNoLabelRe.allMatches(upper)) {
+      final end = (labelM.end + accountScanWindow) > upper.length
+          ? upper.length
+          : labelM.end + accountScanWindow;
+      final n = lastAccountLikeInWindow(upper.substring(labelM.end, end));
+      if (n != null) return n;
+    }
+
+    final acNoLabelRe = RegExp(
+      r'(?:A\/?C)\s*(?:NO|NUMBER|N0|#)',
+      caseSensitive: false,
+    );
+    for (final labelM in acNoLabelRe.allMatches(upper)) {
+      final end = (labelM.end + accountScanWindow) > upper.length
+          ? upper.length
+          : labelM.end + accountScanWindow;
+      final n = lastAccountLikeInWindow(upper.substring(labelM.end, end));
+      if (n != null) return n;
+    }
+
+    // SBI: CIF on its own line, account on the next line as ": …" (no "Account No" nearby).
+    final cifThenColonAcct = RegExp(
+      r'^\s*\d{8,12}\s*\n\s*:\s*([0-9X\*](?:\s*[0-9X\*]){5,21})\s*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    RegExpMatch? lastCifColon;
+    for (final m in cifThenColonAcct.allMatches(upper)) {
+      final n = normalizeAccountRaw(m.group(1));
+      if (n != null && n.length >= 9) lastCifColon = m;
+    }
+    if (lastCifColon != null) {
+      final n = normalizeAccountRaw(lastCifColon.group(1));
+      if (n != null) return n;
+    }
+
+    // Standalone value line ": 11534674370" (rejects ": 09-04-2026" — '-' not in digit capture).
+    final colonLine = RegExp(
+      r'^\s*:\s*([0-9X\*](?:\s*[0-9X\*]){5,21})\s*$',
+      caseSensitive: false,
+      multiLine: true,
+    );
+    RegExpMatch? lastColon;
+    for (final m in colonLine.allMatches(upper)) {
+      final raw = m.group(1);
       if (raw == null) continue;
-      final normalized = raw.replaceAll(RegExp(r'[^0-9X\*]'), '');
-      if (normalized.length >= 6) return normalized;
+      if (raw.contains('-') || raw.contains('/')) continue;
+      final n = normalizeAccountRaw(raw);
+      if (n != null && n.length >= 9) lastColon = m;
+    }
+    if (lastColon != null) {
+      final n = normalizeAccountRaw(lastColon.group(1));
+      if (n != null) return n;
+    }
+
+    if (kDebugMode) {
+      final hasLabel = upper.contains('ACCOUNT') &&
+          (upper.contains('ACCOUNT NO') ||
+              upper.contains('ACCOUNT NUMBER') ||
+              RegExp(r'ACCOUNT\s+NO', caseSensitive: false).hasMatch(upper));
+      debugPrint(
+        '[BankStatement] account extract: ${patterns.map((re) => re.hasMatch(upper)).toList()} '
+        'hasAccountNoLabel=$hasLabel',
+      );
     }
     return null;
   }
@@ -1190,6 +1476,42 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
     return (ey - sy) * 12 + (em - sm);
   }
 
+  /// Formats a `year*100 + month` key as e.g. "Dec 2025".
+  String _formatMonthKey(int key) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final y = key ~/ 100;
+    final m = key % 100;
+    if (m < 1 || m > 12) return '$key';
+    return '${months[m - 1]} $y';
+  }
+
+  /// The required statement months: every calendar month from the calculated
+  /// start date (6 months back) through the statement end date (today),
+  /// inclusive, as `year*100 + month` keys. Empty when dates are unavailable.
+  List<int> _requiredWindowMonthKeys() {
+    final start = _calculatedStartDate;
+    final end = _statementEndDate;
+    if (start == null || end == null) return const [];
+    final keys = <int>[];
+    var y = start.year;
+    var m = start.month;
+    final lastKey = end.year * 100 + end.month;
+    for (var i = 0; i < 18; i++) {
+      final key = y * 100 + m;
+      if (key > lastKey) break;
+      keys.add(key);
+      m++;
+      if (m > 12) {
+        m = 1;
+        y++;
+      }
+    }
+    return keys;
+  }
+
   String _formatDateWithYear(DateTime date) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -1226,7 +1548,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             : (isProfessional ? AppRoutes.step3Pan : AppRoutes.step3Pan));
       },
       child: Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
@@ -1366,13 +1688,13 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFFEFF6FF), // blue-50
-            Color(0xFFDBEAFE), // blue-100/50
+            Color(0xFFF0F5FF), // primary-tint-50
+            Color(0xFFDEECFF), // primary-tint-100
           ],
         ),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFDBEAFE).withValues(alpha: 0.5),
+          color: const Color(0xFFDEECFF).withValues(alpha: 0.5),
           width: 1,
         ),
         boxShadow: [
@@ -1418,7 +1740,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
-                        color: const Color(0xFF1E293B),
+                        color: const Color(0xFF172030),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1426,7 +1748,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       'Last 6 months from today',
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 12,
-                        color: const Color(0xFF64748B),
+                        color: const Color(0xFF576175),
                       ),
                     ),
                   ],
@@ -1453,7 +1775,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: const Color(0xFFDBEAFE), // blue-100
+            color: const Color(0xFFDEECFF), // primary-tint-100
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: AppTheme.primaryColor, size: 18),
@@ -1465,7 +1787,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
             style: theme.textTheme.bodyMedium?.copyWith(
               fontSize: 14,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF334155), // slate-700
+              color: const Color(0xFF1E2A40),
             ),
           ),
         ),
@@ -1496,7 +1818,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFD32F2F), // red-600
+                  color: AppTheme.errorColor,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Icon(
@@ -1512,7 +1834,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: const Color(0xFFB71C1C), // red-700
+                    color: AppTheme.errorColor,
                   ),
                 ),
               ),
@@ -1525,7 +1847,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: const Color(0xFFFFCDD2).withValues(alpha: 0.2),
+                color: AppTheme.errorColor.withValues(alpha: 0.15),
                 width: 1,
               ),
               boxShadow: [
@@ -1543,7 +1865,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   children: [
                     const Icon(
                       Icons.warning,
-                      color: Color(0xFFD32F2F),
+                      color: AppTheme.errorColor,
                       size: 16,
                     ),
                     const SizedBox(width: 6),
@@ -1552,7 +1874,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFFD32F2F),
+                        color: AppTheme.errorColor,
                         letterSpacing: 1.0,
                       ),
                     ),
@@ -1564,7 +1886,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   text: TextSpan(
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontSize: 14,
-                      color: const Color(0xFF475569),
+                      color: const Color(0xFF576175),
                       height: 1.5,
                     ),
                     children: [
@@ -1573,7 +1895,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         text: _formatDateWithYear(_calculatedStartDate!),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
+                          color: Color(0xFF172030),
                         ),
                       ),
                       const TextSpan(text: ' to '),
@@ -1581,7 +1903,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         text: _formatDateWithYear(_statementEndDate!),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
+                          color: Color(0xFF172030),
                         ),
                       ),
                     ],
@@ -1593,7 +1915,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
-                    color: const Color(0xFFD32F2F),
+                    color: AppTheme.errorColor,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1608,7 +1930,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     children: [
                       const Icon(
                         Icons.schedule,
-                        color: Color(0xFFD32F2F),
+                        color: AppTheme.errorColor,
                         size: 12,
                       ),
                       const SizedBox(width: 6),
@@ -1617,7 +1939,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: const Color(0xFFD32F2F),
+                          color: AppTheme.errorColor,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -1666,7 +1988,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
-                      color: const Color(0xFF1E293B),
+                      color: const Color(0xFF172030),
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -1684,7 +2006,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4), // emerald-50
+                  color: const Color(0xFFEDFBF4),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -1692,7 +2014,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   children: [
                     const Icon(
                       Icons.check_circle,
-                      color: Color(0xFF22C55E), // emerald-600
+                      color: AppTheme.successColor, // emerald-600
                       size: 12,
                     ),
                     const SizedBox(width: 4),
@@ -1701,7 +2023,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF22C55E),
+                        color: AppTheme.successColor,
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -1732,10 +2054,10 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
       width: 160,
       height: 213, // aspect ratio 3:4
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF), // blue-50
+        color: const Color(0xFFF0F5FF), // primary-tint-50
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: const Color(0xFFDBEAFE), // blue-100
+          color: const Color(0xFFDEECFF), // primary-tint-100
           width: 2,
         ),
       ),
@@ -1750,7 +2072,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                 const Icon(
                   Icons.picture_as_pdf,
                   size: 60,
-                  color: Color(0xFF3B82F6), // blue-500
+                  color: AppTheme.primaryColor,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -1758,7 +2080,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF2563EB), // blue-600
+                    color: AppTheme.primaryColor,
                     letterSpacing: 2.0,
                   ),
                 ),
@@ -1782,7 +2104,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444), // red-500
+                        color: AppTheme.errorColor,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: Colors.white,
@@ -1896,7 +2218,7 @@ class _Step4BankStatementScreenState extends State<Step4BankStatementScreen> {
                   gradient: LinearGradient(
                     colors: [
                       AppTheme.primaryColor,
-                      const Color(0xFF0052CC), // royal-blue
+                      AppTheme.secondaryColor,
                     ],
                   ),
                   borderRadius: BorderRadius.circular(20),

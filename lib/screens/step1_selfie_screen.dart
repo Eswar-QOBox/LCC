@@ -8,6 +8,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/application_provider.dart';
+import '../providers/auth_provider.dart';
 import 'face_grid_capture_screen.dart';
 import '../providers/submission_provider.dart';
 import '../services/document_service.dart';
@@ -20,6 +21,7 @@ import '../utils/app_theme.dart';
 import '../widgets/app_header.dart';
 import '../services/storage_service.dart';
 import '../utils/api_config.dart';
+import '../utils/upload_url_helper.dart';
 import '../widgets/premium_progress_indicator.dart';
 import '../widgets/preview_header_action.dart';
 import '../widgets/prevent_close_on_back.dart';
@@ -305,17 +307,25 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
     try {
       Map<String, dynamic>? uploadResult;
+      final currentApp = appProvider.currentApplication;
+      final existingSelfie = currentApp?.step1Selfie as Map<String, dynamic>?;
+      final existingUpload = existingSelfie?['uploadedFile'] as Map<String, dynamic>?;
 
-      // Check if image is already uploaded (remote URL)
-      if (_imagePath!.startsWith('http')) {
-        final currentApp = appProvider.currentApplication;
-        if (currentApp?.step1Selfie != null) {
-          final stepData = currentApp!.step1Selfie as Map<String, dynamic>;
-          uploadResult = stepData['uploadedFile'] as Map<String, dynamic>?;
+      final alreadyOnServer = UploadUrlHelper.isNetworkPath(_imagePath!) ||
+          (existingUpload != null &&
+              (existingUpload['fileUrl'] != null || existingUpload['url'] != null));
+
+      if (alreadyOnServer) {
+        uploadResult = existingUpload;
+        if (uploadResult == null && UploadUrlHelper.isNetworkPath(_imagePath!)) {
+          uploadResult = {'fileUrl': _imagePath, 'url': _imagePath};
         }
       } else {
         final imageFile = XFile(_imagePath!);
-        uploadResult = await _fileUploadService.uploadSelfie(imageFile);
+        uploadResult = await _fileUploadService.uploadSelfie(
+          imageFile,
+          leadId: context.read<AuthProvider>().leadId,
+        );
       }
 
       await appProvider.updateApplication(
@@ -401,22 +411,16 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
 
       // Prefer uploaded file URL over local blob path (blob URLs don't persist on web refresh)
       String? effectivePath;
-      if (uploadedFile != null && uploadedFile['url'] != null) {
-        final relativeUrl = uploadedFile['url'] as String;
+      final uploadedRemote =
+          uploadedFile?['url'] ?? uploadedFile?['fileUrl'];
+      if (uploadedFile != null && uploadedRemote != null) {
+        final relativeUrl = uploadedRemote as String;
         debugPrint('📷 Selfie Screen: relativeUrl = $relativeUrl');
         // Build full URL - transform /uploads/{category}/ to /api/v1/uploads/files/{category}/
         if (relativeUrl.startsWith('http')) {
           effectivePath = relativeUrl;
         } else {
-          // Convert /uploads/selfies/... to /api/v1/uploads/files/selfies/...
-          String apiPath = relativeUrl;
-          if (apiPath.startsWith('/uploads/') &&
-              !apiPath.contains('/uploads/files/')) {
-            apiPath = apiPath.replaceFirst('/uploads/', '/api/v1/uploads/files/');
-          } else if (!apiPath.startsWith('/api/')) {
-            apiPath = '/api/v1$apiPath';
-          }
-          effectivePath = '${ApiConfig.baseUrl}$apiPath';
+          effectivePath = UploadUrlHelper.resolve(relativeUrl);
         }
         debugPrint('📷 Selfie Screen: effectivePath = $effectivePath');
       } else {
@@ -668,10 +672,10 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F9FF), // sky-50
+        color: const Color(0xFFF0F5FF),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE0F2FE), // sky-100
+          color: const Color(0xFFDEECFF),
           width: 1,
         ),
       ),
@@ -706,7 +710,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   fontSize: 20,
-                  color: const Color(0xFF1E293B), // slate-800
+                  color: const Color(0xFF172030),
                 ),
               ),
             ],
@@ -735,7 +739,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: const Color(0xFFBAE6FD), // sky-200
+            color: const Color(0xFFCCE0FF),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -751,7 +755,7 @@ class _Step1SelfieScreenState extends State<Step1SelfieScreen> {
             style: theme.textTheme.bodyMedium?.copyWith(
               fontSize: 15,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF475569), // slate-600
+              color: const Color(0xFF576175),
             ),
           ),
         ),
