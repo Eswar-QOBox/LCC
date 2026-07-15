@@ -510,7 +510,7 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
   }
 
   DocumentStatus _getDocumentStatus(DocumentRequirement requirement) {
-    final uploadedDoc = _firstUploadedForRequirement(requirement);
+    final uploadedDoc = _latestUploadedForRequirement(requirement);
 
     if (uploadedDoc.id.isEmpty) {
       return _uploadingStatus[requirement.id] == true
@@ -521,17 +521,37 @@ class _RequiredDocumentsScreenState extends State<RequiredDocumentsScreen>
     return uploadedDoc.status;
   }
 
+  /// Latest matching upload by `uploadedAt` (then id), so status matches re-upload lock helpers.
+  UploadedDocument _latestUploadedForRequirement(DocumentRequirement requirement) {
+    UploadedDocument? latest;
+    for (final doc in _uploadedDocuments) {
+      if (!leadDocumentTypeMatches(doc.documentType, requirement.id)) continue;
+      if (latest == null) {
+        latest = doc;
+        continue;
+      }
+      final byDate = doc.uploadedAt.compareTo(latest.uploadedAt);
+      if (byDate > 0) {
+        latest = doc;
+      } else if (byDate == 0) {
+        final a = int.tryParse(doc.id) ?? 0;
+        final b = int.tryParse(latest.id) ?? 0;
+        if (a > b) latest = doc;
+      }
+    }
+    return latest ??
+        UploadedDocument(
+          id: '',
+          documentType: '',
+          fileName: '',
+          fileSize: '',
+          uploadedAt: DateTime.now(),
+        );
+  }
+
+  /// Kept for call sites that previously used first-match; now delegates to latest.
   UploadedDocument _firstUploadedForRequirement(DocumentRequirement requirement) {
-    return _uploadedDocuments.firstWhere(
-      (doc) => leadDocumentTypeMatches(doc.documentType, requirement.id),
-      orElse: () => UploadedDocument(
-        id: '',
-        documentType: '',
-        fileName: '',
-        fileSize: '',
-        uploadedAt: DateTime.now(),
-      ),
-    );
+    return _latestUploadedForRequirement(requirement);
   }
 
   UploadedDocument? _latestRejectedForRequirement(DocumentRequirement requirement) {

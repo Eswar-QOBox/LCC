@@ -215,10 +215,14 @@ class AdditionalDocumentsService {
 
       if (response.statusCode == 200) {
         final list = response.data as List<dynamic>;
+        final wantId = leadId.trim();
         return list
             .map((item) {
               try {
-                return UploadedDocument.fromJson(_jhipsterDocToLegacy(item as Map<String, dynamic>));
+                final raw = item as Map<String, dynamic>;
+                // Defense in depth: older backends ignored leadId.equals and returned every row.
+                if (!_docBelongsToLead(raw, wantId)) return null;
+                return UploadedDocument.fromJson(_jhipsterDocToLegacy(raw));
               } catch (e) {
                 if (kDebugMode) print('Error parsing document: $e');
                 return null;
@@ -233,6 +237,16 @@ class AdditionalDocumentsService {
       if (kDebugMode) print('Error in getLeadDocuments: $e');
       throw Exception('Failed to get documents: $e');
     }
+  }
+
+  /// True when the DTO has no lead (legacy) or lead.id matches [leadId].
+  static bool _docBelongsToLead(Map<String, dynamic> doc, String leadId) {
+    if (leadId.isEmpty) return true;
+    final lead = doc['lead'];
+    if (lead is! Map) return true; // no lead embedded — trust server filter
+    final id = lead['id']?.toString().trim() ?? '';
+    if (id.isEmpty) return true;
+    return id == leadId;
   }
 
   /// Backward-compatible wrapper used by legacy screens.

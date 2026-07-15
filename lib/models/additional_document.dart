@@ -146,6 +146,17 @@ class DocumentRequirement {
         'additional_employment_letter': 'Employment Letter',
         'additional_credit_card_statement': 'Credit Card Statement',
         'additional_existing_loan_statement': 'Existing Loan Statement',
+        // Coarse backend DocumentType enum (when documentKey is missing)
+        'IDENTITY': 'Identity Document',
+        'identity': 'Identity Document',
+        'FINANCIAL': 'Financial Document',
+        'financial': 'Financial Document',
+        'INCOME': 'Income Document',
+        'income': 'Income Document',
+        'BUSINESS': 'Business Document',
+        'business': 'Business Document',
+        'OTHER': 'Other Document',
+        'other': 'Other Document',
       };
 
       // Determine label
